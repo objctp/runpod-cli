@@ -1,0 +1,29 @@
+# Local configuration
+.claude/*
+!.claude/CLAUDE.md
+config/scholar.local.md
+
+# Temporary / runtime
+*.tmp
+*.temp
+.DS_Store
+tmp/
+
+# Node / build (phase 2 — opencode parity)
+node_modules/
+dist/
+
+# Test outputs
+test-results/
+docs/
+coverage/
+
+# Secrets & caches
+.env
+.cache/
+skills-lock.json
+.agents/skills/
+
+# Release artefacts (make package / release workflow)
+/rp-*.tar.gz
+/SHA256SUMS

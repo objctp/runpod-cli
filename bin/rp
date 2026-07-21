@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# rp — RunPod infrastructure CLI entry point. Loads .env, sources lib/, dispatches <resource> to commands/<resource>.sh (see _help).
+set -euo pipefail
+# Resolve symlinks before locating the root, so rp works whether run from the
+# repo, via `make install`'s link, or via the installer's
+# /usr/local/bin/rp -> ~/.rp/bin/rp link. BASH_SOURCE is the invocation path
+# (not the link target), so without this RP_ROOT would land in /usr/local and
+# lib/ sourcing would fail. readlink is followed in a loop so relative and
+# chained links both resolve; portable across macOS (BSD) and Linux (GNU).
+_rp_src="${BASH_SOURCE[0]}"
+while [[ -L "${_rp_src}" ]]; do
+  _rp_dir="${_rp_src%/*}"
+  _rp_src="$(readlink "${_rp_src}")"
+  [[ "${_rp_src}" != /* ]] && _rp_src="${_rp_dir}/${_rp_src}"
+done
+RP_ROOT="$(cd "${_rp_src%/*}/.." && pwd)"
+export RP_ROOT
+unset _rp_src _rp_dir
+
+. "$RP_ROOT/lib/common.sh"
+trap _tmp_cleanup EXIT INT TERM HUP
+
+[[ -f "$RP_ROOT/.env" ]] && {
+  _warn_if_world_readable "$RP_ROOT/.env"
+  set -a
+  . "$RP_ROOT/.env"
+  set +a
+}
+
+for _RP_LIB_FILE in "$RP_ROOT"/lib/*.sh; do
+  case "$_RP_LIB_FILE" in
+  */common.sh) ;;
+  *) . "$_RP_LIB_FILE" ;;
+  esac
+done
+rp::check_core
+
+_help() {
+  # Slurp the heredoc once via a builtin `read` (no fork), then printf it.
+  # `cat <<'EOF'` would fork cat on every --help / no-args call (~5 ms on macOS).
+  if [[ -z "${_RP_HELP:-}" ]]; then
+    read -r -d '' _RP_HELP <<'EOF' || true
+rp — RunPod infrastructure CLI
+
+Usage: rp <resource> <verb> [flags]   (no args prints this help)
+
+Resources:
+  volume     network volumes (create, sync models via S3, list compatible GPUs)
+  endpoint   serverless endpoints (create, scale, CRUD; --hub-id deploys from a Hub listing)
+  pod        on-demand pods (create, start/stop, update, CRUD)
+  template   pod/serverless templates (search by name)
+  registry   container-registry auths
+  billing    pod / endpoint / network-volume billing
+  account    balance + spend (GraphQL)
+  hub        Hub marketplace search / get (GraphQL)
+  ssh        registered SSH keys + pod ssh info (GraphQL)
+  stock      GPU types and datacentres (GraphQL)
+
+Meta:
+  version / --version / -v   print the installed version
+  upgrade [--version X]      update rp in place (re-runs the installer)
+
+Examples:
+  rp _ping
+  rp volume create --name ocr-models --size 20 --dc EU-RO-1
+  rp volume sync ocr-models --models glm
+  rp volume gpus ocr-models
+  rp endpoint create --template <id> --network-volume-id <nv> \
+      --gpus-from-volume ocr-models --workers-min 0 --workers-max 1 --idle 600
+  rp stock gpu
+  rp stock dc
+
+Add --json to list/get commands for raw JSON.
+EOF
+  fi
+  printf '%s\n' "$_RP_HELP"
+}
+
+# rp version / --version / -v. lib/_version.sh (auto-sourced by the lib/*.sh
+# loop below) holds the release version; a dev checkout ships "0.0.0-dev", so we
+# fall back to `git describe` for a meaningful dev version. Returns the version
+# on stdout.
+rp::version() {
+  if { [[ -z "${RP_VERSION:-}" || "${RP_VERSION}" == "0.0.0-dev" ]]; } &&
+    git -C "${RP_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "${RP_ROOT}" describe --tags --always 2>/dev/null || printf '%s\n' "${RP_VERSION:-dev}"
+    return
+  fi
+  printf '%s\n' "${RP_VERSION:-dev}"
+}
+
+rp::main() {
+  local resource="${1:-}"
+  case "$resource" in
+  "" | -h | --help | help)
+    _help
+    return 0
+    ;;
+  -v | --version | version)
+    rp::version
+    return 0
+    ;;
+  _ping)
+    rp::http GET /pods >/dev/null
+    rp::ok "ok: REST auth works ($RP_REST_BASE)"
+    return 0
+    ;;
+  esac
+  shift
+  local cmd="$RP_ROOT/commands/$resource.sh"
+  [[ -f "$cmd" ]] || rp::usage "unknown resource: '$resource' (try: rp --help)"
+  . "$cmd"
+  declare -F "rp::cmd_$resource" >/dev/null || rp::die "command module '$resource' missing rp::cmd_$resource"
+  "rp::cmd_$resource" "$@"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  rp::main "$@"
+fi

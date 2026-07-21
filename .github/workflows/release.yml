@@ -1,0 +1,58 @@
+name: release
+
+# Publishes a GitHub Release whenever scripts/changelog.sh release pushes a bare
+# semver tag (0.1.0, no "v" prefix — matches cliff.toml's tag_pattern). Builds a
+# single universal tarball (rp is bash, so there is no per-OS/arch matrix),
+# stamps the version into lib/_version.sh, and attaches a SHA256SUMS the
+# installer verifies before extracting.
+on:
+  push:
+    tags:
+      - "[0-9].*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build tarball and checksums
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          printf 'RP_VERSION="%s"\n' "$VERSION" > lib/_version.sh
+          tar czf "rp-$VERSION.tar.gz" bin lib commands LICENSE
+          sha256sum "rp-$VERSION.tar.gz" > SHA256SUMS
+          echo "Built rp-$VERSION.tar.gz"
+          cat SHA256SUMS
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          # Extract the section after "# Changelog" up to the next "## [" or EOF
+          # This captures only the latest release's formatted notes
+          NOTES=$(awk '
+            /^# Changelog/ { in_changelog=1; next }
+            in_changelog && /^## \[/ {
+              if (!found_first) { found_first=1; next }  # Skip the first "## [" header
+              else { exit }                               # Stop at the second "## ["
+            }
+            found_first && in_changelog { print }         # Print content after first header
+          ' CHANGELOG.md)
+          # Add to GitHub Output (multiline, use EOF delimiter)
+          {
+            echo 'notes<<EOF'
+            echo "$NOTES"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            rp-${{ github.ref_name }}.tar.gz
+            SHA256SUMS
+          body: ${{ steps.notes.outputs.notes }}

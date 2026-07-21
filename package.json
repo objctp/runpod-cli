@@ -1,0 +1,33 @@
+{
+  "name": "runpod-cli",
+  "version": "0.0.0",
+  "description": "A simple CLI for managing RunPod infrastructure.",
+  "author": {
+    "name": "objct",
+    "url": "https://objct.link"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/objctp/runpod-cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/objctp/runpod-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/objctp/runpod-cli/issues"
+  },
+  "type": "module",
+  "bin": {
+    "rp": "./bin/rp"
+  },
+  "keywords": [
+    "runpod",
+    "runpod-rest",
+    "runpod-graphql",
+    "runpod-s3"
+  ],
+  "scripts": {
+    "changelog": "scripts/changelog.sh unreleased",
+    "changelog:preview": "scripts/changelog.sh preview",
+    "release": "scripts/changelog.sh release"
+  }
+}

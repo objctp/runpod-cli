@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+RP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+function set_up_before_script() {
+  local _opts
+  _opts=$(shopt -po errexit nounset pipefail 2>/dev/null || true)
+  source "$RP_ROOT/lib/common.sh"
+  source "$RP_ROOT/lib/args.sh"
+  source "$RP_ROOT/lib/json.sh"
+  eval "$_opts"
+}
+
+function test_should_quote_string_when_str_called() {
+  assert_equals '"rp-smoke"' "$(rp::json_str "rp-smoke")"
+}
+
+function test_should_escape_quotes_when_string_has_special_chars() {
+  assert_equals '"a\"b"' "$(rp::json_str 'a"b')"
+}
+
+function test_should_build_array_when_multiple_values_given() {
+  assert_equals '["a","b"]' "$(rp::json_array "a" "b")"
+}
+
+function test_should_build_empty_array_when_no_values_given() {
+  assert_equals '[]' "$(rp::json_array)"
+}
+
+function test_should_build_object_when_kv_pairs_given() {
+  assert_equals '{"name":"x","size":5}' "$(rp::json_obj name "$(rp::json_str x)" size 5)"
+}
+
+function test_should_merge_when_two_objects_given() {
+  assert_equals '{"a":1,"b":2}' "$(_json_merge '{"a":1}' '{"b":2}')"
+}
+
+function test_should_set_field_when_value_nonempty() {
+  local obj='{}'
+  rp::obj_set obj k '"v"'
+  assert_equals '{"k":"v"}' "$obj"
+}
+
+function test_should_skip_field_when_value_empty() {
+  local obj='{"a":1}'
+  rp::obj_set obj b ''
+  assert_equals '{"a":1}' "$obj"
+}
+
+function test_should_keep_comma_in_env_value() {
+  assert_equals '{"A":"1,B=2"}' "$(rp::env_to_json "A=1,B=2")"
+}
+
+function test_should_parse_multiple_envs_when_newline_delimited() {
+  assert_equals '{"A":"1","B":"2"}' "$(rp::env_to_json "$(printf 'A=1\nB=2')")"
+}
+
+function test_should_split_env_on_first_equals_only() {
+  assert_equals '{"TOKEN":"a==b"}' "$(rp::env_to_json "TOKEN=a==b")"
+}
+
+function test_should_build_jsonarray_when_csv_given() {
+  assert_equals '["x","y"]' "$(rp::csv_to_jsonarray "x,y")"
+}
+
+# main-shell variants (bashunit skips lines run inside $(...)) so the public json
+# builders register coverage.
+function test_should_quote_string_main_shell() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::json_str "rp-smoke" >"$tmp"
+  assert_equals '"rp-smoke"' "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
+function test_should_build_array_main_shell() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::json_array "a" "b" >"$tmp"
+  assert_equals '["a","b"]' "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
+function test_should_build_env_object_main_shell() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::env_to_json "$(printf 'A=1\nB=2')" >"$tmp"
+  assert_equals '{"A":"1","B":"2"}' "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
+function test_should_build_jsonarray_main_shell() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::csv_to_jsonarray "x,y" >"$tmp"
+  assert_equals '["x","y"]' "$(<"$tmp")"
+  rm -f "$tmp"
+}
