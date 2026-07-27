@@ -4,7 +4,7 @@
 _RP_ARGS=1
 
 declare -gA RP_ARGS=()
-RP_BOOL_FLAGS=(json flashboot force help interruptible serverless)
+RP_BOOL_FLAGS=(async json flashboot force help interruptible serverless sync)
 # Value flags that may be repeated; occurrences accumulate newline-joined, so
 # `--env A=1 --env B=2` becomes "A=1\nB=2". Newline (not comma) is the separator
 # so a single value may itself contain commas (e.g. --env LIST=a,b). Add a flag

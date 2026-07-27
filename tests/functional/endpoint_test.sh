@@ -117,6 +117,92 @@ function test_should_reject_hub_id_with_template() {
   rp::http() { :; }
 }
 
+function test_should_post_runsync_with_wrapped_input_when_run_given() {
+  local cap meta out
+  cap="$(mktemp)"
+  meta="$(mktemp)"
+  rp::http_api() {
+    printf '%s %s %s' "$1" "$2" "${4:-}" >"$meta"
+    printf '%s' "${3:-}" >"$cap"
+    printf '{"status":"COMPLETED","output":{"ok":true}}'
+  }
+  rp::args_parse e1 --input '{"image":"b64data"}'
+  out="$(_endpoint_run 2>/dev/null)"
+  assert_equals "POST /e1/runsync 300" "$(<"$meta")"
+  assert_equals "b64data" "$(jq -r '.input.image' "$cap")"
+  assert_contains '"COMPLETED"' "$out"
+  rp::http_api() { :; }
+  rm -f "$cap" "$meta"
+}
+
+function test_should_post_run_and_print_job_id_when_async_given() {
+  local meta out
+  meta="$(mktemp)"
+  rp::http_api() {
+    printf '%s %s %s' "$1" "$2" "${4:-}" >"$meta"
+    printf '{"id":"job-42","status":"IN_QUEUE"}'
+  }
+  rp::args_parse e1 --async --input '{}' --timeout 600
+  out="$(_endpoint_run 2>/dev/null)"
+  assert_equals "POST /e1/run 600" "$(<"$meta")"
+  assert_equals "job-42" "$out"
+  rp::http_api() { :; }
+  rm -f "$meta"
+}
+
+function test_should_read_payload_from_file_when_input_file_given() {
+  local cap infile out
+  cap="$(mktemp)"
+  infile="$(mktemp)"
+  printf '{"image":"from-file"}' >"$infile"
+  rp::http_api() {
+    printf '%s' "${3:-}" >"$cap"
+    printf '{"status":"COMPLETED"}'
+  }
+  rp::args_parse e1 --input-file "$infile"
+  out="$(_endpoint_run 2>/dev/null)"
+  assert_equals "from-file" "$(jq -r '.input.image' "$cap")"
+  assert_contains '"COMPLETED"' "$out"
+  rp::http_api() { :; }
+  rm -f "$cap" "$infile"
+}
+
+function test_should_print_raw_body_when_run_given_json_flag() {
+  rp::http_api() { printf '{"status":"COMPLETED","output":{"ok":true}}'; }
+  rp::args_parse e1 --input '{}' --json
+  local out
+  out="$(_endpoint_run 2>/dev/null)"
+  assert_equals '{"status":"COMPLETED","output":{"ok":true}}' "$out"
+  rp::http_api() { :; }
+}
+
+function test_should_exit_usage_when_run_missing_id_or_input() {
+  rp::http_api() { :; }
+  rp::args_parse --input '{}'
+  (_endpoint_run >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::args_parse e1
+  (_endpoint_run >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_exit_usage_when_run_given_conflicting_flags() {
+  rp::http_api() { :; }
+  rp::args_parse e1 --input '{}' --input-file /tmp/x
+  (_endpoint_run >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::args_parse e1 --input '{}' --sync --async
+  (_endpoint_run >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_exit_usage_when_run_input_is_invalid_json() {
+  rp::http_api() { :; }
+  rp::args_parse e1 --input 'not-json{'
+  (_endpoint_run >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
 # main-shell dispatcher call so the public rp::cmd_endpoint entry registers coverage.
 function test_should_show_help_when_help_verb_given() {
   local tmp
@@ -146,5 +232,12 @@ function test_should_route_each_endpoint_verb() {
   assert_contains "PATCH /endpoints/e1" "$(<"$cap")"
   rp::cmd_endpoint delete e1 >/dev/null 2>&1
   assert_contains "DELETE /endpoints/e1" "$(<"$cap")"
+  rp::http_api() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    printf '{}'
+  }
+  rp::cmd_endpoint run e1 --input '{}' >/dev/null 2>&1
+  assert_contains "POST /e1/runsync" "$(<"$cap")"
+  rp::http_api() { :; }
   rm -f "$cap"
 }

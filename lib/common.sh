@@ -5,6 +5,7 @@ _RP_COMMON=1
 
 RP_ROOT="${RP_ROOT:-$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)}"
 RP_REST_BASE="${RP_REST_BASE:-https://rest.runpod.io/v1}"
+RP_API_BASE="${RP_API_BASE:-https://api.runpod.ai/v2}"
 RP_GRAPHQL_URL="${RP_GRAPHQL_URL:-https://api.runpod.io/graphql}"
 
 # Distinct exit codes so `rp` is scriptable without parsing stderr:

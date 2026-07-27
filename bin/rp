@@ -46,7 +46,7 @@ Usage: rp <resource> <verb> [flags]   (no args prints this help)
 
 Resources:
   volume     network volumes (create, sync models via S3, list compatible GPUs)
-  endpoint   serverless endpoints (create, scale, CRUD; --hub-id deploys from a Hub listing)
+  endpoint   serverless endpoints (create, scale, run jobs, CRUD; --hub-id deploys from a Hub listing)
   pod        on-demand pods (create, start/stop, update, CRUD)
   template   pod/serverless templates (search by name)
   registry   container-registry auths

@@ -14,16 +14,21 @@ function set_up_before_script() {
 
 function set_up() {
   RUNPOD_API_KEY="sk-test"
+  RP_REST_BASE="https://rest.runpod.io/v1"
+  RP_API_BASE="https://api.runpod.ai/v2"
   OUT="$(mktemp)"
   HTTP_STATUS=200
   HTTP_RC=0
   HTTP_BODY=""
   HTTP_DATA_CAPTURE=""
+  HTTP_META_CAPTURE=""
   # curl double: write the configured body to the -o file, print the configured
-  # status code (curl's -w output), return HTTP_RC for transport errors, and copy
-  # the --data request body to HTTP_DATA_CAPTURE when set.
+  # status code (curl's -w output), return HTTP_RC for transport errors, copy
+  # the --data request body to HTTP_DATA_CAPTURE when set, and record
+  # "<url> <max-time>" into HTTP_META_CAPTURE when set (files, not variables:
+  # rp::http runs curl in a $() subshell, so assignments would be lost).
   curl() {
-    local out="" data=""
+    local out="" data="" url="" maxtime=""
     while (($#)); do
       case "$1" in
       -o)
@@ -34,10 +39,19 @@ function set_up() {
         data="$2"
         shift 2
         ;;
+      --max-time)
+        maxtime="$2"
+        shift 2
+        ;;
+      https://*)
+        url="$1"
+        shift
+        ;;
       *) shift ;;
       esac
     done
     [[ -n "$data" && -n "$HTTP_DATA_CAPTURE" ]] && cp "${data#@}" "$HTTP_DATA_CAPTURE"
+    [[ -n "$HTTP_META_CAPTURE" ]] && printf '%s %s' "$url" "$maxtime" >"$HTTP_META_CAPTURE"
     [[ -n "$out" ]] && printf '%s' "${HTTP_BODY:-}" >"$out"
     printf '%s' "${HTTP_STATUS:-200}"
     return "${HTTP_RC:-0}"
@@ -103,4 +117,45 @@ function test_should_exit_three_when_api_key_unset() {
   unset RUNPOD_API_KEY
   (rp::http GET /pods >/dev/null 2>&1)
   assert_exit_code 3
+}
+
+function test_should_use_rest_base_and_default_timeout_when_http_called() {
+  local meta
+  meta="$(mktemp)"
+  HTTP_BODY='{}'
+  HTTP_META_CAPTURE="$meta"
+  rp::http GET /pods >"$OUT"
+  assert_equals "https://rest.runpod.io/v1/pods 120" "$(<"$meta")"
+  rm -f "$meta"
+}
+
+function test_should_use_api_base_and_default_timeout_when_http_api_called() {
+  local meta
+  meta="$(mktemp)"
+  HTTP_BODY='{}'
+  HTTP_META_CAPTURE="$meta"
+  rp::http_api POST /e1/runsync '{"input":{}}' >"$OUT"
+  assert_equals "https://api.runpod.ai/v2/e1/runsync 300" "$(<"$meta")"
+  rm -f "$meta"
+}
+
+function test_should_pass_max_time_override_when_http_api_given_timeout() {
+  local meta
+  meta="$(mktemp)"
+  HTTP_BODY='{}'
+  HTTP_META_CAPTURE="$meta"
+  rp::http_api POST /e1/run '{"input":{}}' 600 >"$OUT"
+  assert_equals "https://api.runpod.ai/v2/e1/run 600" "$(<"$meta")"
+  rm -f "$meta"
+}
+
+function test_should_send_body_via_data_file_when_http_api_called() {
+  local body_capture
+  body_capture="$(mktemp)"
+  HTTP_BODY='{"id":"job1"}'
+  HTTP_DATA_CAPTURE="$body_capture"
+  rp::http_api POST /e1/runsync '{"input":{"image":"b64"}}' >"$OUT"
+  assert_equals "job1" "$(jq -r '.id' "$OUT")"
+  assert_equals "b64" "$(jq -r '.input.image' "$body_capture")"
+  rm -f "$body_capture"
 }

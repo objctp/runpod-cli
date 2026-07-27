@@ -116,7 +116,7 @@ to any `list` / `get` command for raw API output.
 | Resource | Verbs |
 |---|---|
 | `volume` | `create --name --size --dc` · `list` · `get <id>` · `update <id>` · `delete <id>` · `sync <name> [--source <dir> \| --models a,b,c] [--prefix models]` · `ls <name>` · `gpus <name> [--gpu id,id]` |
-| `endpoint` | `create --template <id> [...] [--env K=V]… [--min-cuda-version <ver>] [--execution-timeout <s>] [--network-volume-ids id,id] [--hub-id <listing-id>] [--force]` · `list` · `get <id>` · `update <id>` · `scale <id> --min N --max N [--idle S]` · `delete <id>` (`--hub-id` deploys from a Hub listing via GraphQL) |
+| `endpoint` | `create --template <id> [...] [--env K=V]… [--min-cuda-version <ver>] [--execution-timeout <s>] [--network-volume-ids id,id] [--hub-id <listing-id>] [--force]` · `list` · `get <id>` · `update <id>` · `scale <id> --min N --max N [--idle S]` · `delete <id>` · `run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>]` (`--hub-id` deploys from a Hub listing via GraphQL; `run` submits a job on the data plane — `api.runpod.ai/v2` — waiting via `/runsync` by default, or queuing via `/run` with `--async`) |
 | `pod` | `create --image <img> [...]` · `update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>] [--ports a/b] [--env K=V] [--start-cmd a,b]` · `list` · `get <id>` · `start \| stop \| reset \| restart <id>` · `delete <id>` |
 | `template` | `create --name --image [--serverless] [--docker-cmd a,b] [--env K=V]… [--ports a/b] [--volume-gb N] [--container-disk-gb N] [--force]` · `list` · `get <id>` · `search <name-substring>` · `delete <id>` |
 | `registry` | `create --name --server --username [--password <p>]` · `list` · `get <id>` · `delete <id>` |

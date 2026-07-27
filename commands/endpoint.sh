@@ -248,18 +248,63 @@ _endpoint_update() {
   rp::ok "updated endpoint $id"
 }
 
+# Submit a job to a deployed endpoint on the data plane (RP_API_BASE). Default
+# is /runsync, which blocks until the job completes; --async queues via /run
+# and prints the job id. The payload is wrapped through jq's stdin (never
+# argv/--argjson) so a base64-heavy --input-file body stays out of `ps`.
+_endpoint_run() {
+  local id
+  id="$(rp::args_pos)"
+  [[ -n "$id" ]] || rp::usage "usage: rp endpoint run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]"
+  rp::args_has sync && rp::args_has async && rp::usage "--sync and --async are mutually exclusive"
+  local input file
+  input="$(rp::args_get input)"
+  file="$(rp::args_get input-file)"
+  [[ -n "$input" && -n "$file" ]] && rp::usage "--input and --input-file are mutually exclusive"
+  if [[ -n "$file" ]]; then
+    if [[ "$file" == - ]]; then
+      input="$(cat)"
+    else
+      [[ -r "$file" ]] || rp::usage "cannot read --input-file '$file'"
+      input="$(<"$file")"
+    fi
+  fi
+  [[ -n "$input" ]] || rp::usage "rp endpoint run needs --input '<json>' or --input-file <path|->"
+  local payload
+  payload="$(printf '%s' "$input" | jq -c '{input: .}' 2>/dev/null)" || rp::usage "--input is not valid JSON"
+  local route=runsync timeout
+  rp::args_has async && route=run
+  timeout="$(rp::args_get_uint timeout 300)"
+  local body
+  body="$(rp::http_api POST "/$id/$route" "$payload" "$timeout")"
+  if rp::args_has json; then
+    printf '%s\n' "$body"
+    return
+  fi
+  if rp::args_has async; then
+    local jobid
+    jobid="$(printf '%s' "$body" | jq -r '.id // empty')"
+    [[ -n "$jobid" ]] || rp::die "run returned no job id: $body"
+    rp::ok "queued job on endpoint $id"
+    printf '%s\n' "$jobid"
+    return
+  fi
+  printf '%s\n' "$body" | jq .
+}
+
 rp::cmd_endpoint() {
   local verb="${1:-help}"
   shift || true
   rp::args_parse "$@"
   rp::args_has help && verb=help
   case "$verb" in
+  create) _endpoint_create ;;
   list) _endpoint_list ;;
   get) _endpoint_get ;;
-  create) _endpoint_create ;;
   update) _endpoint_update ;;
-  scale) _endpoint_scale ;;
   delete) _endpoint_delete ;;
+  scale) _endpoint_scale ;;
+  run) _endpoint_run ;;
   -h | --help | help)
     cat <<'EOF'
 Usage: rp endpoint <verb> [flags]
@@ -270,6 +315,9 @@ Usage: rp endpoint <verb> [flags]
          (idempotent by --name; --hub-id deploys from a Hub listing via GraphQL saveEndpoint)
   list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>]
   scale <id> --min N --max N [--idle S] | delete <id>
+  run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]
+      (data plane: POSTs {"input": …} to api.runpod.ai/v2/<id>/runsync and waits, default
+       --timeout 300; --async queues via /v2/<id>/run and prints the job id)
 EOF
     ;;
   *) rp::usage "unknown endpoint verb: '$verb'" ;;
