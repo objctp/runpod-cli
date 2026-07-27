@@ -3,7 +3,7 @@
 # the commit that just finished (so "during commit it adds a line in Unreleased").
 #
 # Guards:
-#   RPI_CHANGELOG_HOOK breaks the amend re-entry loop (amend re-runs post-commit).
+#   RUNPOD_CLI_CHANGELOG_HOOK breaks the amend re-entry loop (amend re-runs post-commit).
 #   The content diff skips the amend entirely when CHANGELOG.md is already current.
 set -euo pipefail
 

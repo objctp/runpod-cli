@@ -105,15 +105,15 @@ rp::cmd_pod() {
   rp::args_parse "$@"
   rp::args_has help && verb=help
   case "$verb" in
+  create) _pod_create ;;
   list) _pod_list ;;
   get) _pod_get ;;
-  create) _pod_create ;;
   update) _pod_update ;;
+  delete) _pod_delete ;;
   start) _pod_simple start ;;
   stop) _pod_simple stop ;;
   reset) _pod_simple reset ;;
   restart) _pod_simple restart ;;
-  delete) _pod_delete ;;
   -h | --help | help)
     cat <<'EOF'
 Usage: rp pod <verb> [flags]
