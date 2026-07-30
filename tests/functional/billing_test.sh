@@ -54,7 +54,7 @@ function test_should_route_endpoints_and_volumes_verbs() {
     printf '{}'
   }
   rp::cmd_billing endpoints >/dev/null 2>&1
-  assert_contains "GET /billing/endpoints" "$(<"$cap")"
+  assert_contains "GET /billing/serverless" "$(<"$cap")"
   rp::cmd_billing volumes >/dev/null 2>&1
   assert_contains "GET /billing/networkvolumes" "$(<"$cap")"
   rm -f "$cap"

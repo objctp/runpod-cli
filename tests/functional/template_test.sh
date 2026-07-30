@@ -9,7 +9,7 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/args.sh"
   source "$RP_ROOT/lib/json.sh"
   source "$RP_ROOT/lib/validate.sh"
-  source "$RP_ROOT/lib/lookup.sh"
+  source "$RP_ROOT/lib/resource.sh"
   source "$RP_ROOT/commands/template.sh"
   eval "$_opts"
 }
@@ -65,7 +65,7 @@ function test_should_omit_volumeInGb_when_serverless_and_volume_gb_given() {
   }
   rp::args_parse --name s-ocr --image img --serverless --volume-gb 20
   _template_create >/dev/null 2>&1
-  assert_not_contains "volumeInGb" "$(cat "$body")"
+  assert_not_contains "persistent" "$(cat "$body")"
   rp::http() { :; }
   rm -f "$body"
 }
@@ -83,7 +83,7 @@ function test_should_include_volumeInGb_when_not_serverless() {
   }
   rp::args_parse --name p-ocr --image img --volume-gb 20
   _template_create >/dev/null 2>&1
-  assert_contains "volumeInGb" "$(cat "$body")"
+  assert_equals "20" "$(jq -r '.mounts.persistent.size' "$body")"
   rp::http() { :; }
   rm -f "$body"
 }
@@ -122,7 +122,7 @@ function test_should_route_each_template_verb() {
   cap="$(mktemp)"
   rp::http() {
     printf '%s %s\n' "$1" "$2" >"$cap"
-    if [[ "$1" == "GET" ]]; then printf '[]'; else printf '{}'; fi
+    if [[ "$1" == "GET" ]]; then printf '[]'; else printf '{"id":"t1"}'; fi
   }
   rp::cmd_template list >/dev/null 2>&1
   assert_contains "GET /templates" "$(<"$cap")"

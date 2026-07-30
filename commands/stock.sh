@@ -1,27 +1,22 @@
 #!/usr/bin/env bash
-# `rp stock` — GPU types and S3-enabled datacentres (GraphQL).
+# `rp stock` — GPU types and S3-enabled datacentres.
+# `gpu` uses REST API v2 (catalog/gpus); `dc` stays on GraphQL (v2 has no
+# s3apiEnabled equivalent — kept until RunPod exposes an S3-support field).
 
 _stock_gpu() {
-  local q='query { gpuTypes { id displayName memoryInGb maxGpuCount lowestPrice { minimumBidPrice uninterruptablePrice stockStatus } } }'
   local data
-  data="$(rp::graphql "$q")"
-  if rp::args_has json; then
-    printf '%s\n' "$data"
-    return
-  fi
-  printf '%s\t%s\t%s\t%s\t%s\n' "ID" "DISPLAY" "VRAM_GB" "MIN_BID" "STOCK"
-  printf '%s' "$data" | jq -r '.gpuTypes[] | [.id, .displayName, (.memoryInGb // 0), (.lowestPrice.minimumBidPrice // ""), (.lowestPrice.stockStatus // "")] | @tsv'
+  data="$(rp::http GET '/catalog/gpus?include=AVAILABILITY&product=POD,SERVERLESS' | rp::unwrap gpus)"
+  rp::emit_json_or "$data" rp::table "$data" \
+    --reshape 'map({ID:.id, DISPLAY:.name, VRAM_GB:(.memory//0), SECURE_PRICE:(.price.secure//""), STOCK:(.availability//"")})' \
+    ID DISPLAY VRAM_GB SECURE_PRICE STOCK
 }
 
 _stock_dc() {
   local data
   data="$(rp::graphql 'query { dataCenters { id name s3apiEnabled } }')"
-  if rp::args_has json; then
-    printf '%s\n' "$data"
-    return
-  fi
-  printf '%s\t%s\n' "DATACENTER" "S3_API"
-  printf '%s' "$data" | jq -r '.dataCenters[] | [.id, (if .s3apiEnabled then "yes" else "" end)] | @tsv' | sort
+  rp::emit_json_or "$data" rp::table "$data" \
+    --reshape '.dataCenters | map({DATACENTER:.id, S3_API:(if .s3apiEnabled then "yes" else "" end)}) | sort_by(.DATACENTER)' \
+    DATACENTER S3_API
 }
 
 rp::cmd_stock() {
@@ -33,7 +28,7 @@ rp::cmd_stock() {
   gpu) _stock_gpu ;;
   dc) _stock_dc ;;
   -h | --help | help | "")
-    echo "Usage: rp stock gpu | rp stock dc"
+    echo "Usage: rp stock gpu | rp stock dc   (dc via GraphQL — v2 has no s3apiEnabled field)"
     ;;
   *) rp::usage "unknown stock verb: '$verb'" ;;
   esac

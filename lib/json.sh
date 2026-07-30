@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# jq-backed JSON builders (string / array / object / merge) used to assemble REST request bodies.
+# jq-backed JSON builders (string / array / object / merge) used to assemble REST request bodies, plus rp::json_pretty for human-mode output.
 [[ -n "${_RP_JSON:-}" ]] && return 0
 _RP_JSON=1
 
 _json_merge() { jq -c -n --argjson a "$1" --argjson b "$2" '$a * $b'; }
 
 rp::json_str() { jq -Rc . <<<"$1"; }
+
+# Pretty-print a JSON document for human-mode output.
+rp::json_pretty() { jq . <<<"$1"; }
 
 rp::json_array() {
   if [[ $# -gt 0 ]]; then
@@ -52,4 +55,41 @@ rp::csv_to_jsonarray() {
   local -a a
   mapfile -t a < <(rp::split_csv "$1")
   rp::json_array "${a[@]}"
+}
+
+# v2 ContainerConfig.args is a single entrypoint-arguments string (v1 took an
+# array); join the legacy CSV flag shape (--start-cmd/--docker-cmd) with spaces.
+rp::csv_to_argstring() {
+  rp::split_csv "$1" | paste -sd' ' -
+}
+
+# --- Named request-body shapes (REST v2) ---------------------------------------
+# Leaf builders for the API object shapes that were previously hand-rolled as
+# inline `jq -nc` in command files. Keeping them here routes every request body
+# through one seam and makes each shape unit-testable in isolation.
+
+# Pod GPU: {id, count}.
+rp::json_gpu_pod() { rp::json_obj id "$(rp::json_str "$1")" count "$2"; }
+
+# Serverless GPU: {pools:[...], count}.
+rp::json_gpu_endpoint() {
+  rp::json_obj pools "$(rp::csv_to_jsonarray "$1")" count "$2"
+}
+
+# Worker scaling: {min, max}, omitting any empty field.
+rp::json_workers() {
+  local obj='{}'
+  rp::obj_set obj min "$1"
+  rp::obj_set obj max "$2"
+  printf '%s' "$obj"
+}
+
+# Pod network-volume mount: [{volumeId, path:/workspace}].
+rp::json_nv_mount() {
+  jq -nc --arg v "$1" '[{volumeId:$v, path:"/workspace"}]'
+}
+
+# Persistent container mount: {persistent:{size, path:/workspace}}.
+rp::json_persistent_mount() {
+  rp::json_obj persistent "$(rp::json_obj size "$1" path "$(rp::json_str /workspace)")"
 }

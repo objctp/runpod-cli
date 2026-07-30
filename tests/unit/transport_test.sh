@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+RP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+function set_up_before_script() {
+  local _opts
+  _opts=$(shopt -po errexit nounset pipefail 2>/dev/null || true)
+  unset _RP_TRANSPORT _RP_GRAPHQL _RP_HTTP
+  source "$RP_ROOT/lib/common.sh"
+  source "$RP_ROOT/lib/transport.sh"
+  source "$RP_ROOT/lib/http.sh"
+  source "$RP_ROOT/lib/graphql.sh"
+  eval "$_opts"
+}
+
+function set_up() {
+  RUNPOD_API_KEY="sk-test"
+  RP_REST_BASE="https://rest.test/v2"
+  RP_API_BASE="https://api.test/v2"
+  RP_GRAPHQL_URL="https://gql.test/graphql"
+  GQL_STATUS=200
+  GQL_BODY='{"data":{"ok":true}}'
+  GQL_ARGS_CAPTURE="$(mktemp)"
+  curl() {
+    printf '%s\n' "$*" >>"$GQL_ARGS_CAPTURE"
+    local out=""
+    while (($#)); do
+      case "$1" in
+      -o)
+        out="$2"
+        shift 2
+        ;;
+      *) shift ;;
+      esac
+    done
+    [[ -n "$out" ]] && printf '%s' "${GQL_BODY:-}" >"$out"
+    printf '%s' "${GQL_STATUS:-200}"
+  }
+}
+
+function tear_down() {
+  rm -f "$GQL_ARGS_CAPTURE"
+  unset -f curl
+}
+
+function test_should_resolve_rest_plane_to_rest_base() {
+  rp::http GET /pods >/dev/null 2>&1
+  assert_contains "https://rest.test/v2/pods" "$(<"$GQL_ARGS_CAPTURE")"
+}
+
+function test_should_resolve_api_plane_to_api_base_with_300s_timeout() {
+  rp::http_api POST "/x/runsync" >/dev/null 2>&1
+  local captured
+  captured="$(<"$GQL_ARGS_CAPTURE")"
+  assert_contains "https://api.test/v2/x/runsync" "$captured"
+  assert_contains "--max-time 300" "$captured"
+}
+
+function test_should_resolve_graphql_plane_to_graphql_url() {
+  rp::graphql 'query { x }' >/dev/null 2>&1
+  local captured
+  captured="$(<"$GQL_ARGS_CAPTURE")"
+  assert_contains "https://gql.test/graphql" "$captured"
+  assert_contains "-X POST" "$captured"
+}
+
+function test_should_die_on_unknown_plane() {
+  (rp::api_call bogus GET /x >/dev/null 2>&1)
+  assert_exit_code 1
+}
+
+function test_should_die_on_http_400_hard() {
+  GQL_STATUS=400
+  (rp::http GET /pods >/dev/null 2>&1)
+  assert_exit_code 1
+}
+
+function test_should_return_1_on_http_400_soft() {
+  GQL_STATUS=400
+  rp::graphql_soft 'query { x }' >/dev/null 2>&1
+  assert_general_error "$?"
+}

@@ -35,21 +35,21 @@ function test_hub_get_returns_listing_with_image_and_config() {
 }
 
 function test_gpu_type_to_pool_maps_type_name_to_pool_id() {
-  rp::graphql() { printf '{"serverlessGpuPools":[{"id":"AMPERE_80","gpuTypeIds":["NVIDIA A100 80GB PCIe","NVIDIA A100-SXM4-80GB"]}]}'; }
+  rp::http() { printf '{"gpus":[{"id":"NVIDIA A100 80GB PCIe","pool":"AMPERE_80"},{"id":"NVIDIA A100-SXM4-80GB","pool":"AMPERE_80"}]}'; }
   _RP_GPU_POOLS="" # bypass the process cache
   local pools
   pools="$(rp::gpu_type_to_pool_csv "NVIDIA A100 80GB PCIe")"
   assert_equals "AMPERE_80" "$pools"
-  rp::graphql() { :; }
+  rp::http() { :; }
 }
 
 function test_gpu_type_to_pool_returns_empty_for_unknown_type() {
-  rp::graphql() { printf '{"serverlessGpuPools":[{"id":"AMPERE_80","gpuTypeIds":["NVIDIA A100 80GB PCIe"]}]}'; }
+  rp::http() { printf '{"gpus":[{"id":"NVIDIA A100 80GB PCIe","pool":"AMPERE_80"}]}'; }
   _RP_GPU_POOLS=""
   local pools
   pools="$(rp::gpu_type_to_pool_csv "NVIDIA Bogus 9000")"
   assert_empty "$pools"
-  rp::graphql() { :; }
+  rp::http() { :; }
 }
 
 # main-shell variants (bashunit skips lines run inside $(...)) so the public hub
@@ -57,16 +57,25 @@ function test_gpu_type_to_pool_returns_empty_for_unknown_type() {
 function test_should_resolve_pool_main_shell() {
   local tmp
   tmp="$(mktemp)"
-  rp::graphql() { printf '{"serverlessGpuPools":[{"id":"AMPERE_80","gpuTypeIds":["NVIDIA A100 80GB PCIe"]}]}'; }
+  rp::http() { printf '{"gpus":[{"id":"NVIDIA A100 80GB PCIe","pool":"AMPERE_80"}]}'; }
   _RP_GPU_POOLS=""
   rp::gpu_type_to_pool_csv "NVIDIA A100 80GB PCIe" >"$tmp"
   assert_equals "AMPERE_80" "$(<"$tmp")"
+  rp::http() { :; }
   rm -f "$tmp"
 }
 
 function test_should_return_empty_for_empty_input() {
   rp::gpu_type_to_pool_csv ""
   assert_successful_code "$?"
+}
+
+function test_should_return_empty_for_empty_input_main_shell() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::gpu_type_to_pool_csv "" >"$tmp"
+  assert_empty "$(<"$tmp")"
+  rm -f "$tmp"
 }
 
 function test_should_search_main_shell() {

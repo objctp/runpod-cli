@@ -6,15 +6,16 @@ function set_up_before_script() {
   _opts=$(shopt -po errexit nounset pipefail 2>/dev/null || true)
   # Earlier test files may have sourced lib/http.sh (setting its guard) and
   # overridden rp::http; drop the guard so the real function is (re)defined here.
-  unset _RP_HTTP
+  unset _RP_HTTP _RP_TRANSPORT
   source "$RP_ROOT/lib/common.sh"
+  source "$RP_ROOT/lib/transport.sh"
   source "$RP_ROOT/lib/http.sh"
   eval "$_opts"
 }
 
 function set_up() {
   RUNPOD_API_KEY="sk-test"
-  RP_REST_BASE="https://rest.runpod.io/v1"
+  RP_REST_BASE="https://api.runpod.io/v2"
   RP_API_BASE="https://api.runpod.ai/v2"
   OUT="$(mktemp)"
   HTTP_STATUS=200
@@ -125,7 +126,7 @@ function test_should_use_rest_base_and_default_timeout_when_http_called() {
   HTTP_BODY='{}'
   HTTP_META_CAPTURE="$meta"
   rp::http GET /pods >"$OUT"
-  assert_equals "https://rest.runpod.io/v1/pods 120" "$(<"$meta")"
+  assert_equals "https://api.runpod.io/v2/pods 120" "$(<"$meta")"
   rm -f "$meta"
 }
 

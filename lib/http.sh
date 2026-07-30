@@ -1,64 +1,53 @@
 #!/usr/bin/env bash
-# RunPod HTTP clients — the curl wrappers every command module routes through:
-# rp::http for the control plane (REST), rp::http_api for the serverless data
-# plane. Sourced by bin/rp; not executed directly.
+# RunPod HTTP clients — the control-plane (REST) and serverless data-plane
+# wrappers. Thin facades over rp::api_call in lib/transport.sh; all curl lives in
+# the shared transport module. Sourced by bin/rp; not executed directly.
+# shellcheck source=transport.sh
 [[ -n "${_RP_HTTP:-}" ]] && return 0
 _RP_HTTP=1
 
-# Shared curl core behind rp::http / rp::http_api.
-# Arguments:
-#   $1 - base URL (no trailing slash)
-#   $2 - HTTP method (GET|POST|PATCH|DELETE)
-#   $3 - path under the base (e.g. /pods, "/$id/runsync")
-#   $4 - optional JSON request body
-#   $5 - optional curl --max-time in seconds (default 120)
-# Returns:
-#   0 on 2xx/3xx (body to stdout); exits 1 via rp::die on transport error or
-#   HTTP >= 400.
-_http_request() {
-  local base="$1" method="$2" path="$3" json="${4:-}" max_time="${5:-120}"
-  rp::require_api_key
-  rp::require_cmd curl
-  # Bearer token and request body travel through temp files, not argv: argv is
-  # visible in `ps` for the curl call's lifetime, so -H/--data would leak the
-  # API key (and, on `rp registry create`, a registry password; on
-  # `rp endpoint run`, the job payload).
-  local hdr
-  _mktemp hdr
-  printf 'Authorization: Bearer %s\n' "$RUNPOD_API_KEY" >"$hdr"
-  local -a args=(-sSL --connect-timeout 15 --max-time "$max_time" -X "$method" -H @"$hdr" -H 'Content-Type: application/json')
-  local tmp body_tmp status body msg
-  _mktemp tmp
-  if [[ -n "$json" ]]; then
-    _mktemp body_tmp
-    printf '%s' "$json" >"$body_tmp"
-    args+=(--data @"$body_tmp")
-  fi
-  args+=("$base$path")
-  status="$(curl "${args[@]}" -o "$tmp" -w '%{http_code}')" || {
-    rm -f -- "$hdr" "$tmp" "${body_tmp:-}"
+# Emit the captured response: die on a curl transport failure or HTTP >= 400
+# (with the API's error message when present), otherwise print the body. $1 is the
+# temp file holding the response body; $2/$3 the method/path for messages.
+_rp_http_emit() {
+  local tmp="$1" method="$2" path="$3"
+  local status="$_RP_CURL_STATUS"
+  if ((status == 0)); then
+    rm -f -- "$tmp"
     rp::die "curl transport error: $method $path"
-  }
-  body="$(<"$tmp")"
-  rm -f -- "$hdr" "$tmp" "${body_tmp:-}"
+  fi
   if ((status >= 400)); then
-    msg="$(printf '%s' "$body" | jq -rc '.error // .message // .title // empty' 2>/dev/null || true)"
+    local msg
+    msg="$(jq -rc '.error // .message // .title // empty' "$tmp" 2>/dev/null || true)"
+    rm -f -- "$tmp"
     rp::die "RunPod $method $path -> HTTP $status${msg:+: $msg}"
   fi
-  printf '%s' "$body"
+  cat "$tmp"
+  rm -f -- "$tmp"
 }
 
 # Control-plane REST call under RP_REST_BASE.
-# Arguments: $1 method, $2 path (e.g. /pods, "/pods/$id"), $3 optional JSON body.
+# Arguments: $1 method, $2 path (e.g. /pods, "/pods/$id"), $3 optional JSON body,
+# $4 optional --max-time seconds (default 120).
 rp::http() {
-  _http_request "$RP_REST_BASE" "$1" "$2" "${3:-}"
+  rp::require_api_key
+  rp::require_cmd curl
+  local tmp
+  _mktemp tmp
+  rp::api_call rest "$1" "$2" "${3:-}" "${4:-120}" >"$tmp"
+  _rp_http_emit "$tmp" "$1" "$2"
 }
 
-# Data-plane call under RP_API_BASE (https://api.runpod.ai/v2 — job submission
-# to deployed serverless endpoints). runsync blocks until the job completes, so
-# the default --max-time is 300 s; $4 overrides it.
+# Data-plane call under RP_API_BASE (https://api.runpod.ai/v2 — job submission to
+# deployed serverless endpoints). runsync blocks until the job completes, so the
+# default --max-time is 300 s; $4 overrides it.
 # Arguments: $1 method, $2 path (e.g. "/$id/runsync"), $3 optional JSON body,
 # $4 optional --max-time seconds.
 rp::http_api() {
-  _http_request "$RP_API_BASE" "$1" "$2" "${3:-}" "${4:-300}"
+  rp::require_api_key
+  rp::require_cmd curl
+  local tmp
+  _mktemp tmp
+  rp::api_call api "$1" "$2" "${3:-}" "${4:-300}" >"$tmp"
+  _rp_http_emit "$tmp" "$1" "$2"
 }

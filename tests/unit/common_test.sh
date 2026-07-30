@@ -8,6 +8,8 @@ function set_up_before_script() {
   # lib/common.sh (setting its guard).
   unset _RP_COMMON
   source "$RP_ROOT/lib/common.sh"
+  # rp::emit_json_or reads the parsed flags via rp::args_has.
+  source "$RP_ROOT/lib/args.sh"
   eval "$_opts"
 }
 
@@ -127,6 +129,30 @@ function test_should_pass_when_core_tools_present() {
   assert_successful_code "$?"
 }
 
+# --- rp::emit_json_or ---
+
+function test_should_print_raw_json_when_json_flag_set() {
+  rp::args_parse --json
+  rp::emit_json_or '{"id":"p1"}' rp::table '{"id":"p1"}' id >"$OUT"
+  assert_equals '{"id":"p1"}' "$(<"$OUT")"
+}
+
+function test_should_run_formatter_when_json_flag_unset() {
+  rp::args_parse
+  rp::emit_json_or '[{"id":"a"}]' rp::table '[{"id":"a"}]' id >"$OUT"
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "id" "$rendered"
+  assert_contains "a" "$rendered"
+}
+
+function test_should_pass_formatter_args_verbatim_when_json_flag_unset() {
+  rp::args_parse
+  local err
+  err="$(rp::emit_json_or '{}' rp::ok "updated pod p1" 2>&1 >/dev/null)"
+  assert_equals "updated pod p1" "$err"
+}
+
 # --- rp::table ---
 
 function test_should_render_header_and_rows_when_table_given() {
@@ -150,6 +176,110 @@ function test_should_render_header_only_when_table_input_null() {
 function test_should_render_empty_cell_when_field_missing() {
   rp::table '[{"id":"a"}]' id name >"$OUT"
   assert_contains "a" "$(<"$OUT")"
+}
+
+# --- rp::table --reshape ---
+
+function test_should_reshape_nested_fields_when_reshape_given() {
+  rp::table '[{"id":"e1","name":"n","workers":{"min":1,"max":4},"scaling":{"idleTimeout":60}}]' \
+    --reshape 'map({id, name, workersMin:.workers.min, workersMax:.workers.max, idleTimeout:.scaling.idleTimeout})' \
+    id name workersMin workersMax idleTimeout >"$OUT"
+  local r
+  r="$(<"$OUT")"
+  assert_contains "workersMin" "$r"
+  assert_contains "1" "$r"
+  assert_contains "60" "$r"
+}
+
+function test_should_rename_and_coerce_columns_when_reshape_given() {
+  rp::table '[{"id":"g1","name":"RTX","memory":null,"price":{"secure":1.2},"availability":"AVAILABLE"}]' \
+    --reshape 'map({ID:.id, DISPLAY:.name, VRAM_GB:(.memory//0), SECURE_PRICE:(.price.secure//""), STOCK:(.availability//"")})' \
+    ID DISPLAY VRAM_GB SECURE_PRICE STOCK >"$OUT"
+  local r
+  r="$(<"$OUT")"
+  assert_contains "VRAM_GB" "$r"
+  assert_contains "0" "$r" # null memory coerced to 0
+  assert_contains "RTX" "$r"
+}
+
+function test_should_apply_boolean_and_sort_in_reshape() {
+  rp::table '{"dataCenters":[{"id":"EU-RO-1","s3apiEnabled":true},{"id":"CA-OR-1","s3apiEnabled":false}]}' \
+    --reshape '.dataCenters | map({DATACENTER:.id, S3_API:(if .s3apiEnabled then "yes" else "" end)}) | sort_by(.DATACENTER)' \
+    DATACENTER S3_API >"$OUT"
+  local r
+  r="$(<"$OUT")"
+  assert_contains "S3_API" "$r"
+  assert_contains "yes" "$r"
+  assert_contains "CA-OR-1" "$r"
+}
+
+function test_should_render_empty_table_when_null_input_and_reshape_given() {
+  rp::table 'null' --reshape 'map({id})' id >"$OUT"
+  local r
+  r="$(<"$OUT")"
+  assert_contains "id" "$r"
+  assert_line_count 1 "$r"
+}
+
+function test_should_fail_loudly_when_reshape_is_malformed() {
+  (rp::table '[{"id":"a"}]' --reshape 'map({id:)' id >/dev/null 2>&1)
+  assert_exit_code 1
+}
+
+# --- rp::unwrap ---
+
+function test_should_unwrap_named_array_when_body_is_wrapped() {
+  assert_equals '[{"id":"p1"}]' "$(rp::unwrap pods '{"pods":[{"id":"p1"}]}')"
+}
+
+function test_should_pass_through_when_body_is_array() {
+  assert_equals '[{"id":"p1"}]' "$(rp::unwrap pods '[{"id":"p1"}]')"
+}
+
+function test_should_pass_through_when_body_is_plain_object() {
+  assert_equals '{"id":"p1"}' "$(rp::unwrap pods '{"id":"p1"}')"
+}
+
+function test_should_pass_through_when_key_is_not_an_array() {
+  assert_equals '{"pods":"x"}' "$(rp::unwrap pods '{"pods":"x"}')"
+}
+
+function test_should_read_stdin_when_json_arg_omitted() {
+  assert_equals '[1,2]' "$(printf '%s' '{"gpus":[1,2]}' | rp::unwrap gpus)"
+}
+
+# main-shell variants (bashunit skips lines run inside $(...)) so rp::unwrap's
+# stdin branch and the elif/else jq arms register coverage.
+function test_should_unwrap_array_main_shell() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::unwrap gpus '[{"id":"p1"}]' >"$tmp"
+  assert_equals '[{"id":"p1"}]' "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
+function test_should_unwrap_wrapped_key_main_shell() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::unwrap gpus '{"gpus":[1,2]}' >"$tmp"
+  assert_equals '[1,2]' "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
+function test_should_unwrap_plain_object_main_shell() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::unwrap gpus '{"id":"p1"}' >"$tmp"
+  assert_equals '{"id":"p1"}' "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
+function test_should_unwrap_stdin_main_shell() {
+  local tmp
+  tmp="$(mktemp)"
+  printf '%s' '{"gpus":[1,2]}' | rp::unwrap gpus >"$tmp"
+  assert_equals '[1,2]' "$(<"$tmp")"
+  rm -f "$tmp"
 }
 
 # --- _warn_if_world_readable ---

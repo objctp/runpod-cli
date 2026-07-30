@@ -3,11 +3,14 @@
 _RP_HUB=1
 
 # serverlessGpuPools -> JSON [{id, gpuTypeIds}], cached for the process lifetime.
+# v2 source: GET /v2/catalog/gpus, which carries the `pool` id per GPU type. We
+# regroup by pool so the downstream type-name -> pool mapping is unchanged.
 _RP_GPU_POOLS=''
 
 _gpu_pools_json() {
   if [[ -z "$_RP_GPU_POOLS" ]]; then
-    _RP_GPU_POOLS="$(rp::graphql '{ serverlessGpuPools { id gpuTypeIds } }' | jq -c '.serverlessGpuPools')"
+    _RP_GPU_POOLS="$(rp::http GET /catalog/gpus | rp::unwrap gpus | jq -c '
+      group_by(.pool) | map({id: .[0].pool, gpuTypeIds: map(.id)})')"
   fi
   printf '%s' "$_RP_GPU_POOLS"
 }

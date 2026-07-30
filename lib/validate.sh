@@ -48,32 +48,15 @@ _s3_dcs() {
 
 # Live S3-enabled DC ids (one per line). Returns non-zero / empty on any failure
 # (transport, HTTP, or GraphQL errors) so _s3_dcs can fall back. Soft by
-# design — must NOT rp::die, unlike rp::graphql.
+# design — delegates to rp::graphql_soft, which owns the curl/transport seam and
+# never dies (unlike rp::graphql).
 _s3_dcs_live() {
-  [[ -n "${RUNPOD_API_KEY:-}" && -n "${RP_GRAPHQL_URL:-}" ]] || return 1
-  local payload hdr body_in tmp status body
-  payload="$(jq -c -n --arg q 'query { dataCenters { id s3apiEnabled } }' '{query:$q}')" || return 1
-  _mktemp hdr
-  _mktemp body_in
-  _mktemp tmp
-  printf 'Authorization: Bearer %s\n' "$RUNPOD_API_KEY" >"$hdr"
-  printf '%s' "$payload" >"$body_in"
-  # Content-Type must be application/json (not curl's form-urlencoded default) or
-  # Apollo rejects the POST as a potential CSRF request.
-  status="$(curl -sSL --connect-timeout 15 --max-time 120 -X POST \
-    -H @"$hdr" -H 'Content-Type: application/json' --data @"$body_in" \
-    -o "$tmp" -w '%{http_code}' "$RP_GRAPHQL_URL")" || {
-    rm -f -- "$hdr" "$body_in" "$tmp"
-    return 1
-  }
-  body="$(<"$tmp")"
-  rm -f -- "$hdr" "$body_in" "$tmp"
-  ((status >= 400)) && return 1
-  printf '%s' "$body" |
-    jq -re 'if .errors then empty else .data.dataCenters[]? | select(.s3apiEnabled == true) | .id end' 2>/dev/null
+  local data
+  data="$(rp::graphql_soft 'query { dataCenters { id s3apiEnabled } }')" || return 1
+  [[ -n "$data" ]] || return 1
+  printf '%s' "$data" |
+    jq -re '.dataCenters[]? | select(.s3apiEnabled == true) | .id' 2>/dev/null
 }
-
-_list_s3_dcs() { _s3_dcs; }
 
 rp::is_s3_dc() {
   _s3_dcs_ensure

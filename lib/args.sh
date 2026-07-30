@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Flag and positional parser. Every command calls rp::args_parse, then reads values via rp::args_get / _has / _pos / _get_uint.
+# Flag and positional parser. Every command calls rp::args_parse, then reads values via rp::args_get / _has / _pos / _get_uint / rp::require_pos.
 [[ -n "${_RP_ARGS:-}" ]] && return 0
 _RP_ARGS=1
 
@@ -65,6 +65,16 @@ rp::args_get() { printf '%s' "${RP_ARGS[$1]:-${2:-}}"; }
 rp::args_has() { [[ -n "${RP_ARGS[$1]:-}" ]]; }
 
 rp::args_pos() { printf '%s' "${RP_ARGS[pos]:-}"; }
+
+# Assign the positional to the variable named in $1 (nameref, like _mktemp),
+# or rp::usage with $2 when none was given. Runs in the main shell — not via
+# command substitution — so the exit fires even when the caller has errexit off.
+rp::require_pos() {
+  local -n require_pos_out="$1"
+  [[ -n "${RP_ARGS[pos]:-}" ]] || rp::usage "$2"
+  # shellcheck disable=SC2034 # nameref assignment lands in the caller's variable
+  require_pos_out="${RP_ARGS[pos]}"
+}
 
 # rp::args_get that rp::die's unless the value is a non-negative integer (or unset).
 rp::args_get_uint() {

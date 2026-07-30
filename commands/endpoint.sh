@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# `rp endpoint` — serverless endpoint CRUD plus Hub-listing deploy via GraphQL saveEndpoint.
+# `rp endpoint` — serverless endpoint CRUD plus Hub-listing deploy (saveEndpoint
+# replaced by POST /v2/serverless in API v2).
 RP_DEFAULT_GPUS=(
   "NVIDIA RTX 4000 Ada Generation"
   "NVIDIA GeForce RTX 4090"
@@ -8,50 +9,27 @@ RP_DEFAULT_GPUS=(
 )
 
 _endpoint_list() {
-  local body
-  body="$(rp::http GET /endpoints)"
-  if rp::args_has json; then
-    printf '%s\n' "$body"
-    return
-  fi
-  rp::table "$body" id name templateId workersMin workersMax idleTimeout
+  local body arr
+  body="$(rp::http GET /serverless)"
+  arr="$(rp::unwrap endpoints "$body")"
+  rp::emit_json_or "$arr" rp::table "$arr" \
+    --reshape 'map({id, name, workersMin:.workers.min, workersMax:.workers.max, idleTimeout:.scaling.idleTimeout})' \
+    id name workersMin workersMax idleTimeout
 }
 
-_endpoint_get() {
-  local id
-  id="$(rp::args_pos)"
-  [[ -n "$id" ]] || rp::usage "usage: rp endpoint get <id>"
-  local body
-  body="$(rp::http GET "/endpoints/$id")"
-  if rp::args_has json; then
-    printf '%s\n' "$body"
-    return
-  fi
-  printf '%s\n' "$body" | jq .
-}
-
-_endpoint_delete() {
-  local id
-  id="$(rp::args_pos)"
-  [[ -n "$id" ]] || rp::usage "usage: rp endpoint delete <id>"
-  rp::http DELETE "/endpoints/$id" >/dev/null
-  rp::ok "deleted endpoint $id"
-}
-
+# Resolve in-stock serverless GPU type ids for a volume's datacenter. v2 source:
+# GET /v2/catalog/gpus?include=AVAILABILITY&product=SERVERLESS.
 _resolve_gpus_from_volume() {
-  local name="$1" id dc
-  id="$(rp::lookup_id volume "$name")"
-  [[ -n "$id" ]] || rp::notfound "volume '$name' not found"
-  dc="$(rp::http GET "/networkvolumes/$id" | jq -r '.dataCenterId')"
+  local name="$1" dc
+  rp::volume_dc "$name"
+  dc="$RP_VOLUME_DC"
   rp::info "resolving in-stock GPUs for NV '$name' (dc=$dc; stock is account-wide)"
-  local q='query { gpuTypes { id lowestPrice { stockStatus } } }'
   local wantjson
   wantjson="$(printf '%s\n' "${RP_DEFAULT_GPUS[@]}" | jq -R . | jq -sc .)"
-  rp::graphql "$q" | jq -r --argjson want "$wantjson" '
-    .gpuTypes
-      | map(select(.lowestPrice.stockStatus != null and .lowestPrice.stockStatus != "None"))
-      | map(select(.id as $id | $want | index($id)))
-      | map(.id) | .[]'
+  rp::http GET '/catalog/gpus?include=AVAILABILITY&product=SERVERLESS' | rp::unwrap gpus | jq -r --argjson want "$wantjson" '
+    map(select(.availability != null and .availability != "NONE"))
+    | map(select(.id as $id | $want | index($id)))
+    | map(.id) | .[]'
 }
 
 _endpoint_create() {
@@ -59,7 +37,7 @@ _endpoint_create() {
   name="$(rp::args_get name)"
   if [[ -n "$name" ]] && ! rp::args_has force; then
     local existing
-    existing="$(rp::lookup_id endpoint "$name")"
+    existing="$(rp::resource_id endpoint "$name")"
     if [[ -n "$existing" ]]; then
       rp::ok "endpoint '$name' exists: $existing"
       printf '%s\n' "$existing"
@@ -75,62 +53,106 @@ _endpoint_create() {
   fi
   local template
   template="$(rp::args_get template)"
-  [[ -n "$template" ]] || rp::usage "usage: rp endpoint create --template <id> [--name <n>] [--force] … (see: rp endpoint --help; idempotent by name)"
-  local obj='{}'
-  rp::obj_set obj templateId "$(rp::json_str "$template")"
-  rp::obj_set obj name "$(rp::json_str "$(rp::args_get name)")"
-  rp::obj_set obj computeType "$(rp::json_str "$(rp::args_get compute-type GPU)")"
-  local nvid nvname gpusfrom gpu
+  [[ -n "$template" ]] || rp::usage "usage: rp endpoint create --template <id> [--name <n>] [--gpu <type,..>] [--force] … (see: rp endpoint --help; idempotent by name)"
+
+  # v2 has no templateId param: spread the template's container config, then add
+  # the endpoint-specific fields that the template does not carry (gpu, scaling…).
+  local obj
+  obj="$(rp::http GET "/templates/$template")"
+  obj="$(printf '%s' "$obj" | jq -c '{image, args, disk, ports, env, registry} | with_entries(select(.value != null))')"
+
+  if [[ -n "$name" ]]; then
+    rp::obj_set obj name "$(rp::json_str "$name")"
+  fi
+
+  local nvid nvname gpusfrom gpu poolcsv=''
   nvid="$(rp::args_get network-volume-id)"
   nvname="$(rp::args_get network-volume)"
   gpusfrom="$(rp::args_get gpus-from-volume)"
   gpu="$(rp::args_get gpu)"
+  local dc=''
   if [[ -n "$nvname" && -z "$nvid" ]]; then
-    nvid="$(rp::lookup_id volume "$nvname")"
-    [[ -n "$nvid" ]] || rp::notfound "network volume '$nvname' not found"
+    rp::volume_dc "$nvname"
+    nvid="$RP_VOLUME_ID"
+    dc="$RP_VOLUME_DC"
+  elif [[ -n "$nvid" ]]; then
+    rp::volume_dc_id "$nvid"
+    dc="$RP_VOLUME_DC"
   fi
-  if [[ -n "$nvid" ]]; then
-    rp::obj_set obj networkVolumeId "$(rp::json_str "$nvid")"
-    local dc
-    dc="$(rp::http GET "/networkvolumes/$nvid" | jq -r '.dataCenterId')"
+  if [[ -n "$dc" ]]; then
     rp::obj_set obj dataCenterIds "$(rp::json_array "$dc")"
     rp::info "endpoint scoped to NV datacenter: $dc"
     [[ -n "$gpusfrom" ]] && gpu="$(_resolve_gpus_from_volume "$gpusfrom" | paste -sd, -)"
   fi
   if [[ -n "$gpu" ]]; then
-    rp::obj_set obj gpuTypeIds "$(rp::csv_to_jsonarray "$gpu")"
+    poolcsv="$(rp::gpu_type_to_pool_csv "$gpu")"
+    [[ -n "$poolcsv" ]] || rp::usage "could not map GPU types to serverless pool ids: $gpu"
   fi
-  rp::obj_set obj gpuCount "$(rp::args_get_uint gpu-count)"
-  rp::obj_set obj workersMin "$(rp::args_get_uint workers-min)"
-  rp::obj_set obj workersMax "$(rp::args_get_uint workers-max)"
-  rp::obj_set obj idleTimeout "$(rp::args_get_uint idle)"
-  rp::obj_set obj scalerType "$(rp::json_str "$(rp::args_get scaler-type)")"
-  rp::obj_set obj scalerValue "$(rp::args_get scaler-value)"
-  rp::args_has flashboot && rp::obj_set obj flashboot true
-  local mincuda execto nvids envcfg
+  if [[ -z "$poolcsv" ]]; then
+    rp::usage "rp endpoint create requires --gpu <type,..> (or --gpus-from-volume) in API v2"
+  fi
+  local count
+  count="$(rp::args_get gpu-count 1)"
+  rp::require_uint "$count" gpu-count
+  rp::obj_set obj gpu "$(rp::json_gpu_endpoint "$poolcsv" "$count")"
+
+  local wmin wmax
+  wmin="$(rp::args_get workers-min)"
+  rp::require_uint "$wmin" workers-min
+  wmax="$(rp::args_get workers-max)"
+  rp::require_uint "$wmax" workers-max
+  if [[ -n "$wmin" || -n "$wmax" ]]; then
+    rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax")"
+  fi
+
+  local stype sval idle
+  stype="$(rp::args_get scaler-type)"
+  sval="$(rp::args_get scaler-value)"
+  idle="$(rp::args_get idle)"
+  rp::require_uint "$idle" idle
+  if [[ -n "$stype" || -n "$sval" || -n "$idle" ]]; then
+    local scaling='{}'
+    [[ -n "$stype" ]] && rp::obj_set scaling type "$(rp::json_str "$stype")"
+    [[ -n "$sval" ]] && rp::obj_set scaling value "$sval"
+    [[ -n "$idle" ]] && rp::obj_set scaling idleTimeout "$idle"
+    rp::obj_set obj scaling "$scaling"
+  fi
+
+  # FlashBoot enum is OFF|FLASHBOOT|PRIORITY_FLASHBOOT in v2 ("ON" is rejected).
+  rp::args_has flashboot && rp::obj_set obj flashboot "$(rp::json_str FLASHBOOT)"
+
+  local mincuda execto
   mincuda="$(rp::args_get min-cuda-version)"
-  [[ -n "$mincuda" ]] && rp::obj_set obj minCudaVersion "$(rp::json_str "$mincuda")"
-  execto="$(rp::args_get_uint execution-timeout)"
-  [[ -n "$execto" ]] && rp::obj_set obj executionTimeoutMs "$((execto * 1000))"
-  nvids="$(rp::args_get network-volume-ids)"
-  [[ -n "$nvids" ]] && rp::obj_set obj networkVolumeIds "$(rp::csv_to_jsonarray "$nvids")"
+  if [[ -n "$mincuda" ]]; then
+    rp::warn "note: --min-cuda-version has no v2 equivalent on create and was ignored (v2 keeps it only as a /catalog/gpus filter)"
+  fi
+  execto="$(rp::args_get execution-timeout)"
+  rp::require_uint "$execto" execution-timeout
+  [[ -n "$execto" ]] && rp::obj_set obj timeout "$((execto * 1000))"
+
+  local -a nv_arr=()
+  [[ -n "$nvid" ]] && nv_arr+=("$nvid")
+  if [[ -n "$(rp::args_get network-volume-ids)" ]]; then
+    while IFS= read -r x; do [[ -n "$x" ]] && nv_arr+=("$x"); done < <(rp::split_csv "$(rp::args_get network-volume-ids)")
+  fi
+  if ((${#nv_arr[@]} > 0)); then
+    local nvjson
+    nvjson="$(printf '%s\n' "${nv_arr[@]}" | jq -R . | jq -sc .)"
+    rp::obj_set obj networkVolumes "$nvjson"
+  fi
+
+  local envcfg
   envcfg="$(rp::args_get env)"
   if [[ -n "$envcfg" ]]; then
-    [[ -n "$template" ]] && rp::warn "note: --env is ignored when --template is set (bake env into the template instead)"
-    rp::obj_set obj env "$(rp::env_to_json "$envcfg")"
+    rp::warn "note: --env is ignored with --template (the template carries the container env; use --hub-id to set env)"
   fi
-  local res newid
-  res="$(rp::http POST /endpoints "$obj")"
-  newid="$(printf '%s' "$res" | jq -r '.id')"
-  rp::ok "created endpoint: $newid"
-  printf '%s\n' "$newid"
+
+  rp::resource_create endpoint "" "$obj"
 }
 
-# Deploy straight from a Hub listing via GraphQL saveEndpoint (runpodctl parity).
-# EndpointInput mapping mirrors runpodctl's EndpointCreateGQLInput: gpuIds are
-# comma-joined POOL ids (not type names), env lives on the inline template.
-# NOTE: this is a write path that creates a real endpoint — in production it
-# always runs live; only the unit tests gate it (they mock rp::graphql).
+# Deploy straight from a Hub listing. The listing is still fetched via GraphQL
+# (Hub has no API v2 endpoint), but the endpoint is created with POST /v2/serverless
+# using GPU pool ids (saveEndpoint is gone in v2).
 _endpoint_create_hub() {
   local hubid="$1"
   local listing image cfg
@@ -143,7 +165,6 @@ _endpoint_create_hub() {
   name="$(rp::args_get name)"
   [[ -n "$name" ]] || rp::usage "--hub-id requires --name"
 
-  # GPUs: user type names -> pool ids, else the listing config defaults (already pools)
   local gpusfrom gpu poolcsv
   gpusfrom="$(rp::args_get gpus-from-volume)"
   gpu="$(rp::args_get gpu)"
@@ -159,103 +180,127 @@ _endpoint_create_hub() {
   fi
 
   local gpucount cdisk
-  gpucount="$(rp::args_get_uint gpu-count "$(printf '%s' "$cfg" | jq -r '.gpuCount // 1')")"
+  gpucount="$(rp::args_get gpu-count "$(printf '%s' "$cfg" | jq -r '.gpuCount // 1')")"
+  rp::require_uint "$gpucount" gpu-count
   cdisk="$(printf '%s' "$cfg" | jq -r '.containerDiskInGb // 20')"
 
-  # env: listing defaults, overridden by --env (repeatable). Required vars with no
-  # default must come from --env or the worker will fail to start.
+  # v2 ContainerConfig.env is an object map {K:"V"}, not [{key,value}].
   local envuser envjson
   envuser="$(rp::args_get env)"
   if [[ -n "$envuser" ]]; then
-    envjson="$(rp::env_to_json "$envuser" | jq -c 'to_entries | map({key:.key, value:.value})')"
+    envjson="$(rp::env_to_json "$envuser")"
   else
-    envjson="$(printf '%s' "$cfg" | jq -c '[(.env // [])[] | select(.input.default != null) | {key:.key, value:(.input.default|tostring)}]')"
+    envjson="$(printf '%s' "$cfg" | jq -c '(.env // []) | map(select(.input.default != null) | {(.key): (.input.default|tostring)}) | add // {}')"
   fi
 
-  # optional network volume -> scope to its datacentre (locations)
-  local nvid nvname dc
+  local nvid nvname dc=''
   nvid="$(rp::args_get network-volume-id)"
   nvname="$(rp::args_get network-volume)"
   if [[ -n "$nvname" && -z "$nvid" ]]; then
-    nvid="$(rp::lookup_id volume "$nvname")"
-    [[ -n "$nvid" ]] || rp::notfound "network volume '$nvname' not found"
+    rp::volume_dc "$nvname"
+    nvid="$RP_VOLUME_ID"
+    dc="$RP_VOLUME_DC"
+  elif [[ -n "$nvid" ]]; then
+    rp::volume_dc_id "$nvid"
+    dc="$RP_VOLUME_DC"
   fi
-  if [[ -n "$nvid" ]]; then
-    dc="$(rp::http GET "/networkvolumes/$nvid" | jq -r '.dataCenterId')"
-    rp::info "hub endpoint scoped to NV datacentre: $dc"
+  if [[ -n "$dc" ]]; then
+    rp::info "hub endpoint scoped to NV datacenter: $dc"
   fi
 
-  local input vars res newid
-  input="$(jq -c -n \
-    --arg name "$name" \
-    --arg hubid "$hubid" \
-    --arg image "$image" \
-    --argjson cdisk "$cdisk" \
-    --argjson env "$envjson" \
-    --arg gpuIds "$poolcsv" \
-    --argjson gpuCount "$gpucount" \
-    --argjson workersMin "$(rp::args_get_uint workers-min 0)" \
-    --argjson workersMax "$(rp::args_get_uint workers-max 0)" \
-    --arg nv "$nvid" \
-    --arg loc "$dc" \
-    '{
-      name:$name, hubReleaseId:$hubid,
-      template:{name:$name, imageName:$image, containerDiskInGb:$cdisk, dockerArgs:"", env:$env},
-      gpuIds:$gpuIds, gpuCount:$gpuCount, workersMin:$workersMin, workersMax:$workersMax
-    } + (if ($nv|length)>0 then {networkVolumeId:$nv, locations:$loc} else {} end)')"
-  vars="$(jq -c -n --argjson i "$input" '{input:$i}')"
-  res="$(rp::graphql 'mutation($input:EndpointInput!){ saveEndpoint(input:$input){ id name } }' "$vars")"
-  newid="$(printf '%s' "$res" | jq -r '.saveEndpoint.id')"
-  [[ -n "$newid" && "$newid" != "null" ]] || rp::die "saveEndpoint returned no id: $res"
+  local hwmin hwmax
+  hwmin="$(rp::args_get workers-min 0)"
+  rp::require_uint "$hwmin" workers-min
+  hwmax="$(rp::args_get workers-max 0)"
+  rp::require_uint "$hwmax" workers-max
+  local body
+  body="$(rp::json_obj \
+    name "$(rp::json_str "$name")" \
+    image "$(rp::json_str "$image")" \
+    disk "$cdisk" \
+    env "$envjson" \
+    gpu "$(rp::json_gpu_endpoint "$poolcsv" "$gpucount")" \
+    workers "$(rp::json_workers "$hwmin" "$hwmax")")"
+  if [[ -n "$nvid" ]]; then
+    body="$(_json_merge "$body" "$(rp::json_obj networkVolumes "$(rp::json_array "$nvid")" dataCenterIds "$(rp::json_array "$dc")")")"
+  fi
+  local res newid
+  res="$(rp::http POST /serverless "$body")"
+  rp::extract_id newid "$res" endpoint
   rp::ok "created endpoint from hub listing $hubid: $newid"
   printf '%s\n' "$newid"
 }
 
 _endpoint_scale() {
   local id
-  id="$(rp::args_pos)"
-  [[ -n "$id" ]] || rp::usage "usage: rp endpoint scale <id> --min N --max N [--idle S]"
-  local obj='{}'
-  rp::obj_set obj workersMin "$(rp::args_get_uint min)"
-  rp::obj_set obj workersMax "$(rp::args_get_uint max)"
-  rp::obj_set obj idleTimeout "$(rp::args_get_uint idle)"
-  local res
-  res="$(rp::http PATCH "/endpoints/$id" "$obj")"
-  if rp::args_has json; then
-    printf '%s\n' "$res"
-    return
+  rp::require_pos id "usage: rp endpoint scale <id> --min N --max N [--idle S]"
+  local obj='{}' wmin wmax idle
+  wmin="$(rp::args_get min)"
+  rp::require_uint "$wmin" min
+  wmax="$(rp::args_get max)"
+  rp::require_uint "$wmax" max
+  idle="$(rp::args_get idle)"
+  rp::require_uint "$idle" idle
+  if [[ -n "$wmin" || -n "$wmax" ]]; then
+    rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax")"
   fi
-  rp::ok "scaled endpoint $id"
+  [[ -n "$idle" ]] && rp::obj_set obj scaling "$(rp::json_obj idleTimeout "$idle")"
+  [[ "$obj" != '{}' ]] || rp::usage "nothing to scale (pass --min/--max/--idle)"
+  local res
+  res="$(rp::http PATCH "/serverless/$id" "$obj")"
+  rp::emit_json_or "$res" rp::ok "scaled endpoint $id"
 }
 
 _endpoint_update() {
   local id
-  id="$(rp::args_pos)"
-  [[ -n "$id" ]] || rp::usage "usage: rp endpoint update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>]"
+  rp::require_pos id "usage: rp endpoint update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>]"
   local obj='{}' gpu
-  rp::obj_set obj workersMin "$(rp::args_get_uint workers-min)"
-  rp::obj_set obj workersMax "$(rp::args_get_uint workers-max)"
-  rp::obj_set obj idleTimeout "$(rp::args_get_uint idle)"
+  local wmin wmax idle
+  wmin="$(rp::args_get workers-min)"
+  rp::require_uint "$wmin" workers-min
+  wmax="$(rp::args_get workers-max)"
+  rp::require_uint "$wmax" workers-max
+  idle="$(rp::args_get idle)"
+  rp::require_uint "$idle" idle
+  if [[ -n "$wmin" || -n "$wmax" ]]; then
+    rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax")"
+  fi
+  [[ -n "$idle" ]] && rp::obj_set obj scaling "$(rp::json_obj idleTimeout "$idle")"
   gpu="$(rp::args_get gpu)"
-  [[ -n "$gpu" ]] && rp::obj_set obj gpuTypeIds "$(rp::csv_to_jsonarray "$gpu")"
+  if [[ -n "$gpu" ]]; then
+    local poolcsv
+    poolcsv="$(rp::gpu_type_to_pool_csv "$gpu")"
+    local count
+    count="$(rp::args_get gpu-count 1)"
+    rp::require_uint "$count" gpu-count
+    rp::obj_set obj gpu "$(rp::json_gpu_endpoint "$poolcsv" "$count")"
+  fi
   [[ "$obj" != '{}' ]] || rp::usage "nothing to update"
   local res
-  res="$(rp::http PATCH "/endpoints/$id" "$obj")"
-  if rp::args_has json; then
-    printf '%s\n' "$res"
-    return
-  fi
-  rp::ok "updated endpoint $id"
+  res="$(rp::http PATCH "/serverless/$id" "$obj")"
+  rp::emit_json_or "$res" rp::ok "updated endpoint $id"
 }
 
 # Submit a job to a deployed endpoint on the data plane (RP_API_BASE). Default
 # is /runsync, which blocks until the job completes; --async queues via /run
 # and prints the job id. The payload is wrapped through jq's stdin (never
 # argv/--argjson) so a base64-heavy --input-file body stays out of `ps`.
+_endpoint_run_human() {
+  local id="$1" body="$2"
+  if rp::args_has async; then
+    local jobid
+    jobid="$(printf '%s' "$body" | jq -r '.id // empty')"
+    [[ -n "$jobid" ]] || rp::die "run returned no job id: $body"
+    rp::ok "queued job on endpoint $id"
+    printf '%s\n' "$jobid"
+    return
+  fi
+  rp::json_pretty "$body"
+}
+
 _endpoint_run() {
   local id
-  id="$(rp::args_pos)"
-  [[ -n "$id" ]] || rp::usage "usage: rp endpoint run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]"
+  rp::require_pos id "usage: rp endpoint run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]"
   rp::args_has sync && rp::args_has async && rp::usage "--sync and --async are mutually exclusive"
   local input file
   input="$(rp::args_get input)"
@@ -274,22 +319,11 @@ _endpoint_run() {
   payload="$(printf '%s' "$input" | jq -c '{input: .}' 2>/dev/null)" || rp::usage "--input is not valid JSON"
   local route=runsync timeout
   rp::args_has async && route=run
-  timeout="$(rp::args_get_uint timeout 300)"
+  timeout="$(rp::args_get timeout 300)"
+  rp::require_uint "$timeout" timeout
   local body
   body="$(rp::http_api POST "/$id/$route" "$payload" "$timeout")"
-  if rp::args_has json; then
-    printf '%s\n' "$body"
-    return
-  fi
-  if rp::args_has async; then
-    local jobid
-    jobid="$(printf '%s' "$body" | jq -r '.id // empty')"
-    [[ -n "$jobid" ]] || rp::die "run returned no job id: $body"
-    rp::ok "queued job on endpoint $id"
-    printf '%s\n' "$jobid"
-    return
-  fi
-  printf '%s\n' "$body" | jq .
+  rp::emit_json_or "$body" _endpoint_run_human "$id" "$body"
 }
 
 rp::cmd_endpoint() {
@@ -300,24 +334,20 @@ rp::cmd_endpoint() {
   case "$verb" in
   create) _endpoint_create ;;
   list) _endpoint_list ;;
-  get) _endpoint_get ;;
+  get) rp::resource_get endpoint ;;
   update) _endpoint_update ;;
-  delete) _endpoint_delete ;;
+  delete) rp::resource_delete endpoint ;;
   scale) _endpoint_scale ;;
   run) _endpoint_run ;;
   -h | --help | help)
     cat <<'EOF'
 Usage: rp endpoint <verb> [flags]
-  create --template <id> [--name <n>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids <id,id>]
-         [--gpus-from-volume <name> | --gpu <id,id>] [--workers-min N] [--workers-max N]
-         [--idle S] [--gpu-count N] [--flashboot] [--scaler-type T] [--scaler-value V] [--compute-type T]
-         [--env K=V]… [--min-cuda-version <ver>] [--execution-timeout <s>] [--hub-id <listing-id>] [--force]
-         (idempotent by --name; --hub-id deploys from a Hub listing via GraphQL saveEndpoint)
-  list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>]
-  scale <id> --min N --max N [--idle S] | delete <id>
+  create --template <id> [--name <n>] [--gpu <type,..> | --gpus-from-volume <name>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids <id,id>]
+          [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot]
+          [--scaler-type T] [--scaler-value V] [--execution-timeout <s>] [--hub-id <listing-id>] [--force]
+          (idempotent by --name; --hub-id deploys from a Hub listing)
+  list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types>] | scale <id> --min N --max N [--idle S] | delete <id>
   run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]
-      (data plane: POSTs {"input": …} to api.runpod.ai/v2/<id>/runsync and waits, default
-       --timeout 300; --async queues via /v2/<id>/run and prints the job id)
 EOF
     ;;
   *) rp::usage "unknown endpoint verb: '$verb'" ;;

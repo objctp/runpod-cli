@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Shared runtime: coloured output helpers, distinct-code exiters, env/secret guards, temp-file cleanup, and the core-tool check. Sourced first by bin/rp.
+# Shared runtime: coloured output helpers, verb output policy (rp::emit_json_or), distinct-code exiters, env/secret guards, temp-file cleanup, and the core-tool check. Sourced first by bin/rp.
 [[ -n "${_RP_COMMON:-}" ]] && return 0
 _RP_COMMON=1
 
 RP_ROOT="${RP_ROOT:-$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)}"
-RP_REST_BASE="${RP_REST_BASE:-https://rest.runpod.io/v1}"
+# Control-plane REST API v2 (https://api.runpod.io/v2). Override to pin an
+# older base or a staging host. The job-submission data plane (RP_API_BASE) is
+# a different host (api.runpod.ai) and is already v2 — it is unchanged.
+RP_REST_BASE="${RP_REST_BASE:-https://api.runpod.io/v2}"
 RP_API_BASE="${RP_API_BASE:-https://api.runpod.ai/v2}"
 RP_GRAPHQL_URL="${RP_GRAPHQL_URL:-https://api.runpod.io/graphql}"
 
@@ -105,6 +108,18 @@ rp::require_cmd() {
   command -v "$1" >/dev/null 2>&1 || rp::usage "required command not found: $1"
 }
 
+# Extract the `id` field from a create/list response body, or die with a clear
+# error. $1 is the caller's variable name to receive the id (via nameref); $2 the
+# JSON body; $3 a label for the error (e.g. "endpoint"). Called in the main shell
+# so the rp::die exit propagates — unlike `$(rp::extract_id …)`, which would
+# swallow it inside a command substitution.
+rp::extract_id() {
+  local -n extract_id_out="$1"
+  local body="$2" label="$3"
+  extract_id_out="$(printf '%s' "$body" | jq -r '.id // empty')"
+  [[ -n "$extract_id_out" ]] || rp::die "$label create returned no id: $body"
+}
+
 # Die unless $1 is a non-negative integer (empty is allowed — means unset). $2
 # is the flag name for the message. Guards numeric flags so a typo yields a clear
 # error instead of an opaque jq/arithmetic failure downstream.
@@ -124,15 +139,60 @@ rp::check_core() {
   rp::usage "missing required commands: ${missing[*]} (install via your package manager)"
 }
 
+# Verb output policy: with --json print $1 verbatim (raw API JSON); otherwise
+# run the remaining args as the human-mode formatter command. Single-line human
+# paths inline their command (rp::ok / rp::table / rp::json_pretty); multi-line
+# formatters live in named _<cmd>_<verb>_human functions in the command module.
+rp::emit_json_or() {
+  local json="$1"
+  shift
+  if rp::args_has json; then
+    printf '%s\n' "$json"
+    return 0
+  fi
+  "$@"
+}
+
 # Render a JSON array (or object wrapping one) as a TSV table with a header row.
-# $1 is the JSON; the remaining args are the field names to extract in order;
+# $1 is the JSON; the remaining args are the column names to extract in order;
 # missing values render as empty. Used by list/search commands in human mode.
+#
+# Optional --reshape: a jq filter applied to the raw payload before tabling. It
+# must map the input into an array of objects keyed by the column names (which
+# double as the header labels), so callers can rename fields, nest (workers.min),
+# coerce (memory // 0), transform (boolean -> "yes"), or sort. The reshape runs
+# after a null guard, so a null payload yields an empty table; a malformed
+# reshape fails loudly (non-zero) rather than printing a blank table. Omitting
+# --reshape keeps the original field-name extraction, so existing callers are
+# untouched.
 rp::table() {
   local json="$1"
   shift
+  local reshape='.'
+  if [[ "$1" == "--reshape" ]]; then
+    reshape="$2"
+    shift 2
+  fi
+  local cols=("$@")
   local hdr
-  hdr="$(printf '\t%s' "$@")"
+  hdr="$(printf '\t%s' "${cols[@]}")"
   printf '%s\n' "${hdr#$'\t'}"
-  printf '%s' "$json" | jq -r --argjson fields "$(printf '%s\n' "$@" | jq -R . | jq -sc .)" \
+
+  local rows
+  rows="$(printf '%s' "$json" | jq -c 'if . == null then [] else . end' | jq -c "$reshape")" || return 1
+  printf '%s' "$rows" | jq -r --argjson fields "$(printf '%s\n' "${cols[@]}" | jq -R . | jq -sc .)" \
     '(if . == null then [] else . end) | .[] | [ $fields[] as $f | .[$f] // "" ] | @tsv'
+}
+
+# Unwrap a v2 list response that is wrapped in a single named array key
+# (e.g. {"pods":[...]} -> [...]). When $2 is omitted or "-", read the JSON from
+# stdin. Arrays and bare objects pass through unchanged, so single GET/POST/DELETE
+# responses (object or empty) are unaffected.
+rp::unwrap() {
+  local key="$1" json="${2:-}"
+  [[ -n "$json" && "$json" != "-" ]] || json="$(cat)"
+  printf '%s' "$json" | jq -c --arg k "$key" '
+    if type == "array" then .
+    elif type == "object" and (has($k) and (.[$k] | type) == "array") then .[$k]
+    else . end'
 }

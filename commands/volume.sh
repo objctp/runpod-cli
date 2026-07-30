@@ -10,88 +10,44 @@ _model_repo() {
   esac
 }
 
-_volume_list() {
-  local body
-  body="$(rp::http GET /networkvolumes)"
-  if rp::args_has json; then
-    printf '%s\n' "$body"
-    return
-  fi
-  rp::table "$body" id name size dataCenterId
-}
-
-_volume_get() {
-  local id
-  id="$(rp::args_pos)"
-  [[ -n "$id" ]] || rp::usage "usage: rp volume get <id>"
-  local body
-  body="$(rp::http GET "/networkvolumes/$id")"
-  if rp::args_has json; then
-    printf '%s\n' "$body"
-    return
-  fi
-  printf '%s\n' "$body" | jq .
-}
-
 _volume_create() {
   local name size dc
   name="$(rp::args_get name)"
-  size="$(rp::args_get_uint size)"
+  size="$(rp::args_get size)"
+  rp::require_uint "$size" size
   dc="$(rp::args_get dc)"
   [[ -n "$name" && -n "$size" && -n "$dc" ]] || rp::usage "usage: rp volume create --name <n> --size <gb> --dc <id>"
   rp::warn_unless_s3_dc "$dc"
-  if ! rp::args_has force; then
-    local existing
-    existing="$(rp::lookup_id volume "$name")"
-    if [[ -n "$existing" ]]; then
-      rp::ok "volume '$name' exists: $existing"
-      printf '%s\n' "$existing"
-      return 0
-    fi
-  fi
-  local body res newid
-  body="$(rp::json_obj name "$(rp::json_str "$name")" size "$size" dataCenterId "$(rp::json_str "$dc")")"
-  res="$(rp::http POST /networkvolumes "$body")"
-  newid="$(printf '%s' "$res" | jq -r '.id')"
-  rp::ok "created volume '$name': $newid ($dc, ${size}GB)"
-  printf '%s\n' "$newid"
+  local body
+  body="$(rp::json_obj name "$(rp::json_str "$name")" size "$size" dataCenter "$(rp::json_str "$dc")")"
+  rp::resource_create volume "$name" "$body" "$dc, ${size}GB"
 }
 
 _volume_update() {
   local id
-  id="$(rp::args_pos)"
-  [[ -n "$id" ]] || rp::usage "usage: rp volume update <id> [--name <n>] [--size <gb>]"
+  rp::require_pos id "usage: rp volume update <id> [--name <n>] [--size <gb>]"
   local obj='{}'
-  rp::obj_set obj name "$(rp::json_str "$(rp::args_get name)")"
-  rp::obj_set obj size "$(rp::args_get_uint size)"
+  local name size
+  name="$(rp::args_get name)"
+  if [[ -n "$name" ]]; then
+    rp::obj_set obj name "$(rp::json_str "$name")"
+  fi
+  size="$(rp::args_get size)"
+  rp::require_uint "$size" size
+  if [[ -n "$size" ]]; then
+    rp::obj_set obj size "$size"
+  fi
   [[ "$obj" != '{}' ]] || rp::usage "nothing to update (use --name or --size)"
   local res
-  res="$(rp::http PATCH "/networkvolumes/$id" "$obj")"
-  if rp::args_has json; then
-    printf '%s\n' "$res"
-    return
-  fi
-  rp::ok "updated volume $id"
-}
-
-_volume_delete() {
-  local id
-  id="$(rp::args_pos)"
-  [[ -n "$id" ]] || rp::usage "usage: rp volume delete <id>"
-  rp::http DELETE "/networkvolumes/$id" >/dev/null
-  rp::ok "deleted volume $id"
+  res="$(rp::http PATCH "/network-volumes/$id" "$obj")"
+  rp::emit_json_or "$res" rp::ok "updated volume $id"
 }
 
 _volume_sync() {
   local name
-  name="$(rp::args_pos)"
-  [[ -n "$name" ]] || rp::usage "usage: rp volume sync <name> [--source <dir> | --models glm,flash,deepseek] [--prefix models]"
-  local id
-  id="$(rp::lookup_id volume "$name")"
-  [[ -n "$id" ]] || rp::notfound "volume '$name' not found"
-  local rec dc
-  rec="$(rp::http GET "/networkvolumes/$id")"
-  dc="$(printf '%s' "$rec" | jq -r '.dataCenterId')"
+  rp::require_pos name "usage: rp volume sync <name> [--source <dir> | --models glm,flash,deepseek] [--prefix models]"
+  rp::volume_dc "$name"
+  local id="$RP_VOLUME_ID" dc="$RP_VOLUME_DC"
   rp::is_s3_dc "$dc" || rp::usage "volume's datacenter '$dc' is not S3-API supported (see: rp stock dc)"
   local prefix source models
   prefix="$(rp::args_get prefix models)"
@@ -113,7 +69,7 @@ _volume_sync() {
   mapfile -t ms < <(rp::split_csv "$models")
   local m repo
   for m in "${ms[@]}"; do
-    repo="$(_model_repo "$m")"
+    repo="$(_model_repo "$m")" || rp::usage "unknown model: $m (expected glm|flash|deepseek)"
     [[ -n "$repo" ]] || rp::usage "unknown model: $m (expected glm|flash|deepseek)"
     rp::info "fetching $m ($repo) -> $cache/$m"
     huggingface-cli download "$repo" --local-dir "$cache/$m"
@@ -124,40 +80,29 @@ _volume_sync() {
 }
 
 _volume_ls() {
-  local name id dc
-  name="$(rp::args_pos)"
-  [[ -n "$name" ]] || rp::usage "usage: rp volume ls <name> [--path <remote-path>]"
-  id="$(rp::lookup_id volume "$name")"
-  [[ -n "$id" ]] || rp::notfound "volume '$name' not found"
-  dc="$(rp::http GET "/networkvolumes/$id" | jq -r '.dataCenterId')"
-  rp::s3_ls "$id" "$dc" "$(rp::args_get path)"
+  local name
+  rp::require_pos name "usage: rp volume ls <name> [--path <remote-path>]"
+  rp::volume_dc "$name"
+  rp::s3_ls "$RP_VOLUME_ID" "$RP_VOLUME_DC" "$(rp::args_get path)"
 }
 
 _volume_gpus() {
-  local name id dc
-  name="$(rp::args_pos)"
-  [[ -n "$name" ]] || rp::usage "usage: rp volume gpus <name> [--gpu <id,id>]"
-  id="$(rp::lookup_id volume "$name")"
-  [[ -n "$id" ]] || rp::notfound "volume '$name' not found"
-  dc="$(rp::http GET "/networkvolumes/$id" | jq -r '.dataCenterId')"
-  rp::info "volume '$name' is in datacenter $dc (GraphQL stock is account-wide, not per-DC)"
-  local q='query { gpuTypes { id displayName memoryInGb lowestPrice { minimumBidPrice stockStatus } } }'
-  local data filter
-  data="$(rp::graphql "$q")"
+  local name
+  rp::require_pos name "usage: rp volume gpus <name> [--gpu <id,id>]"
+  rp::volume_dc "$name"
+  rp::info "volume '$name' is in datacenter $RP_VOLUME_DC (catalog stock is account-wide, not per-DC)"
+  local data
+  data="$(rp::http GET '/catalog/gpus?include=AVAILABILITY&product=POD,SERVERLESS' | rp::unwrap gpus)"
+  local filter
   filter="$(rp::args_get gpu)"
   if [[ -n "$filter" ]]; then
     local wantjson
     wantjson="$(rp::split_csv "$filter" | jq -R . | jq -sc .)"
-    data="$(printf '%s' "$data" | jq --argjson want "$wantjson" '.gpuTypes | map(select(.id as $id | $want | index($id)))')"
-  else
-    data="$(printf '%s' "$data" | jq '.gpuTypes')"
+    data="$(printf '%s' "$data" | jq --argjson want "$wantjson" 'map(select(.id as $id | $want | index($id)))')"
   fi
-  if rp::args_has json; then
-    printf '%s\n' "$data"
-    return
-  fi
-  printf '%s\t%s\t%s\t%s\n' "GPU" "VRAM_GB" "STOCK" "MIN_BID"
-  printf '%s' "$data" | jq -r '.[] | [.id, (.memoryInGb // 0), (.lowestPrice.stockStatus // ""), (.lowestPrice.minimumBidPrice // "")] | @tsv'
+  rp::emit_json_or "$data" rp::table "$data" \
+    --reshape 'map({GPU:.id, VRAM_GB:(.memory//0), STOCK:(.availability//""), SECURE_PRICE:(.price.secure//"")})' \
+    GPU VRAM_GB STOCK SECURE_PRICE
 }
 
 rp::cmd_volume() {
@@ -166,11 +111,11 @@ rp::cmd_volume() {
   rp::args_parse "$@"
   rp::args_has help && verb=help
   case "$verb" in
-  list) _volume_list ;;
-  get) _volume_get ;;
+  list) rp::resource_list volume id name size dataCenter ;;
+  get) rp::resource_get volume ;;
   create) _volume_create ;;
   update) _volume_update ;;
-  delete) _volume_delete ;;
+  delete) rp::resource_delete volume ;;
   sync) _volume_sync ;;
   ls) _volume_ls ;;
   gpus) _volume_gpus ;;

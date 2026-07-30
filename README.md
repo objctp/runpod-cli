@@ -2,9 +2,10 @@
 
 A small Bash CLI for managing RunPod infrastructure: network volumes, serverless
 endpoints, pods, templates, registries, billing, account balance, Hub listings,
-SSH keys, and live GPU stock. It speaks three RunPod APIs directly — REST for
-CRUD, GraphQL for stock/account/hub/ssh, and the S3-compatible API for filling
-volumes — so it covers the same ground as `runpodctl` for the work in this repo.
+SSH keys, and live GPU stock. It speaks three RunPod APIs directly — REST API v2
+for CRUD, GraphQL for account/hub/ssh/S3-datacentre stock, and the S3-compatible
+API for filling volumes — so it covers the same ground as `runpodctl` for the
+work in this repo.
 
 It exists to stand up a self-hosted OCR service on RunPod (GLM-OCR, Infinity-Parser2-Flash,
 DeepSeek-OCR-2 on serverless, scale-to-zero, behind a shared network volume). The
@@ -48,7 +49,7 @@ Confirm it works:
 
 ```bash
 rp version          # installed version
-rp _ping            # ok: REST auth works (https://rest.runpod.io/v1)
+rp _ping            # ok: REST auth works (https://api.runpod.io/v2)
 ```
 
 ## Configure
@@ -116,10 +117,10 @@ to any `list` / `get` command for raw API output.
 | Resource | Verbs |
 |---|---|
 | `volume` | `create --name --size --dc` · `list` · `get <id>` · `update <id>` · `delete <id>` · `sync <name> [--source <dir> \| --models a,b,c] [--prefix models]` · `ls <name>` · `gpus <name> [--gpu id,id]` |
-| `endpoint` | `create --template <id> [...] [--env K=V]… [--min-cuda-version <ver>] [--execution-timeout <s>] [--network-volume-ids id,id] [--hub-id <listing-id>] [--force]` · `list` · `get <id>` · `update <id>` · `scale <id> --min N --max N [--idle S]` · `delete <id>` · `run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>]` (`--hub-id` deploys from a Hub listing via GraphQL; `run` submits a job on the data plane — `api.runpod.ai/v2` — waiting via `/runsync` by default, or queuing via `/run` with `--async`) |
-| `pod` | `create --image <img> [...]` · `update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>] [--ports a/b] [--env K=V] [--start-cmd a,b]` · `list` · `get <id>` · `start \| stop \| reset \| restart <id>` · `delete <id>` |
+| `endpoint` | `create --template <id> --gpu <type,..> | --gpus-from-volume <name> [...] [--env K=V]… [--execution-timeout <s>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids id,id] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot] [--hub-id <listing-id>] [--force]` · `list` · `get <id>` · `update <id>` · `scale <id> --min N --max N [--idle S]` · `delete <id>` · `run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>]` (`--hub-id` deploys from a Hub listing — the listing is fetched via GraphQL, the endpoint created via REST v2; `run` submits a job on the data plane — `api.runpod.ai/v2` — waiting via `/runsync` by default, or queuing via `/run` with `--async`) |
+| `pod` | `create --image <img> [...]` · `update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>] [--ports a/b] [--env K=V] [--start-cmd a,b]` · `list` · `get <id>` · `start \| stop \| restart <id>` (`reset` is an alias for `restart`; v2 dropped it) · `delete <id>` |
 | `template` | `create --name --image [--serverless] [--docker-cmd a,b] [--env K=V]… [--ports a/b] [--volume-gb N] [--container-disk-gb N] [--force]` · `list` · `get <id>` · `search <name-substring>` · `delete <id>` |
-| `registry` | `create --name --server --username [--password <p>]` · `list` · `get <id>` · `delete <id>` |
+| `registry` | `create --name --username [--password <p>]` · `list` · `get <id>` · `delete <id>` |
 | `billing` | `pods` · `endpoints` · `volumes` |
 | `account` | `[info]` (balance + spend; GraphQL) |
 | `hub` | `search <query>` · `get <listing-id>` (GraphQL) |
@@ -135,9 +136,12 @@ to tear down).
 - **S3 fill needs an S3-API-supported datacentre** — `rp stock dc` reads the
   `s3apiEnabled` flag live, so its S3 column is always current; `rp volume create`
   warns if `--dc` is not S3-capable (and `volume sync` refuses).
-- **GraphQL stock is account-wide, not per-datacentre** — `rp volume gpus` and
+- **Catalog stock is account-wide, not per-datacentre** — `rp volume gpus` and
   `--gpus-from-volume` reflect global availability; the volume's own datacentre
   still gates whether provisioning actually succeeds.
+- **REST API v2 is beta** — the control plane defaults to
+  `https://api.runpod.io/v2`; pin a different base (or a staging host) with
+  `RP_REST_BASE`.
 - **`volume sync --models` is a double hop** (HuggingFace → local cache → S3).
   Fine for once-and-rarely fills; use `--source <dir>` for a single hop.
 - **Idempotent creates** — `create` returns the existing resource when the name

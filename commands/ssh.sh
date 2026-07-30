@@ -22,20 +22,21 @@ _ssh_fp() {
   ssh-keygen -lf - 2>/dev/null | awk '{print $2}'
 }
 
-_ssh_list_keys() {
-  local raw
-  raw="$(_ssh_pubkey_raw)"
-  if rp::args_has json; then
-    printf '%s\n' "$(printf '%s' "$raw" | jq -R -s 'split("\n")|map(select(length>0))')"
-    return
-  fi
+_ssh_list_keys_human() {
   printf '%s\t%s\t%s\n' "TYPE" "FINGERPRINT" "KEY"
   local fp line
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     fp="$(_ssh_fp <<<"$line")"
     printf '%s\t%s\t%s\n' "${line%% *}" "${fp:--}" "${line:0:64}"
-  done <<<"$raw"
+  done <<<"$1"
+}
+
+_ssh_list_keys() {
+  local raw keys_json
+  raw="$(_ssh_pubkey_raw)"
+  keys_json="$(printf '%s' "$raw" | jq -R -s 'split("\n")|map(select(length>0))')"
+  rp::emit_json_or "$keys_json" _ssh_list_keys_human "$raw"
 }
 
 _ssh_add_key() {
@@ -66,8 +67,7 @@ _ssh_add_key() {
 
 _ssh_remove_key() {
   local target
-  target="$(rp::args_pos)"
-  [[ -n "$target" ]] || rp::usage "usage: rp ssh remove-key <fingerprint|key>"
+  rp::require_pos target "usage: rp ssh remove-key <fingerprint|key>"
   local raw kept="" line fp matches=0
   raw="$(_ssh_pubkey_raw)"
   while IFS= read -r line; do
@@ -87,17 +87,8 @@ _ssh_remove_key() {
   rp::ok "removed key"
 }
 
-_ssh_info() {
-  local id
-  id="$(rp::args_pos)"
-  [[ -n "$id" ]] || rp::usage "usage: rp ssh info <pod-id>"
-  local body
-  body="$(rp::http GET "/pods/$id")"
-  if rp::args_has json; then
-    printf '%s\n' "$body"
-    return
-  fi
-  printf '%s' "$body" | jq -r '
+_ssh_info_human() {
+  printf '%s' "$1" | jq -r '
     . as $p
     | ($p.runtime.ports // []) as $ports
     | ($ports | map(select(.label == "ssh" or (.portType // .type // "") == "tcp"))) as $ssh
@@ -106,6 +97,14 @@ _ssh_info() {
       elif $p.runtime == null then "pod has no runtime (stopped?)"
       else "no ssh port labelled; runtime ports: \($ports | map({ip, publicPort, label}))"
       end'
+}
+
+_ssh_info() {
+  local id
+  rp::require_pos id "usage: rp ssh info <pod-id>"
+  local body
+  body="$(rp::http GET "/pods/$id")"
+  rp::emit_json_or "$body" _ssh_info_human "$body"
 }
 
 rp::cmd_ssh() {
@@ -120,8 +119,8 @@ rp::cmd_ssh() {
   info) _ssh_info ;;
   -h | --help | help)
     cat <<'EOF'
-Usage: rp ssh <verb>
-  list-keys                     list your registered public keys (GraphQL myself.pubKey)
+Usage: rp ssh <verb>   (keys via GraphQL — no API v2 endpoint yet)
+  list-keys                     list your registered public keys (myself.pubKey)
   add-key <file|->              add a public key (file path, or - / stdin)
   remove-key <fingerprint|key>  remove a key by SHA256 fingerprint or key substring
   info <pod-id>                 ssh connection line for a running pod

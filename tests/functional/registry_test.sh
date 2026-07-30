@@ -8,6 +8,7 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/http.sh"
   source "$RP_ROOT/lib/args.sh"
   source "$RP_ROOT/lib/json.sh"
+  source "$RP_ROOT/lib/resource.sh"
   source "$RP_ROOT/commands/registry.sh"
   eval "$_opts"
 }
@@ -26,14 +27,12 @@ function tear_down() {
 }
 
 function test_should_return_raw_array_when_list_json() {
-  rp::args_parse --json
-  _registry_list >"$OUT"
+  rp::cmd_registry list --json >"$OUT"
   assert_equals "$REGISTRY_BODY" "$(<"$OUT")"
 }
 
 function test_should_render_table_when_list_no_json() {
-  rp::args_parse
-  _registry_list >"$OUT" 2>/dev/null
+  rp::cmd_registry list >"$OUT" 2>/dev/null
   local rendered
   rendered="$(<"$OUT")"
   assert_contains "dockerhub" "$rendered"
@@ -41,20 +40,18 @@ function test_should_render_table_when_list_no_json() {
 }
 
 function test_should_exit_two_when_get_has_no_id() {
-  rp::args_parse
-  (_registry_get >/dev/null 2>&1)
+  (rp::cmd_registry get >/dev/null 2>&1)
   assert_exit_code 2
 }
 
 function test_should_return_body_when_get_given_id() {
   REGISTRY_BODY='{"id":"reg1","name":"dockerhub"}'
-  rp::args_parse reg1
-  _registry_get >"$OUT"
+  rp::cmd_registry get reg1 >"$OUT"
   assert_contains "dockerhub" "$(<"$OUT")"
 }
 
 function test_should_exit_two_when_create_missing_required_fields() {
-  rp::args_parse --server s --username u
+  rp::args_parse --username u
   (_registry_create >/dev/null 2>&1)
   assert_exit_code 2
 }
@@ -66,22 +63,20 @@ function test_should_post_body_and_print_id_when_create_given_all() {
     printf '%s' "${3:-}" >"$cap"
     printf '{"id":"reg9"}'
   }
-  rp::args_parse --name n --server s --username u --password p
+  rp::args_parse --name n --username u --password p
   local out
   out="$(_registry_create 2>/dev/null)"
   assert_equals "reg9" "$out"
   local rendered
   rendered="$(<"$cap")"
   assert_contains '"name":"n"' "$rendered"
-  assert_contains '"server":"s"' "$rendered"
   assert_contains '"username":"u"' "$rendered"
   assert_contains '"password":"p"' "$rendered"
   rm -f "$cap"
 }
 
 function test_should_exit_two_when_delete_has_no_id() {
-  rp::args_parse
-  (_registry_delete >/dev/null 2>&1)
+  (rp::cmd_registry delete >/dev/null 2>&1)
   assert_exit_code 2
 }
 
@@ -89,9 +84,8 @@ function test_should_call_delete_endpoint_when_delete_given_id() {
   local marker
   marker="$(mktemp)"
   rp::http() { printf '%s %s' "$1" "$2" >"$marker"; }
-  rp::args_parse reg1
-  _registry_delete >/dev/null 2>&1
-  assert_equals "DELETE /containerregistryauth/reg1" "$(<"$marker")"
+  rp::cmd_registry delete reg1 >/dev/null 2>&1
+  assert_equals "DELETE /registries/reg1" "$(<"$marker")"
   rm -f "$marker"
 }
 
@@ -106,16 +100,16 @@ function test_should_route_each_registry_verb() {
   cap="$(mktemp)"
   rp::http() {
     printf '%s %s\n' "$1" "$2" >"$cap"
-    if [[ "$1" == "GET" ]]; then printf '[]'; else printf '{}'; fi
+    if [[ "$1" == "GET" ]]; then printf '[]'; else printf '{"id":"reg1"}'; fi
   }
   rp::cmd_registry list >/dev/null 2>&1
-  assert_contains "GET /containerregistryauth" "$(<"$cap")"
+  assert_contains "GET /registries" "$(<"$cap")"
   rp::cmd_registry get reg1 >/dev/null 2>&1
-  assert_contains "GET /containerregistryauth/reg1" "$(<"$cap")"
-  rp::cmd_registry create --name n --server s --username u --password p >/dev/null 2>&1
-  assert_contains "POST /containerregistryauth" "$(<"$cap")"
+  assert_contains "GET /registries/reg1" "$(<"$cap")"
+  rp::cmd_registry create --name n --username u --password p >/dev/null 2>&1
+  assert_contains "POST /registries" "$(<"$cap")"
   rp::cmd_registry delete reg1 >/dev/null 2>&1
-  assert_contains "DELETE /containerregistryauth/reg1" "$(<"$cap")"
+  assert_contains "DELETE /registries/reg1" "$(<"$cap")"
   rm -f "$cap"
 }
 

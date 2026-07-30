@@ -9,7 +9,7 @@ S3-compatible API. The design context is in [PRD.md](PRD.md).
 
 ```
 bin/rp            entry point — loads .env, sources lib/, dispatches to commands/
-lib/              shared helpers (common, http, graphql, s3, args, json, validate, lookup)
+lib/              shared helpers (common, http, graphql, s3, args, json, validate, resource)
 commands/         one file per resource (volume, endpoint, pod, template, registry, billing, stock)
 tests/unit/       bashunit unit tests for lib helpers
 tests/functional/ bashunit functional tests for commands

@@ -9,7 +9,7 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/args.sh"
   source "$RP_ROOT/lib/json.sh"
   source "$RP_ROOT/lib/validate.sh"
-  source "$RP_ROOT/lib/lookup.sh"
+  source "$RP_ROOT/lib/resource.sh"
   source "$RP_ROOT/commands/pod.sh"
   _s3_dcs_live() { :; }
   eval "$_opts"
@@ -27,8 +27,8 @@ function test_should_patch_pod_when_resize_fields_given() {
   rp::args_parse pod1 --container-disk-gb 100 --volume-gb 200
   _pod_update >/dev/null 2>&1
   assert_equals "PATCH /pods/pod1" "$(cat "$meta")"
-  assert_equals "100" "$(jq -r '.containerDiskInGb' "$body")"
-  assert_equals "200" "$(jq -r '.volumeInGb' "$body")"
+  assert_equals "100" "$(jq -r '.disk' "$body")"
+  assert_equals "200" "$(jq -r '.mounts.persistent.size' "$body")"
   rp::http() { :; }
   rm -f "$meta" "$body"
 }
@@ -40,10 +40,11 @@ function test_should_send_env_and_ports_when_given() {
     printf '%s' "${3:-}" >"$body"
     printf '{}'
   }
-  rp::args_parse pod1 --ports 8080/http,22/tcp --env FOO=bar
+  rp::args_parse pod1 --ports 8080/http,22/tcp --env FOO=bar --start-cmd python,main.py
   _pod_update >/dev/null 2>&1
   assert_equals "bar" "$(jq -r '.env.FOO' "$body")"
   assert_equals "8080/http" "$(jq -r '.ports[0]' "$body")"
+  assert_equals "python main.py" "$(jq -r '.args' "$body")"
   rp::http() { :; }
   rm -f "$body"
 }
@@ -53,6 +54,23 @@ function test_should_die_when_pod_update_has_no_fields() {
   rp::args_parse pod1
   (_pod_update >/dev/null 2>&1)
   assert_exit_code 2
+}
+
+function test_should_post_action_body_when_lifecycle_verb_given() {
+  local meta body
+  meta="$(mktemp)"
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s %s' "$1" "$2" >"$meta"
+    printf '%s' "${3:-}" >"$body"
+    printf '{}'
+  }
+  rp::args_parse p1
+  _pod_simple stop >/dev/null 2>&1
+  assert_equals "POST /pods/p1/action" "$(cat "$meta")"
+  assert_equals "stop" "$(jq -r '.action' "$body")"
+  rp::http() { :; }
+  rm -f "$meta" "$body"
 }
 
 # main-shell dispatcher call so the public rp::cmd_pod entry registers coverage.
@@ -71,7 +89,7 @@ function test_should_route_each_pod_verb() {
   cap="$(mktemp)"
   rp::http() {
     printf '%s %s\n' "$1" "$2" >"$cap"
-    printf '{}'
+    if [[ "$1" == "GET" ]]; then printf '[]'; else printf '{"id":"p1"}'; fi
   }
   rp::cmd_pod list >/dev/null 2>&1
   assert_contains "GET /pods" "$(<"$cap")"
@@ -82,13 +100,13 @@ function test_should_route_each_pod_verb() {
   rp::cmd_pod update p1 --volume-gb 5 >/dev/null 2>&1
   assert_contains "PATCH /pods/p1" "$(<"$cap")"
   rp::cmd_pod start p1 >/dev/null 2>&1
-  assert_contains "POST /pods/p1/start" "$(<"$cap")"
+  assert_contains "POST /pods/p1/action" "$(<"$cap")"
   rp::cmd_pod stop p1 >/dev/null 2>&1
-  assert_contains "POST /pods/p1/stop" "$(<"$cap")"
+  assert_contains "POST /pods/p1/action" "$(<"$cap")"
   rp::cmd_pod reset p1 >/dev/null 2>&1
-  assert_contains "POST /pods/p1/reset" "$(<"$cap")"
+  assert_contains "POST /pods/p1/action" "$(<"$cap")"
   rp::cmd_pod restart p1 >/dev/null 2>&1
-  assert_contains "POST /pods/p1/restart" "$(<"$cap")"
+  assert_contains "POST /pods/p1/action" "$(<"$cap")"
   rp::cmd_pod delete p1 >/dev/null 2>&1
   assert_contains "DELETE /pods/p1" "$(<"$cap")"
   rm -f "$cap"

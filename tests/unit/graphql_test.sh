@@ -6,8 +6,9 @@ function set_up_before_script() {
   _opts=$(shopt -po errexit nounset pipefail 2>/dev/null || true)
   # Earlier test files may have sourced lib/graphql.sh (setting its guard) and
   # overridden rp::graphql; drop the guard so the real function is (re)defined.
-  unset _RP_GRAPHQL
+  unset _RP_GRAPHQL _RP_TRANSPORT
   source "$RP_ROOT/lib/common.sh"
+  source "$RP_ROOT/lib/transport.sh"
   source "$RP_ROOT/lib/graphql.sh"
   eval "$_opts"
 }

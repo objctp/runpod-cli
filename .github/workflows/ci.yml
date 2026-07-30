@@ -1,0 +1,37 @@
+name: ci
+
+# Lint + unit tests on both macOS and Linux. Running the suite on macOS exercises
+# the BSD branch (stat -f) in lib/common.sh:_warn_if_world_readable, while Linux
+# exercises the GNU branch (stat -c) — keeping the portability code live on CI.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install shell tooling
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            brew install shellcheck
+          else
+            sudo apt-get update && sudo apt-get install -y shellcheck
+          fi
+          npm install -g bashunit
+
+      - name: make lint (shellcheck)
+        run: make lint
+
+      - name: bashunit unit suite
+        run: bashunit tests/unit

@@ -22,6 +22,7 @@
   "keywords": [
     "runpod",
     "runpod-rest",
+    "runpod-api-v2",
     "runpod-graphql",
     "runpod-s3"
   ],

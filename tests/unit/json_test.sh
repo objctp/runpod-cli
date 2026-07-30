@@ -18,6 +18,10 @@ function test_should_escape_quotes_when_string_has_special_chars() {
   assert_equals '"a\"b"' "$(rp::json_str 'a"b')"
 }
 
+function test_should_pretty_print_when_json_pretty_called() {
+  assert_equals "$(printf '{\n  "a": 1\n}')" "$(rp::json_pretty '{"a":1}')"
+}
+
 function test_should_build_array_when_multiple_values_given() {
   assert_equals '["a","b"]' "$(rp::json_array "a" "b")"
 }
@@ -62,6 +66,44 @@ function test_should_build_jsonarray_when_csv_given() {
   assert_equals '["x","y"]' "$(rp::csv_to_jsonarray "x,y")"
 }
 
+# Named request-body shapes (C3).
+function test_should_build_pod_gpu_shape() {
+  assert_equals '{"id":"NVIDIA RTX 4090","count":1}' "$(rp::json_gpu_pod "NVIDIA RTX 4090" 1)"
+}
+
+function test_should_build_endpoint_gpu_shape() {
+  assert_equals '{"pools":["ADA_24","ADA_48"],"count":2}' "$(rp::json_gpu_endpoint "ADA_24,ADA_48" 2)"
+}
+
+function test_should_build_workers_shape_with_both_bounds() {
+  assert_equals '{"min":1,"max":10}' "$(rp::json_workers "1" "10")"
+}
+
+function test_should_build_workers_shape_with_max_only() {
+  assert_equals '{"max":10}' "$(rp::json_workers "" "10")"
+}
+
+function test_should_build_workers_shape_with_min_only() {
+  assert_equals '{"min":1}' "$(rp::json_workers "1" "")"
+}
+
+function test_should_build_nv_mount_shape() {
+  assert_equals '[{"volumeId":"vol_abc","path":"/workspace"}]' "$(rp::json_nv_mount "vol_abc")"
+}
+
+function test_should_build_persistent_mount_shape() {
+  assert_equals '{"persistent":{"size":20,"path":"/workspace"}}' "$(rp::json_persistent_mount "20")"
+}
+
+# v2 ContainerConfig.args is a single string, not an array.
+function test_should_join_csv_into_argstring() {
+  assert_equals 'python main.py --port 8080' "$(rp::csv_to_argstring "python,main.py,--port 8080")"
+}
+
+function test_should_pass_through_plain_string_in_argstring() {
+  assert_equals 'sleep infinity' "$(rp::csv_to_argstring "sleep infinity")"
+}
+
 # main-shell variants (bashunit skips lines run inside $(...)) so the public json
 # builders register coverage.
 function test_should_quote_string_main_shell() {
@@ -93,5 +135,21 @@ function test_should_build_jsonarray_main_shell() {
   tmp="$(mktemp)"
   rp::csv_to_jsonarray "x,y" >"$tmp"
   assert_equals '["x","y"]' "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
+function test_should_build_empty_array_main_shell() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::json_array >"$tmp"
+  assert_equals '[]' "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
+function test_should_join_csv_into_argstring_main_shell() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::csv_to_argstring "python,main.py,--port 8080" >"$tmp"
+  assert_equals 'python main.py --port 8080' "$(<"$tmp")"
   rm -f "$tmp"
 }

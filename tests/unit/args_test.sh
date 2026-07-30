@@ -51,6 +51,26 @@ function test_should_die_when_uint_value_invalid() {
   assert_exit_code 2
 }
 
+# main-shell variants (bashunit skips lines run inside $(...)) so rp::args_get_uint
+# registers coverage.
+function test_should_return_uint_main_shell_when_value_valid() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::args_parse --size 5
+  rp::args_get_uint size >"$tmp"
+  assert_equals "5" "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
+function test_should_return_default_uint_main_shell_when_flag_missing() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::args_parse
+  rp::args_get_uint size 0 >"$tmp"
+  assert_equals "0" "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
 function test_should_split_lines_when_csv_given() {
   assert_equals "$(printf 'a\nb\nc')" "$(rp::split_csv "a,b,c")"
 }
@@ -73,6 +93,32 @@ function test_should_keep_csv_form_for_repeatable_flag() {
 function test_should_overwrite_when_non_repeatable_flag_repeated() {
   rp::args_parse --name foo --name bar
   assert_equals "bar" "$(rp::args_get name)"
+}
+
+function test_should_assign_positional_when_require_pos_given() {
+  local id
+  rp::args_parse pod-123
+  rp::require_pos id "usage: rp pod get <id>"
+  assert_equals "pod-123" "$id"
+}
+
+function test_should_exit_two_when_require_pos_missing() {
+  rp::args_parse --json
+  (
+    local id
+    rp::require_pos id "usage: rp pod get <id>" >/dev/null 2>&1
+  )
+  assert_exit_code 2
+}
+
+function test_should_print_usage_when_require_pos_missing() {
+  rp::args_parse
+  local err
+  err="$(
+    local id
+    rp::require_pos id "usage: rp pod get <id>" 2>&1 >/dev/null || true
+  )"
+  assert_equals "usage: rp pod get <id>" "$err"
 }
 
 # main-shell variants (bashunit skips lines run inside $(...)) so rp::args_pos
