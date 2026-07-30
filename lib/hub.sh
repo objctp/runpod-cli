@@ -43,7 +43,7 @@ rp::gpu_type_to_pool_csv() {
   local types="$1"
   [[ -n "$types" ]] || return 0
   local want
-  want="$(rp::split_csv "$types" | jq -R . | jq -sc .)"
+  want="$(rp::csv_to_jsonarray "$types")"
   _gpu_pools_json | jq -r --argjson want "$want" '
     . as $pools
     | [$want[] | . as $t | ($pools | map(select((.gpuTypeIds // []) | index($t))) | .[0].id // empty)]

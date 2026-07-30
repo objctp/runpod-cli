@@ -132,7 +132,7 @@ rp::require_uint() {
 # (aws, huggingface-cli, ssh-keygen) are still checked at their own call sites.
 rp::check_core() {
   local missing=() c
-  for c in jq curl awk head sort paste; do
+  for c in jq curl awk head paste; do
     command -v "$c" >/dev/null 2>&1 || missing+=("$c")
   done
   ((${#missing[@]})) || return 0
@@ -169,7 +169,7 @@ rp::table() {
   local json="$1"
   shift
   local reshape='.'
-  if [[ "$1" == "--reshape" ]]; then
+  if [[ "${1:-}" == "--reshape" ]]; then
     reshape="$2"
     shift 2
   fi
@@ -180,6 +180,8 @@ rp::table() {
 
   local rows
   rows="$(printf '%s' "$json" | jq -c 'if . == null then [] else . end' | jq -c "$reshape")" || return 1
+  # Inlined `jq -R . | jq -sc .` (rather than rp::json_array) to keep common.sh
+  # free of a dependency on lib/json.sh; this is the lowest-level renderer.
   printf '%s' "$rows" | jq -r --argjson fields "$(printf '%s\n' "${cols[@]}" | jq -R . | jq -sc .)" \
     '(if . == null then [] else . end) | .[] | [ $fields[] as $f | .[$f] // "" ] | @tsv'
 }

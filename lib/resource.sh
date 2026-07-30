@@ -108,6 +108,13 @@ rp::resource_id() {
         | map(select(.name == $n)) | .[0].id // empty'
 }
 
+# Spread a template's container-config fields as a JSON object (the v2 shape
+# `rp pod create --template` / `rp endpoint create --template` default from). GETs
+# the template and keeps only the non-null fields of the v2 ContainerConfig.
+rp::template_spread() {
+  rp::http GET "/templates/$1" | jq -c '{image, args, disk, ports, env, registry} | with_entries(select(.value != null))'
+}
+
 # Network-volume name → datacenter. Sets RP_VOLUME_ID and RP_VOLUME_DC in the
 # caller's shell (invoke in the main shell, not a command substitution) and
 # exits on the not-found / no-datacenter policy. The id-only form takes an

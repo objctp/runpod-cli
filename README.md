@@ -8,14 +8,13 @@ API for filling volumes — so it covers the same ground as `runpodctl` for the
 work in this repo.
 
 It exists to stand up a self-hosted OCR service on RunPod (GLM-OCR, Infinity-Parser2-Flash,
-DeepSeek-OCR-2 on serverless, scale-to-zero, behind a shared network volume). The
-full design, economics and rationale live in [PRD.md](PRD.md); this file is just how
-to run the tool.
+DeepSeek-OCR-2 on serverless, scale-to-zero, behind a shared network volume). This
+file is just how to run the tool.
 
 ## Requirements
 
 - Bash 5+
-- Core tools (`curl`, `jq`, `awk`, `head`, `sort`, `paste`) — `rp` checks for these on startup and names anything missing
+- Core tools (`curl`, `jq`, `awk`, `head`, `paste`) — `rp` checks for these on startup and names anything missing
 - `aws` CLI — only for `rp volume sync` / `rp volume ls` (S3 fill and list)
 - `huggingface-cli` — optional, only for `rp volume sync --models`
 
@@ -66,6 +65,7 @@ cp .env.example .env
 | `RUNPOD_S3_ACCESS_KEY` | Console → Settings → **S3 API Keys** (your `user_…` id) | `volume sync` / `ls` |
 | `RUNPOD_S3_SECRET_KEY` | Console → Settings → **S3 API Keys** (an `rps_…` key, shown once) | `volume sync` / `ls` |
 | `HF_TOKEN` | huggingface.co → Access Tokens | `volume sync --models` (gated models) |
+| `RP_MODEL_CACHE` | any writable directory | `volume sync --models` download cache (default `$RP_ROOT/.cache/models`) |
 
 The S3 key pair is **separate** from the REST API key — create it from its own
 console page. The CLI warns if `.env` is group- or world-readable, so tighten it:
@@ -107,7 +107,7 @@ serving template's model path there (for example `/runpod-volume/models/glm`).
 returns the existing id; pass `--force` to duplicate. `template create --env` is
 repeatable. To deploy straight from a Hub listing instead of a template, use
 `endpoint create --hub-id <listing-id>` (resolve listings with `rp hub search` /
-`rp hub get`); see `docs/option-b-hub-deploy.md` for the design.
+`rp hub get`).
 
 ## Commands
 
@@ -117,9 +117,9 @@ to any `list` / `get` command for raw API output.
 | Resource | Verbs |
 |---|---|
 | `volume` | `create --name --size --dc` · `list` · `get <id>` · `update <id>` · `delete <id>` · `sync <name> [--source <dir> \| --models a,b,c] [--prefix models]` · `ls <name>` · `gpus <name> [--gpu id,id]` |
-| `endpoint` | `create --template <id> --gpu <type,..> | --gpus-from-volume <name> [...] [--env K=V]… [--execution-timeout <s>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids id,id] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot] [--hub-id <listing-id>] [--force]` · `list` · `get <id>` · `update <id>` · `scale <id> --min N --max N [--idle S]` · `delete <id>` · `run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>]` (`--hub-id` deploys from a Hub listing — the listing is fetched via GraphQL, the endpoint created via REST v2; `run` submits a job on the data plane — `api.runpod.ai/v2` — waiting via `/runsync` by default, or queuing via `/run` with `--async`) |
+| `endpoint` | `create --template <id> --gpu <type,..> | --gpus-from-volume <name> [...] [--execution-timeout <s>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids id,id] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot] [--scaler-type T] [--scaler-value V] [--hub-id <listing-id>] [--force]` · `list` · `get <id>` · `update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>] [--gpu-count N]` · `scale <id> --min N --max N [--idle S]` · `delete <id>` · `run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>]` (`--hub-id` deploys from a Hub listing — the listing is fetched via GraphQL, the endpoint created via REST v2; `run` submits a job on the data plane — `api.runpod.ai/v2` — waiting via `/runsync` by default, or queuing via `/run` with `--async`) |
 | `pod` | `create --image <img> [...]` · `update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>] [--ports a/b] [--env K=V] [--start-cmd a,b]` · `list` · `get <id>` · `start \| stop \| restart <id>` (`reset` is an alias for `restart`; v2 dropped it) · `delete <id>` |
-| `template` | `create --name --image [--serverless] [--docker-cmd a,b] [--env K=V]… [--ports a/b] [--volume-gb N] [--container-disk-gb N] [--force]` · `list` · `get <id>` · `search <name-substring>` · `delete <id>` |
+| `template` | `create --name --image [--serverless] [--docker-cmd a,b] [--env K=V]… [--ports a/b] [--volume-gb N] [--container-disk-gb N] [--category <c>] [--force]` · `list` · `get <id>` · `search <name-substring>` · `delete <id>` |
 | `registry` | `create --name --username [--password <p>]` · `list` · `get <id>` · `delete <id>` |
 | `billing` | `pods` · `endpoints` · `volumes` |
 | `account` | `[info]` (balance + spend; GraphQL) |
@@ -144,8 +144,9 @@ to tear down).
   `RP_REST_BASE`.
 - **`volume sync --models` is a double hop** (HuggingFace → local cache → S3).
   Fine for once-and-rarely fills; use `--source <dir>` for a single hop.
-- **Idempotent creates** — `create` returns the existing resource when the name
-  matches; pass `--force` to duplicate.
+- **Idempotent creates** — `volume`, `template`, and `endpoint` `create` return the
+  existing resource when the name matches; pass `--force` to duplicate. `pod` and
+  `registry` `create` always POST and may duplicate on re-run.
 - **Stock and prices drift** — re-run the CLI before each booking.
 - **Scriptable exit codes** — `0` success · `1` transport/API/general · `2`
   usage · `3` auth (no key/creds) · `4` not-found. Branch on `$?` rather than

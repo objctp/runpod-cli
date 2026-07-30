@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Surface transport errors and align docs with behaviour
+
 ## [0.3.0] - 2026-07-30
 
 ### Added

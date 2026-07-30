@@ -48,7 +48,7 @@ rp::graphql() {
   local payload tmp
   payload="$(_rp_graphql_payload "$1" "${2:-}")" || rp::die "invalid GraphQL variables JSON"
   _mktemp tmp
-  rp::api_call graphql POST '' "$payload" 120 >"$tmp"
+  rp::api_call graphql POST '' "$payload" 120 >"$tmp" || true
   _rp_graphql_emit "$tmp" "GraphQL"
 }
 

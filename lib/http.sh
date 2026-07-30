@@ -34,7 +34,7 @@ rp::http() {
   rp::require_cmd curl
   local tmp
   _mktemp tmp
-  rp::api_call rest "$1" "$2" "${3:-}" "${4:-120}" >"$tmp"
+  rp::api_call rest "$1" "$2" "${3:-}" "${4:-120}" >"$tmp" || true
   _rp_http_emit "$tmp" "$1" "$2"
 }
 
@@ -48,6 +48,6 @@ rp::http_api() {
   rp::require_cmd curl
   local tmp
   _mktemp tmp
-  rp::api_call api "$1" "$2" "${3:-}" "${4:-300}" >"$tmp"
+  rp::api_call api "$1" "$2" "${3:-}" "${4:-300}" >"$tmp" || true
   _rp_http_emit "$tmp" "$1" "$2"
 }

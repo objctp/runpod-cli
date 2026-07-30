@@ -26,15 +26,13 @@ _template_create() {
   [[ -n "$env" ]] && rp::obj_set obj env "$(rp::env_to_json "$env")"
   ports="$(rp::args_get ports)"
   [[ -n "$ports" ]] && rp::obj_set obj ports "$(rp::csv_to_jsonarray "$ports")"
-  vol_gb="$(rp::args_get volume-gb)"
-  rp::require_uint "$vol_gb" volume-gb
+  vol_gb="$(rp::args_get_uint volume-gb)"
   if rp::args_has serverless && [[ -n "$vol_gb" ]]; then
     rp::warn "ignoring --volume-gb: serverless templates reject volumeInGb"
   elif [[ -n "$vol_gb" ]]; then
     rp::obj_set obj mounts "$(rp::json_persistent_mount "$vol_gb")"
   fi
-  cdisk="$(rp::args_get container-disk-gb)"
-  rp::require_uint "$cdisk" container-disk-gb
+  cdisk="$(rp::args_get_uint container-disk-gb)"
   [[ -n "$cdisk" ]] && rp::obj_set obj disk "$cdisk"
   rp::obj_set obj category "$(rp::json_str "$(rp::args_get category NVIDIA)")"
   rp::resource_create template "$name" "$obj"
@@ -52,7 +50,12 @@ rp::cmd_template() {
   search) _template_search ;;
   delete) rp::resource_delete template ;;
   -h | --help | help)
-    echo "Usage: rp template <create|list|get|search <name-substring>|delete> (see rp template --help for create flags)"
+    cat <<'EOF'
+Usage: rp template <verb> [flags]
+  create --name <n> --image <img> [--serverless] [--docker-cmd <a,b>] [--env K=V]… [--ports <a/b>] [--volume-gb N] [--container-disk-gb N] [--category <c>] [--force]
+         (idempotent by --name; --env repeatable; --category defaults to NVIDIA)
+  list | get <id> | search <name-substring> | delete <id>
+EOF
     ;;
   *) rp::usage "unknown template verb: '$verb'" ;;
   esac

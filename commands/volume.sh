@@ -13,8 +13,7 @@ _model_repo() {
 _volume_create() {
   local name size dc
   name="$(rp::args_get name)"
-  size="$(rp::args_get size)"
-  rp::require_uint "$size" size
+  size="$(rp::args_get_uint size)"
   dc="$(rp::args_get dc)"
   [[ -n "$name" && -n "$size" && -n "$dc" ]] || rp::usage "usage: rp volume create --name <n> --size <gb> --dc <id>"
   rp::warn_unless_s3_dc "$dc"
@@ -32,8 +31,7 @@ _volume_update() {
   if [[ -n "$name" ]]; then
     rp::obj_set obj name "$(rp::json_str "$name")"
   fi
-  size="$(rp::args_get size)"
-  rp::require_uint "$size" size
+  size="$(rp::args_get_uint size)"
   if [[ -n "$size" ]]; then
     rp::obj_set obj size "$size"
   fi
@@ -70,7 +68,6 @@ _volume_sync() {
   local m repo
   for m in "${ms[@]}"; do
     repo="$(_model_repo "$m")" || rp::usage "unknown model: $m (expected glm|flash|deepseek)"
-    [[ -n "$repo" ]] || rp::usage "unknown model: $m (expected glm|flash|deepseek)"
     rp::info "fetching $m ($repo) -> $cache/$m"
     huggingface-cli download "$repo" --local-dir "$cache/$m"
     rp::info "uploading -> s3://$id/$prefix/$m"
@@ -97,7 +94,7 @@ _volume_gpus() {
   filter="$(rp::args_get gpu)"
   if [[ -n "$filter" ]]; then
     local wantjson
-    wantjson="$(rp::split_csv "$filter" | jq -R . | jq -sc .)"
+    wantjson="$(rp::csv_to_jsonarray "$filter")"
     data="$(printf '%s' "$data" | jq --argjson want "$wantjson" 'map(select(.id as $id | $want | index($id)))')"
   fi
   rp::emit_json_or "$data" rp::table "$data" \

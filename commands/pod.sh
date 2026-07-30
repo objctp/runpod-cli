@@ -12,11 +12,9 @@ _pod_update() {
   local id
   rp::require_pos id "usage: rp pod update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>] [--ports <a/b>] [--env K=V]… [--start-cmd <a,b,...>] (see: rp pod --help)"
   local obj='{}' disk vol_gb name image ports start env
-  disk="$(rp::args_get container-disk-gb)"
-  rp::require_uint "$disk" container-disk-gb
+  disk="$(rp::args_get_uint container-disk-gb)"
   rp::obj_set obj disk "$disk"
-  vol_gb="$(rp::args_get volume-gb)"
-  rp::require_uint "$vol_gb" volume-gb
+  vol_gb="$(rp::args_get_uint volume-gb)"
   if [[ -n "$vol_gb" ]]; then
     rp::obj_set obj mounts "$(rp::json_persistent_mount "$vol_gb")"
   fi
@@ -62,11 +60,9 @@ _pod_create() {
   rp::obj_set obj cloud "$(rp::json_str "$(rp::args_get cloud SECURE)")"
 
   local disk vol_gb
-  disk="$(rp::args_get container-disk-gb)"
-  rp::require_uint "$disk" container-disk-gb
+  disk="$(rp::args_get_uint container-disk-gb)"
   rp::obj_set obj disk "$disk"
-  vol_gb="$(rp::args_get volume-gb)"
-  rp::require_uint "$vol_gb" volume-gb
+  vol_gb="$(rp::args_get_uint volume-gb)"
   if [[ -n "$vol_gb" ]]; then
     obj="$(_json_merge "$obj" "$(rp::json_obj mounts "$(rp::json_persistent_mount "$vol_gb")")")"
   fi
@@ -96,8 +92,7 @@ _pod_create() {
     if [[ "$gpu" == *,* ]]; then
       rp::warn "v2 supports one GPU type per pod; using the first ($first_gpu)"
     fi
-    gcount="$(rp::args_get gpu-count 1)"
-    rp::require_uint "$gcount" gpu-count
+    gcount="$(rp::args_get_uint gpu-count 1)"
     obj="$(_json_merge "$obj" "$(rp::json_obj gpu "$(rp::json_gpu_pod "$first_gpu" "$gcount")")")"
   fi
 
@@ -112,7 +107,7 @@ _pod_create() {
   if [[ -n "$template" ]]; then
     # v2 has no templateId param: spread the template's container-config fields
     # as defaults, letting explicit flags override them.
-    tmpl="$(rp::http GET "/templates/$template" | jq -c '{image, args, disk, ports, env, registry} | with_entries(select(.value != null))')"
+    tmpl="$(rp::template_spread "$template")"
     obj="$(_json_merge "$tmpl" "$obj")"
   fi
 

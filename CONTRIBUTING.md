@@ -3,7 +3,7 @@
 `rp` is a Bash 5+ CLI: a thin dispatcher (`bin/rp`) sourcing shared helpers
 (`lib/`), with one file per resource (`commands/`) and a bashunit suite
 (`tests/`). It talks to three RunPod APIs directly — REST, GraphQL, and the
-S3-compatible API. The design context is in [PRD.md](PRD.md).
+S3-compatible API.
 
 ## Repo layout
 
