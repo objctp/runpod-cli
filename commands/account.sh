@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
+#
 # `rp account` has a single useful action (show balance + spend), so the default
 # verb is `info`: both `rp account` and `rp account info` print the same thing.
+# Usage: rp account <verb> [flags]
+#
 
 _account_info_human() {
   printf '%s' "$1" | jq -r '

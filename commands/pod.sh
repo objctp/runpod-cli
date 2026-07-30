@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
+#
 # `rp pod` — on-demand pod CRUD (REST API v2).
+# Usage: rp pod <verb> [flags]
+#
 
 _pod_simple() {
   local action="$1" id

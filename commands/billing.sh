@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
+#
 # `rp billing` — pod / serverless-endpoint / network-volume billing (REST API v2).
+# Usage: rp billing <verb> [flags]
+#
 # v2 returns time-bucketed { records: [...], metadata }; both modes print it.
 # Serverless spend lives at /billing/serverless (/billing/endpoints is the
 # separate *public endpoint* product's billing).

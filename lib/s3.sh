@@ -13,6 +13,17 @@ _s3_env() {
   export AWS_SECRET_ACCESS_KEY="$RUNPOD_S3_SECRET_KEY"
 }
 
+# Sync a local dir to an S3 bucket/prefix.
+# Arguments:
+#   $1 - src: local source directory
+#   $2 - bucket: destination bucket name
+#   $3 - dc: datacentre id (sets region + endpoint)
+#   $4 - prefix: optional key prefix
+# Returns:
+#   0 - sync succeeded
+#   1 - aws failed (dies)
+# Exports AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY via _s3_env and uses a 7200s
+# CLI read timeout for large volume transfers.
 rp::s3_sync() {
   local src="$1"
   local bucket="$2"
@@ -28,6 +39,15 @@ rp::s3_sync() {
     --cli-read-timeout 7200
 }
 
+# List an S3 bucket/prefix.
+# Arguments:
+#   $1 - bucket: bucket name
+#   $2 - dc: datacentre id (sets region + endpoint)
+#   $3 - prefix: optional key prefix
+# Returns:
+#   0 - listing succeeded
+#   1 - aws failed (dies)
+# Exports AWS creds via _s3_env.
 rp::s3_ls() {
   local bucket="$1"
   local dc="$2"

@@ -27,8 +27,14 @@ _rp_http_emit() {
 }
 
 # Control-plane REST call under RP_REST_BASE.
-# Arguments: $1 method, $2 path (e.g. /pods, "/pods/$id"), $3 optional JSON body,
-# $4 optional --max-time seconds (default 120).
+# Arguments:
+#   $1 - method: HTTP method (GET/POST/DELETE/...)
+#   $2 - path: REST path (e.g. /pods, "/pods/$id")
+#   $3 - body: optional JSON request body
+#   $4 - max_time: optional --max-time seconds (default 120)
+# Returns:
+#   0 - success; prints the response to stdout
+#   1 - transport/HTTP error (dies)
 rp::http() {
   rp::require_api_key
   rp::require_cmd curl
@@ -41,8 +47,14 @@ rp::http() {
 # Data-plane call under RP_API_BASE (https://api.runpod.ai/v2 — job submission to
 # deployed serverless endpoints). runsync blocks until the job completes, so the
 # default --max-time is 300 s; $4 overrides it.
-# Arguments: $1 method, $2 path (e.g. "/$id/runsync"), $3 optional JSON body,
-# $4 optional --max-time seconds.
+# Arguments:
+#   $1 - method: HTTP method
+#   $2 - path: data-plane path (e.g. "/$id/runsync")
+#   $3 - body: optional JSON request body
+#   $4 - max_time: optional --max-time seconds (default 300)
+# Returns:
+#   0 - success; prints the response to stdout
+#   1 - transport/HTTP error (dies)
 rp::http_api() {
   rp::require_api_key
   rp::require_cmd curl

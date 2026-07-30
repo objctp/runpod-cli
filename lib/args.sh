@@ -66,9 +66,15 @@ rp::args_has() { [[ -n "${RP_ARGS[$1]:-}" ]]; }
 
 rp::args_pos() { printf '%s' "${RP_ARGS[pos]:-}"; }
 
-# Assign the positional to the variable named in $1 (nameref, like _mktemp),
-# or rp::usage with $2 when none was given. Runs in the main shell — not via
-# command substitution — so the exit fires even when the caller has errexit off.
+# Assign the positional to the variable named in $1.
+# Arguments:
+#   $1 - out: caller's variable name (nameref) to receive the positional
+#   $2 - usage: message shown when none was given
+# Returns:
+#   0 - positional assigned to $1
+#   1 - no positional given (rp::usage)
+# Runs in the main shell, not via command substitution, so the exit fires even
+# when the caller has errexit off.
 rp::require_pos() {
   local -n require_pos_out="$1"
   [[ -n "${RP_ARGS[pos]:-}" ]] || rp::usage "$2"

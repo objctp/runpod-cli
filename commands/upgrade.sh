@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
+#
 # `rp upgrade` re-runs the public installer against the latest release (or a
 # pinned one via --version). The installer re-extracts into ~/.rp and refreshes
 # the /usr/local/bin/rp symlink, so this is a full in-place self-update.
+# Usage: rp upgrade [--version <x.y.z>]
+#
 
 # Where the public installer lives; kept in sync with install.sh's RP_REPO.
 _RP_UPGRADE_REPO="objctp/runpod-cli"

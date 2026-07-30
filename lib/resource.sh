@@ -64,7 +64,6 @@ rp::resource_get() {
   rp::emit_json_or "$res_body" rp::json_pretty "$res_body"
 }
 
-# Delete by the positional id and confirm on stderr.
 rp::resource_delete() {
   local res_resource="$1" res_id
   _resource_meta "$res_resource"
@@ -74,10 +73,17 @@ rp::resource_delete() {
 }
 
 # Create a record: POST the prepared body, extract the new id, confirm on
-# stderr, print the id on stdout. A non-empty $2 makes the create idempotent
-# by name — unless --force, an existing record's id is printed instead of
-# POSTing; an empty $2 always POSTs (pod, registry). $4 is optional detail
-# appended to the success message (volume adds "dc, sizeGB").
+# stderr, print the id on stdout.
+# Arguments:
+#   $1 - resource: resource name (pod, volume, endpoint, ...)
+#   $2 - name: optional; non-empty makes the create idempotent by name
+#   $3 - body: JSON request body
+#   $4 - detail: optional text appended to the success message
+# Returns:
+#   0 - created (or existing id printed when idempotent by name)
+#   1 - create failed (dies)
+# With a non-empty $2 and no --force, an existing record's id is printed instead
+# of POSTing; an empty $2 always POSTs (pod, registry).
 rp::resource_create() {
   local res_resource="$1" res_name="$2" res_body="$3" res_detail="${4:-}"
   _resource_meta "$res_resource"
@@ -115,10 +121,13 @@ rp::template_spread() {
   rp::http GET "/templates/$1" | jq -c '{image, args, disk, ports, env, registry} | with_entries(select(.value != null))'
 }
 
-# Network-volume name → datacenter. Sets RP_VOLUME_ID and RP_VOLUME_DC in the
-# caller's shell (invoke in the main shell, not a command substitution) and
-# exits on the not-found / no-datacenter policy. The id-only form takes an
-# already-known volume id.
+# Network-volume name → datacenter.
+# Arguments:
+#   $1 - name: the network-volume name
+# Returns:
+#   0 - resolved; sets RP_VOLUME_ID and RP_VOLUME_DC in the caller's shell
+#   1 - volume not found / no datacenter (dies)
+# Invoke in the main shell, not a command substitution, so the exit fires.
 rp::volume_dc() {
   local vd_name="$1"
   RP_VOLUME_ID="$(rp::resource_id volume "$vd_name")"

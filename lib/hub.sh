@@ -2,6 +2,10 @@
 [[ -n "${_RP_HUB:-}" ]] && return 0
 _RP_HUB=1
 
+# Hub marketplace + GPU-pool helpers (all GraphQL, same api.runpod.io endpoint).
+# Field names mirror runpodctl's hub.go / endpoints.go (introspection is disabled
+# on the live endpoint, so runpodctl source is the source of truth).
+
 # serverlessGpuPools -> JSON [{id, gpuTypeIds}], cached for the process lifetime.
 # v2 source: GET /v2/catalog/gpus, which carries the `pool` id per GPU type. We
 # regroup by pool so the downstream type-name -> pool mapping is unchanged.
@@ -14,10 +18,6 @@ _gpu_pools_json() {
   fi
   printf '%s' "$_RP_GPU_POOLS"
 }
-
-# Hub marketplace + GPU-pool helpers (all GraphQL, same api.runpod.io endpoint).
-# Field names mirror runpodctl's hub.go / endpoints.go (introspection is disabled
-# on the live endpoint, so runpodctl source is the source of truth).
 
 # listings(input: ListingsInput!) -> JSON array of {id,title,repoOwner,repoName,type}
 rp::hub_search() {

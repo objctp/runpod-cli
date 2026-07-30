@@ -2,6 +2,10 @@
 [[ -n "${_RP_VALIDATE:-}" ]] && return 0
 _RP_VALIDATE=1
 
+# Datacentre + S3-API validation helpers. Guards `volume create`/`sync` on
+# S3-enabled datacentres and resolves datacentre stock; the offline fallback
+# snapshot below backs the S3 guard when the API is unreachable.
+
 # Offline fallback snapshot of S3-API-enabled datacentres — verified identical to
 # the live `dataCenters { s3apiEnabled }` query on 2026-07-20. The live query is
 # the source of truth (see _s3_dcs); this array only backs the guard when the
@@ -58,6 +62,14 @@ _s3_dcs_live() {
     jq -re '.dataCenters[]? | select(.s3apiEnabled == true) | .id' 2>/dev/null
 }
 
+# Return 0 if $1 names an S3-API-enabled datacentre, else 1.
+# Arguments:
+#   $1 - dc: datacentre id (case-insensitive)
+# Returns:
+#   0 - $1 is an S3-enabled datacentre
+#   1 - not S3-enabled
+# The first call triggers a network request (via _s3_dcs_ensure) to populate the
+# cached datacentre list; subsequent calls are local.
 rp::is_s3_dc() {
   _s3_dcs_ensure
   local target="${1^^}" x

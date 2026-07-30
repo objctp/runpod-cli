@@ -11,7 +11,6 @@
 # per-OS/arch matrix.
 set -euo pipefail
 
-# --- configuration -----------------------------------------------------------
 # OWNER/REPO that hosts releases and this script. Change here (and in
 # commands/upgrade.sh) if the canonical repo moves.
 RP_REPO="objctp/runpod-cli"
@@ -23,7 +22,6 @@ RP_BINDIR="${RP_BINDIR:-/usr/local/bin}"
 # then, leaving the temp dir behind and tripping `set -u` in the trap.
 _rp_inst_tmp=""
 
-# --- output helpers (no colour when not a tty, e.g. piped from curl) ---------
 if [[ -t 1 ]]; then
   _C_RED=$'\033[31m'
   _C_GRN=$'\033[32m'
@@ -45,7 +43,10 @@ rp_inst_die() {
   exit 1
 }
 
-# --- probes (each reads an override env var so the installer is testable) ----
+###
+### :::: probes :::: ###################
+###
+# Each probe reads an override env var so the installer is testable.
 
 # Echo darwin/linux; return 1 on anything else.
 rp_inst_os() {
@@ -140,7 +141,9 @@ rp_inst_ensure_path() {
   printf '%s\n' "$rc"
 }
 
-# --- install flow ------------------------------------------------------------
+###
+### :::: install flow :::: #############
+###
 
 rp_inst_run() {
   local version=""

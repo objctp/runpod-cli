@@ -5,7 +5,6 @@
 [[ -n "${_RP_GRAPHQL:-}" ]] && return 0
 _RP_GRAPHQL=1
 
-# Build a GraphQL payload (query + optional variables JSON object).
 _rp_graphql_payload() {
   local query="$1" variables="${2:-}"
   if [[ -n "$variables" ]]; then
@@ -40,8 +39,12 @@ _rp_graphql_emit() {
 }
 
 # Run a GraphQL query/mutation; print the `.data` object on success.
-# Arguments: $1 query string, $2 optional variables as a JSON object string.
-# Dies on transport error, HTTP >= 400, or any GraphQL `errors` entry.
+# Arguments:
+#   $1 - query: the GraphQL query/mutation string
+#   $2 - variables: optional variables as a JSON object string
+# Returns:
+#   0 - success; prints `.data` to stdout
+#   1 - transport error, HTTP >= 400, or a GraphQL `errors` entry (dies)
 rp::graphql() {
   rp::require_api_key
   rp::require_cmd curl
@@ -52,10 +55,14 @@ rp::graphql() {
   _rp_graphql_emit "$tmp" "GraphQL"
 }
 
-# Soft variant of rp::graphql: identical behaviour on success (prints `.data`),
-# but never dies — on any failure (missing key/cmd, transport error, HTTP >= 400,
-# or `.errors`) it returns non-zero with no output, so callers such as the S3
-# datacentre fallback can degrade gracefully.
+# Soft variant of rp::graphql: identical on success, but never dies.
+# Arguments:
+#   $1 - query: the GraphQL query/mutation string
+#   $2 - variables: optional variables as a JSON object string
+# Returns:
+#   0 - success; prints `.data` to stdout
+#   1 - any failure (missing key/cmd, transport error, HTTP >= 400, `.errors`); no output
+# Callers such as the S3 datacentre fallback use this to degrade gracefully.
 rp::graphql_soft() {
   local query="$1" variables="${2:-}"
   [[ -n "${RUNPOD_API_KEY:-}" && -n "${RP_GRAPHQL_URL:-}" ]] || return 1

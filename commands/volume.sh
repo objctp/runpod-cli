@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
+#
 # `rp volume` — network volume CRUD, S3 model sync, and in-stock GPU lookup.
+# Usage: rp volume <verb> [flags]
+#
 
 _model_repo() {
   case "$1" in

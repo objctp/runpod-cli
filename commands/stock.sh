@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
+#
 # `rp stock` — GPU types and S3-enabled datacentres.
+# Usage: rp stock <verb> [flags]
+#
 # `gpu` uses REST API v2 (catalog/gpus); `dc` stays on GraphQL (v2 has no
 # s3apiEnabled equivalent — kept until RunPod exposes an S3-support field).
 

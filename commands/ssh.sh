@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
+#
 # SSH-key group. Keys are stored as a newline-joined string on `myself.pubKey`
 # (read) and written via the `updateUserSettings(input:{pubKey})` mutation — both
 # confirmed against runpodctl's api/user.go. `info` derives the ssh line from a
 # pod's runtime ports.
+# Usage: rp ssh <verb> [flags]
+#
 
 _ssh_pubkey_raw() {
   rp::graphql 'query { myself { pubKey } }' | jq -r '.myself.pubKey // ""'

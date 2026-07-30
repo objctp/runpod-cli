@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Apply conventions across the codebase
+
 ### Fixed
 
 - Surface transport errors and align docs with behaviour

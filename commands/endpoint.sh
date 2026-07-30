@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
+#
 # `rp endpoint` — serverless endpoint CRUD plus Hub-listing deploy (saveEndpoint
 # replaced by POST /v2/serverless in API v2).
+# Usage: rp endpoint <verb> [flags]
+#
 RP_DEFAULT_GPUS=(
   "NVIDIA RTX 4000 Ada Generation"
   "NVIDIA GeForce RTX 4090"

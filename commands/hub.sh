@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
+#
 # `rp hub` — Hub marketplace search/get (GraphQL).
+# Usage: rp hub <verb> [flags]
+#
 
 _hub_search_cmd() {
   local q

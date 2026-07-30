@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # rp — RunPod infrastructure CLI entry point. Loads .env, sources lib/, dispatches <resource> to commands/<resource>.sh (see _help).
+# Usage: rp <resource> <verb> [flags]
 set -euo pipefail
 # Resolve symlinks before locating the root, so rp works whether run from the
 # repo, via `make install`'s link, or via the installer's

@@ -43,6 +43,48 @@ run `make check`; `bashunit` to run `make test`.
   already does) — they start with an include guard instead (see below).
 - Quote every expansion; prefer `(( ))` for arithmetic and `[[ ]]` for tests.
 
+## Comment Conventions
+
+Comment only when the code itself cannot convey the information: a hidden
+constraint, a subtle invariant, a bug workaround, or behaviour that would
+surprise a careful reader. Explain **why**, not **what** — if removing the
+comment wouldn't confuse a future reader, don't write it.
+
+- **File header** — every script starts with:
+  ```bash
+  #!/usr/bin/env bash
+  #
+  # [BRIEF DESCRIPTION OF WHAT THIS SCRIPT DOES]
+  # Usage: [SCRIPT_NAME] [ARGUMENTS]
+  #
+  ```
+- **Section dividers** — only when a section exceeds ~50 lines or its complexity
+  warrants signposting. Pad the `#` tail to the nearest of 40, 80, or 120:
+  ```bash
+  ###
+  ### :::: [description] :::: ###########
+  ###
+  ```
+  Don't add dividers between short, self-evident sections.
+- **Public function docs** — use the structured `Arguments:`/`Returns:` template
+  only on public `rp::` functions whose name and arguments don't fully convey the
+  contract (non-obvious return codes, argument constraints, side effects, failure
+  conditions):
+  ```bash
+  # [description]
+  # Arguments:
+  #   $1 - [name]: [description]
+  # Returns:
+  #   0 - [success description]
+  #   1 - [failure description]
+  ```
+  Private `_` helpers don't need the template, but *why*-style annotation
+  comments above them are welcome wherever they explain a hidden constraint or
+  surprise.
+- **Inline comments** — trailing `#` on the same line. Good: `# 10% of total
+  memory`. Bad: `# calculate threshold`.
+- **Annotation comments** — a bare `#` line above a block explaining intent.
+
 ## The include-guard pattern
 
 Every `lib/*.sh` file begins with a guard so it can be sourced more than once

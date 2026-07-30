@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
+#
 # `rp registry` — container-registry auth CRUD (REST API v2).
+# Usage: rp registry <verb> [flags]
+#
 
 _registry_create() {
   local name username password

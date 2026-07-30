@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
+#
 # `rp template` — pod/serverless template CRUD + name-substring search (REST API v2).
+# Usage: rp template <verb> [flags]
+#
 
 _template_search() {
   local needle

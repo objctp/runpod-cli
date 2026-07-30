@@ -29,7 +29,9 @@ else
   RP_C_RST=''
 fi
 
-# --- temp files & startup checks ---
+###
+### :::: temp files & startup checks :::: ######################################
+###
 
 # Temp paths registered for removal on exit or interruption.
 _RP_TEMPS=()
@@ -108,11 +110,16 @@ rp::require_cmd() {
   command -v "$1" >/dev/null 2>&1 || rp::usage "required command not found: $1"
 }
 
-# Extract the `id` field from a create/list response body, or die with a clear
-# error. $1 is the caller's variable name to receive the id (via nameref); $2 the
-# JSON body; $3 a label for the error (e.g. "endpoint"). Called in the main shell
-# so the rp::die exit propagates — unlike `$(rp::extract_id …)`, which would
-# swallow it inside a command substitution.
+# Extract the `id` field from a create/list response body, or die with a clear error.
+# Arguments:
+#   $1 - out: caller's variable name (nameref) to receive the id
+#   $2 - body: the JSON response body
+#   $3 - label: noun for the error message (e.g. "endpoint")
+# Returns:
+#   0 - id extracted into $1
+#   1 - no id present in body (dies via rp::die)
+# Must run in the main shell so the rp::die exit propagates — unlike
+# `$(rp::extract_id …)`, which would swallow it inside a command substitution.
 rp::extract_id() {
   local -n extract_id_out="$1"
   local body="$2" label="$3"
@@ -154,9 +161,11 @@ rp::emit_json_or() {
 }
 
 # Render a JSON array (or object wrapping one) as a TSV table with a header row.
-# $1 is the JSON; the remaining args are the column names to extract in order;
-# missing values render as empty. Used by list/search commands in human mode.
-#
+# Arguments:
+#   $1 - json: the payload to table
+#   $2.. - columns: column names to extract in order; missing values render empty
+# Returns:
+#   0 - always; prints the table (empty on a null payload) to stdout
 # Optional --reshape: a jq filter applied to the raw payload before tabling. It
 # must map the input into an array of objects keyed by the column names (which
 # double as the header labels), so callers can rename fields, nest (workers.min),
