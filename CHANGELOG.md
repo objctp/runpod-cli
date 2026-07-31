@@ -9,6 +9,7 @@
 ### Changed
 
 - Apply conventions across the codebase
+- Provision bash 4+ on macOS and pin bashunit via action
 
 ### Fixed
 
