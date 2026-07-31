@@ -11,7 +11,7 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/validate.sh"
   source "$RP_ROOT/lib/resource.sh"
   source "$RP_ROOT/lib/hub.sh"
-  source "$RP_ROOT/commands/endpoint.sh"
+  source "$RP_ROOT/commands/serverless.sh"
   eval "$_opts"
 }
 
@@ -21,7 +21,7 @@ function set_up() {
 }
 
 function test_should_return_existing_id_when_endpoint_name_exists() {
-  local marker out
+  local marker out err
   marker="$(mktemp)"
   rp::http() {
     if [[ "$1" == "GET" ]]; then
@@ -31,12 +31,25 @@ function test_should_return_existing_id_when_endpoint_name_exists() {
       printf '{"id":"ep1"}'
     fi
   }
+  # No --gpu: the idempotency gate must win over the v2 GPU requirement.
   rp::args_parse --name glm-ocr --template t
-  out="$(_endpoint_create 2>/dev/null)"
+  out="$(_serverless_create 2>/dev/null)"
   assert_equals "ep1" "$out"
   assert_equals "" "$(cat "$marker")"
+  err="$(_serverless_create 2>&1 >/dev/null)"
+  assert_contains "serverless 'glm-ocr' exists: ep1" "$err"
   rp::http() { :; }
   rm -f "$marker"
+}
+
+# --template stays required even on an idempotent hit (same convention as
+# volume/template create): idempotency covers re-runs, not bare-name lookups.
+function test_should_require_template_even_when_name_exists() {
+  rp::http() { printf '{"endpoints":[{"id":"ep1","name":"glm-ocr"}]}'; }
+  rp::args_parse --name glm-ocr
+  (_serverless_create >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
 }
 
 # v2-shaped mock for the create path: endpoint lookup, template fetch, GPU
@@ -65,7 +78,7 @@ function test_should_post_when_endpoint_name_is_new() {
   _mock_create_http "$marker"
   # --gpu (not --gpus-from-volume) avoids the network-volume path
   rp::args_parse --name fresh-ep --template t --gpu "NVIDIA L4"
-  out="$(_endpoint_create 2>/dev/null)"
+  out="$(_serverless_create 2>/dev/null)"
   assert_equals "newep" "$out"
   assert_equals "POSTED" "$(cat "$marker")"
   rp::http() { :; }
@@ -78,7 +91,7 @@ function test_should_spread_template_and_map_gpu_pool_on_create() {
   body="$(mktemp)"
   _mock_create_http "$marker" "$body"
   rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --workers-min 1 --workers-max 3 --idle 10
-  _endpoint_create >/dev/null 2>&1
+  _serverless_create >/dev/null 2>&1
   assert_equals 'img:1' "$(jq -r '.image' "$body")"
   assert_equals 'ADA_24' "$(jq -r '.gpu.pools[0]' "$body")"
   assert_equals '1' "$(jq -r '.workers.min' "$body")"
@@ -94,7 +107,7 @@ function test_should_set_exec_timeout_volume_ids_and_flashboot_on_create() {
   body="$(mktemp)"
   _mock_create_http "$marker" "$body"
   rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --execution-timeout 300 --network-volume-ids nv1,nv2 --flashboot
-  _endpoint_create >/dev/null 2>&1
+  _serverless_create >/dev/null 2>&1
   assert_equals '300000' "$(jq -r '.timeout' "$body")"
   assert_equals 'nv2' "$(jq -r '.networkVolumes[1]' "$body")"
   assert_equals 'FLASHBOOT' "$(jq -r '.flashboot' "$body")"
@@ -110,7 +123,7 @@ function test_should_ignore_min_cuda_version_on_create() {
   body="$(mktemp)"
   _mock_create_http "$marker" "$body"
   rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --min-cuda-version 12.4
-  err="$(_endpoint_create 2>&1 >/dev/null)"
+  err="$(_serverless_create 2>&1 >/dev/null)"
   assert_equals 'null' "$(jq -c '.minCudaVersion' "$body")"
   assert_contains "ignored" "$err"
   rp::http() { :; }
@@ -123,7 +136,7 @@ function test_should_warn_when_env_given_with_template() {
   _mock_create_http "$marker"
   rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --env FOO=bar
   local err
-  err="$(_endpoint_create 2>&1 >/dev/null)"
+  err="$(_serverless_create 2>&1 >/dev/null)"
   assert_contains "ignored" "$err"
   rp::http() { :; }
   rm -f "$marker"
@@ -137,7 +150,7 @@ function test_should_exit_usage_when_create_has_no_gpu() {
     esac
   }
   rp::args_parse --name e1 --template t
-  (_endpoint_create >/dev/null 2>&1)
+  (_serverless_create >/dev/null 2>&1)
   assert_exit_code 2
   rp::http() { :; }
 }
@@ -159,7 +172,7 @@ function test_should_deploy_via_rest_when_hub_id_given() {
   rp::graphql() { printf '%s' "$fixture"; }
   rp::args_parse --hub-id h1 --name glm --env MODEL_NAME=glm
   local out
-  out="$(_endpoint_create 2>/dev/null)"
+  out="$(_serverless_create 2>/dev/null)"
   assert_equals "newhub" "$out"
   assert_equals 'vllm:1' "$(jq -r '.image' "$payload")"
   assert_equals 'AMPERE_80' "$(jq -r '.gpu.pools[0]' "$payload")"
@@ -174,7 +187,7 @@ function test_should_deploy_via_rest_when_hub_id_given() {
 function test_should_reject_hub_id_with_template() {
   rp::http() { [[ "$1" == "GET" ]] && printf '[]'; }
   rp::args_parse --hub-id h1 --name glm --template t
-  (_endpoint_create >/dev/null 2>&1)
+  (_serverless_create >/dev/null 2>&1)
   assert_exit_code 2
   rp::http() { :; }
 }
@@ -189,7 +202,7 @@ function test_should_post_runsync_with_wrapped_input_when_run_given() {
     printf '{"status":"COMPLETED","output":{"ok":true}}'
   }
   rp::args_parse e1 --input '{"image":"b64data"}'
-  out="$(_endpoint_run 2>/dev/null)"
+  out="$(_serverless_run 2>/dev/null)"
   assert_equals "POST /e1/runsync 300" "$(<"$meta")"
   assert_equals "b64data" "$(jq -r '.input.image' "$cap")"
   assert_contains '"COMPLETED"' "$out"
@@ -205,7 +218,7 @@ function test_should_post_run_and_print_job_id_when_async_given() {
     printf '{"id":"job-42","status":"IN_QUEUE"}'
   }
   rp::args_parse e1 --async --input '{}' --timeout 600
-  out="$(_endpoint_run 2>/dev/null)"
+  out="$(_serverless_run 2>/dev/null)"
   assert_equals "POST /e1/run 600" "$(<"$meta")"
   assert_equals "job-42" "$out"
   rp::http_api() { :; }
@@ -222,7 +235,7 @@ function test_should_read_payload_from_file_when_input_file_given() {
     printf '{"status":"COMPLETED"}'
   }
   rp::args_parse e1 --input-file "$infile"
-  out="$(_endpoint_run 2>/dev/null)"
+  out="$(_serverless_run 2>/dev/null)"
   assert_equals "from-file" "$(jq -r '.input.image' "$cap")"
   assert_contains '"COMPLETED"' "$out"
   rp::http_api() { :; }
@@ -233,7 +246,7 @@ function test_should_print_raw_body_when_run_given_json_flag() {
   rp::http_api() { printf '{"status":"COMPLETED","output":{"ok":true}}'; }
   rp::args_parse e1 --input '{}' --json
   local out
-  out="$(_endpoint_run 2>/dev/null)"
+  out="$(_serverless_run 2>/dev/null)"
   assert_equals '{"status":"COMPLETED","output":{"ok":true}}' "$out"
   rp::http_api() { :; }
 }
@@ -241,41 +254,41 @@ function test_should_print_raw_body_when_run_given_json_flag() {
 function test_should_exit_usage_when_run_missing_id_or_input() {
   rp::http_api() { :; }
   rp::args_parse --input '{}'
-  (_endpoint_run >/dev/null 2>&1)
+  (_serverless_run >/dev/null 2>&1)
   assert_exit_code 2
   rp::args_parse e1
-  (_endpoint_run >/dev/null 2>&1)
+  (_serverless_run >/dev/null 2>&1)
   assert_exit_code 2
 }
 
 function test_should_exit_usage_when_run_given_conflicting_flags() {
   rp::http_api() { :; }
   rp::args_parse e1 --input '{}' --input-file /tmp/x
-  (_endpoint_run >/dev/null 2>&1)
+  (_serverless_run >/dev/null 2>&1)
   assert_exit_code 2
   rp::args_parse e1 --input '{}' --sync --async
-  (_endpoint_run >/dev/null 2>&1)
+  (_serverless_run >/dev/null 2>&1)
   assert_exit_code 2
 }
 
 function test_should_exit_usage_when_run_input_is_invalid_json() {
   rp::http_api() { :; }
   rp::args_parse e1 --input 'not-json{'
-  (_endpoint_run >/dev/null 2>&1)
+  (_serverless_run >/dev/null 2>&1)
   assert_exit_code 2
 }
 
-# main-shell dispatcher call so the public rp::cmd_endpoint entry registers coverage.
+# main-shell dispatcher call so the public rp::cmd_serverless entry registers coverage.
 function test_should_show_help_when_help_verb_given() {
   local tmp
   tmp="$(mktemp)"
-  rp::cmd_endpoint help >"$tmp" 2>/dev/null
-  assert_contains "Usage: rp endpoint" "$(<"$tmp")"
+  rp::cmd_serverless help >"$tmp" 2>/dev/null
+  assert_contains "Usage: rp serverless" "$(<"$tmp")"
   rm -f "$tmp"
 }
 
 # Main-shell routing through the public dispatcher so each verb branch registers.
-function test_should_route_each_endpoint_verb() {
+function test_should_route_each_serverless_verb() {
   local cap
   cap="$(mktemp)"
   rp::http() {
@@ -287,24 +300,41 @@ function test_should_route_each_endpoint_verb() {
     *) printf '{"id":"e1"}' ;;
     esac
   }
-  rp::cmd_endpoint list >/dev/null 2>&1
+  rp::cmd_serverless list >/dev/null 2>&1
   assert_contains "GET /serverless" "$(<"$cap")"
-  rp::cmd_endpoint get e1 >/dev/null 2>&1
+  rp::cmd_serverless get e1 >/dev/null 2>&1
   assert_contains "GET /serverless/e1" "$(<"$cap")"
-  rp::cmd_endpoint create --template t --gpu "NVIDIA L4" >/dev/null 2>&1
+  rp::cmd_serverless create --template t --gpu "NVIDIA L4" >/dev/null 2>&1
   assert_contains "POST /serverless" "$(<"$cap")"
-  rp::cmd_endpoint update e1 --workers-min 1 >/dev/null 2>&1
+  rp::cmd_serverless update e1 --workers-min 1 >/dev/null 2>&1
   assert_contains "PATCH /serverless/e1" "$(<"$cap")"
-  rp::cmd_endpoint scale e1 --min 0 --max 1 >/dev/null 2>&1
+  rp::cmd_serverless scale e1 --min 0 --max 1 >/dev/null 2>&1
   assert_contains "PATCH /serverless/e1" "$(<"$cap")"
-  rp::cmd_endpoint delete e1 >/dev/null 2>&1
+  rp::cmd_serverless delete e1 >/dev/null 2>&1
   assert_contains "DELETE /serverless/e1" "$(<"$cap")"
   rp::http_api() {
     printf '%s %s\n' "$1" "$2" >"$cap"
     printf '{}'
   }
-  rp::cmd_endpoint run e1 --input '{}' >/dev/null 2>&1
+  rp::cmd_serverless run e1 --input '{}' >/dev/null 2>&1
   assert_contains "POST /e1/runsync" "$(<"$cap")"
   rp::http_api() { :; }
+  rm -f "$cap"
+}
+
+# The deprecated `endpoint` resource name still routes through the renamed
+# command module, warning on stderr.
+function test_should_route_deprecated_endpoint_resource_with_warning() {
+  local cap err
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    printf '[]'
+  }
+  . "$RP_ROOT/commands/endpoint.sh"
+  err="$(rp::cmd_endpoint list 2>&1 >/dev/null)"
+  assert_contains "deprecated" "$err"
+  assert_contains "GET /serverless" "$(<"$cap")"
+  rp::http() { :; }
   rm -f "$cap"
 }

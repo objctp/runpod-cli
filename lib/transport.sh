@@ -36,7 +36,7 @@ _rp_plane_timeout() {
 # transport failure (status left at 000). Auth header and request body travel
 # through temp files, not argv — argv is visible in `ps` for curl's lifetime, so
 # -H/--data would leak the API key (and, on `rp registry create`, a registry
-# password; on `rp endpoint run`, the job payload).
+# password; on `rp serverless run`, the job payload).
 _curl_json() {
   local url="$1" method="$2" body="${3:-}" max_time="${4:-120}"
   local hdr body_tmp tmp status out

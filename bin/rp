@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# rp — RunPod infrastructure CLI entry point. Loads .env, sources lib/, dispatches <resource> to commands/<resource>.sh (see _help).
+# RunPod CLI (rp) entry point. Loads .env, sources lib/, dispatches <resource> to commands/<resource>.sh (see _help).
 # Usage: rp <resource> <verb> [flags]
 set -euo pipefail
 # Resolve symlinks before locating the root, so rp works whether run from the
@@ -41,17 +41,17 @@ _help() {
   # `cat <<'EOF'` would fork cat on every --help / no-args call (~5 ms on macOS).
   if [[ -z "${_RP_HELP:-}" ]]; then
     read -r -d '' _RP_HELP <<'EOF' || true
-rp — RunPod infrastructure CLI
+RunPod CLI
 
 Usage: rp <resource> <verb> [flags]   (no args prints this help)
 
 Resources:
   volume     network volumes (create, sync models via S3, list compatible GPUs)
-  endpoint   serverless endpoints (create, scale, run jobs, CRUD; --hub-id deploys from a Hub listing)
+  serverless serverless endpoints (create, scale, run jobs, CRUD; --hub-id deploys from a Hub listing)
   pod        on-demand pods (create, start/stop, update, CRUD)
   template   pod/serverless templates (search by name)
   registry   container-registry auths
-  billing    pod / endpoint / network-volume billing
+  billing    pod / serverless / public-endpoint / cluster / network-volume billing
   account    balance + spend (GraphQL)
   hub        Hub marketplace search / get (GraphQL)
   ssh        registered SSH keys + pod ssh info (GraphQL)
@@ -66,7 +66,7 @@ Examples:
   rp volume create --name ocr-models --size 20 --dc EU-RO-1
   rp volume sync ocr-models --models glm
   rp volume gpus ocr-models
-  rp endpoint create --template <id> --network-volume-id <nv> \
+  rp serverless create --template <id> --network-volume-id <nv> \
       --gpus-from-volume ocr-models --workers-min 0 --workers-max 1 --idle 600
   rp stock gpu
   rp stock dc

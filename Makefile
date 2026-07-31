@@ -1,6 +1,6 @@
 RP ?= ./bin/rp
 
-.PHONY: install fmt lint test check package stock volumes endpoints pods destroy
+.PHONY: install fmt lint test check package stock volumes serverless pods destroy
 
 install:
 	@ln -sf "$(CURDIR)/bin/rp" /usr/local/bin/rp 2>/dev/null || echo "Add $(CURDIR)/bin to your PATH instead"
@@ -38,12 +38,12 @@ stock:
 volumes:
 	$(RP) volume list
 
-endpoints:
-	$(RP) endpoint list
+serverless:
+	$(RP) serverless list
 
 pods:
 	$(RP) pod list
 
 destroy:
-	@$(RP) endpoint list; $(RP) pod list; $(RP) volume list
+	@$(RP) serverless list; $(RP) pod list; $(RP) volume list
 	@echo "delete with: rp <resource> delete <id>"

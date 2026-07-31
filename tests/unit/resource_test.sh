@@ -36,7 +36,7 @@ function test_should_map_each_resource_to_its_path_and_key() {
   _resource_meta volume
   assert_equals "/network-volumes" "$RP_RES_PATH"
   assert_equals "networkVolumes" "$RP_RES_KEY"
-  _resource_meta endpoint
+  _resource_meta serverless
   assert_equals "/serverless" "$RP_RES_PATH"
   assert_equals "endpoints" "$RP_RES_KEY"
   _resource_meta template
@@ -87,7 +87,7 @@ function test_should_resolve_id_when_list_is_wrapped() {
   RES_MOCK='{"registries":[{"id":"r1","name":"alpha"}]}'
   assert_equals "r1" "$(rp::resource_id registry alpha)"
   RES_MOCK='{"endpoints":[{"id":"e1","name":"alpha"}]}'
-  assert_equals "e1" "$(rp::resource_id endpoint alpha)"
+  assert_equals "e1" "$(rp::resource_id serverless alpha)"
 }
 
 function test_should_exit_two_when_id_resource_unsupported() {
@@ -229,6 +229,34 @@ function test_should_die_when_create_response_has_no_id() {
   RES_MOCK='{}'
   rp::args_parse
   (rp::resource_create pod "" '{}' >/dev/null 2>&1)
+  assert_general_error "$?"
+}
+
+# --- resource_existing ---
+
+function test_should_print_id_and_confirm_when_existing_name_matches() {
+  local tmp msg
+  tmp="$(mktemp)"
+  msg="$(mktemp)"
+  RES_MOCK='{"endpoints":[{"id":"e1","name":"glm"}]}'
+  rp::args_parse
+  rp::resource_existing serverless glm >"$tmp" 2>"$msg"
+  assert_equals "e1" "$(<"$tmp")"
+  assert_contains "serverless 'glm' exists: e1" "$(<"$msg")"
+  assert_not_contains "POST" "$(<"$RES_CAP")"
+  rm -f "$tmp" "$msg"
+}
+
+function test_should_return_one_when_existing_name_absent_forced_or_empty() {
+  RES_MOCK='{"networkVolumes":[{"id":"v1","name":"models"}]}'
+  rp::args_parse
+  (rp::resource_existing volume zeta >/dev/null 2>&1)
+  assert_general_error "$?"
+  rp::args_parse --force
+  (rp::resource_existing volume models >/dev/null 2>&1)
+  assert_general_error "$?"
+  rp::args_parse
+  (rp::resource_existing volume "" >/dev/null 2>&1)
   assert_general_error "$?"
 }
 

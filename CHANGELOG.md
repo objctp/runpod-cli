@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Rename endpoint to serverless and expand billing surface
+
 ### Changed
 
 - Apply conventions across the codebase

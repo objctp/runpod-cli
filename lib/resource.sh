@@ -24,10 +24,10 @@ _resource_meta() {
     RP_RES_KEY=networkVolumes
     RP_RES_LABEL=volume
     ;;
-  endpoint)
+  serverless)
     RP_RES_PATH=/serverless
     RP_RES_KEY=endpoints
-    RP_RES_LABEL=endpoint
+    RP_RES_LABEL=serverless
     ;;
   template)
     RP_RES_PATH=/templates
@@ -72,29 +72,47 @@ rp::resource_delete() {
   rp::ok "deleted $RP_RES_LABEL $res_id"
 }
 
+# Idempotency-by-name gate for create paths: when $2 names an existing record
+# (and --force was not given), confirm on stderr, print the id on stdout, and
+# return 0; otherwise return 1 so the caller proceeds to build and POST a body.
+# rp::resource_create gates on this, and create verbs that die on missing
+# required flags before reaching it (serverless) call it first so the gate
+# stays reachable.
+# Arguments:
+#   $1 - resource: resource name (pod, volume, serverless, ...)
+#   $2 - name: optional; empty always returns 1
+# Returns:
+#   0 - existing record found; id printed, caller must not POST
+#   1 - no name, --force given, or no match; caller proceeds
+rp::resource_existing() {
+  local res_resource="$1" res_name="${2:-}"
+  [[ -n "$res_name" ]] || return 1
+  rp::args_has force && return 1
+  _resource_meta "$res_resource"
+  local res_existing
+  res_existing="$(rp::resource_id "$res_resource" "$res_name")"
+  [[ -n "$res_existing" ]] || return 1
+  rp::ok "$RP_RES_LABEL '$res_name' exists: $res_existing"
+  printf '%s\n' "$res_existing"
+}
+
 # Create a record: POST the prepared body, extract the new id, confirm on
 # stderr, print the id on stdout.
 # Arguments:
-#   $1 - resource: resource name (pod, volume, endpoint, ...)
+#   $1 - resource: resource name (pod, volume, serverless, ...)
 #   $2 - name: optional; non-empty makes the create idempotent by name
 #   $3 - body: JSON request body
 #   $4 - detail: optional text appended to the success message
 # Returns:
 #   0 - created (or existing id printed when idempotent by name)
 #   1 - create failed (dies)
-# With a non-empty $2 and no --force, an existing record's id is printed instead
-# of POSTing; an empty $2 always POSTs (pod, registry).
+# With a non-empty $2 and no --force, rp::resource_existing prints the existing
+# record's id instead of POSTing; an empty $2 always POSTs (pod, registry).
 rp::resource_create() {
   local res_resource="$1" res_name="$2" res_body="$3" res_detail="${4:-}"
   _resource_meta "$res_resource"
-  if [[ -n "$res_name" ]] && ! rp::args_has force; then
-    local res_existing
-    res_existing="$(rp::resource_id "$res_resource" "$res_name")"
-    if [[ -n "$res_existing" ]]; then
-      rp::ok "$RP_RES_LABEL '$res_name' exists: $res_existing"
-      printf '%s\n' "$res_existing"
-      return 0
-    fi
+  if rp::resource_existing "$res_resource" "$res_name"; then
+    return 0
   fi
   local res_res res_newid
   res_res="$(rp::http POST "$RP_RES_PATH" "$res_body")"
@@ -115,7 +133,7 @@ rp::resource_id() {
 }
 
 # Spread a template's container-config fields as a JSON object (the v2 shape
-# `rp pod create --template` / `rp endpoint create --template` default from). GETs
+# `rp pod create --template` / `rp serverless create --template` default from). GETs
 # the template and keeps only the non-null fields of the v2 ContainerConfig.
 rp::template_spread() {
   rp::http GET "/templates/$1" | jq -c '{image, args, disk, ports, env, registry} | with_entries(select(.value != null))'

@@ -45,18 +45,51 @@ function test_should_dispatch_pods_verb_to_billing_endpoint() {
   assert_contains '"data"' "$(<"$OUT")"
 }
 
-# Main-shell routing so the endpoints/volumes branches register coverage.
-function test_should_route_endpoints_and_volumes_verbs() {
+# Main-shell routing so the serverless/volumes branches register coverage.
+function test_should_route_serverless_and_volumes_verbs() {
   local cap
   cap="$(mktemp)"
   rp::http() {
     printf '%s %s\n' "$1" "$2" >"$cap"
     printf '{}'
   }
-  rp::cmd_billing endpoints >/dev/null 2>&1
-  assert_contains "GET /billing/serverless" "$(<"$cap")"
+  rp::cmd_billing serverless >/dev/null 2>&1
+  assert_equals "GET /billing/serverless" "$(<"$cap")"
+  rp::cmd_billing public-endpoints >/dev/null 2>&1
+  assert_equals "GET /billing/endpoints" "$(<"$cap")"
+  rp::cmd_billing clusters >/dev/null 2>&1
+  assert_equals "GET /billing/clusters" "$(<"$cap")"
   rp::cmd_billing volumes >/dev/null 2>&1
-  assert_contains "GET /billing/networkvolumes" "$(<"$cap")"
+  assert_equals "GET /billing/networkvolumes" "$(<"$cap")"
+  rp::cmd_billing all >/dev/null 2>&1
+  assert_equals "GET /billing" "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_filter_serverless_billing_when_id_given() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    printf '{}'
+  }
+  rp::cmd_billing serverless e1 >/dev/null 2>&1
+  assert_equals "GET /billing/serverless?serverlessId=e1" "$(<"$cap")"
+  rm -f "$cap"
+}
+
+# Pre-rename behaviour: `billing endpoints` meant serverless spend. The alias
+# keeps old scripts working, with a pointer at the two replacement verbs.
+function test_should_route_deprecated_endpoints_verb_with_warning() {
+  local cap err
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    printf '{}'
+  }
+  err="$(rp::cmd_billing endpoints 2>&1 >/dev/null)"
+  assert_equals "GET /billing/serverless" "$(<"$cap")"
+  assert_contains "deprecated" "$err"
   rm -f "$cap"
 }
 
