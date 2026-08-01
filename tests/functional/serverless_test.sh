@@ -475,3 +475,104 @@ function test_should_route_deprecated_endpoint_resource_with_warning() {
   rp::http() { :; }
   rm -f "$cap"
 }
+
+# rp serverless workers e1 — human path tables active workers and prints the
+# status histogram on stderr.
+function test_should_table_workers_and_histogram_on_workers() {
+  rp::http() {
+    printf '{"endpointVersion":4,"summary":{"running":1,"idle":1,"initializing":0,"throttled":0,"unhealthy":0,"total":2},"workers":[{"id":"w1","status":"RUNNING","gpuCount":1,"isStale":false,"version":4,"image":"img:1","uptimeSeconds":3600,"gpuTypeId":"NVIDIA 4090","dataCenterId":"US-KS-2"}]}'
+  }
+  local out err
+  out="$(rp::cmd_serverless workers e1 2>/tmp/w_err)"
+  err="$(cat /tmp/w_err)"
+  assert_contains "id" "$out"
+  assert_contains "status" "$out"
+  assert_contains "gpuType" "$out"
+  assert_contains "dc" "$out"
+  assert_contains "RUNNING" "$out"
+  assert_contains "w1" "$out"
+  assert_contains "total=2" "$err"
+  assert_contains "running=1" "$err"
+  rp::http() { :; }
+  rm -f /tmp/w_err
+}
+
+# rp serverless workers e1 --json — emits the raw envelope verbatim, no headline.
+function test_should_emit_raw_envelope_on_workers_json() {
+  local envelope='{"endpointVersion":4,"summary":{"running":1,"idle":1,"initializing":0,"throttled":0,"unhealthy":0,"total":2},"workers":[{"id":"w1","status":"RUNNING"}]}'
+  rp::http() { printf '%s' "$envelope"; }
+  local out err
+  out="$(rp::cmd_serverless workers e1 --json 2>/tmp/w_err)"
+  err="$(cat /tmp/w_err)"
+  assert_equals "$envelope" "$out"
+  assert_equals "" "$err"
+  rp::http() { :; }
+  rm -f /tmp/w_err
+}
+
+# An endpoint with no active workers prints the header row and a total=0 headline.
+function test_should_render_empty_workers_cleanly() {
+  rp::http() { printf '{"endpointVersion":4,"summary":{"running":0,"idle":0,"initializing":0,"throttled":0,"unhealthy":0,"total":0},"workers":[]}'; }
+  local out err
+  out="$(rp::cmd_serverless workers e1 2>/tmp/w_err)"
+  err="$(cat /tmp/w_err)"
+  assert_contains "id" "$out"
+  assert_not_contains "RUNNING" "$out"
+  assert_contains "total=0" "$err"
+  rp::http() { :; }
+  rm -f /tmp/w_err
+}
+
+# rp serverless workers with no id exits usage (code 2).
+function test_should_exit_usage_when_workers_missing_id() {
+  rp::http() { :; }
+  (rp::cmd_serverless workers >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+# rp serverless releases e1 — human path tables releases with a compact diff and
+# prints the rollout summary on stderr.
+function test_should_table_releases_and_rollout_on_releases() {
+  rp::http() {
+    printf '{"endpointVersion":4,"rollout":{"inProgress":true,"workersOnLatest":1,"workersTotal":2,"percentOnLatest":50},"releases":[{"id":"r1","source":"MANUAL","createdAt":"2026-06-01T12:10:00Z","workerCount":2,"diff":[{"field":"workers.max","old":5,"new":10}],"version":4,"buildId":null}]}'
+  }
+  local out err
+  out="$(rp::cmd_serverless releases e1 2>/tmp/r_err)"
+  err="$(cat /tmp/r_err)"
+  assert_contains "MANUAL" "$out"
+  assert_contains "2026-06-01T12:10:00Z" "$out"
+  assert_contains "workers.max: 5 → 10" "$out"
+  assert_contains "1/2 on latest" "$err"
+  assert_contains "in progress" "$err"
+  rp::http() { :; }
+  rm -f /tmp/r_err
+}
+
+# rp serverless releases e1 --json — emits the raw envelope verbatim (incl. rollout).
+function test_should_emit_raw_envelope_on_releases_json() {
+  local envelope='{"endpointVersion":4,"rollout":{"inProgress":false,"workersOnLatest":2,"workersTotal":2,"percentOnLatest":100},"releases":[{"id":"r1","source":"MANUAL","createdAt":"2026-06-01T12:10:00Z","workerCount":2,"diff":[],"version":4,"buildId":null}]}'
+  rp::http() { printf '%s' "$envelope"; }
+  local out err
+  out="$(rp::cmd_serverless releases e1 --json 2>/tmp/r_err)"
+  err="$(cat /tmp/r_err)"
+  assert_equals "$envelope" "$out"
+  assert_equals "" "$err"
+  rp::http() { :; }
+  rm -f /tmp/r_err
+}
+
+# Route workers/releases through the public dispatcher to the right GET paths.
+function test_should_route_workers_and_releases_verbs() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    printf '{"workers":[],"releases":[]}'
+  }
+  rp::cmd_serverless workers e1 >/dev/null 2>&1
+  assert_contains "GET /serverless/e1/workers" "$(<"$cap")"
+  rp::cmd_serverless releases e1 >/dev/null 2>&1
+  assert_contains "GET /serverless/e1/releases" "$(<"$cap")"
+  rp::http() { :; }
+  rm -f "$cap"
+}

@@ -376,6 +376,50 @@ _serverless_run() {
   rp::emit_json_or "$body" _serverless_run_human "$id" "$body"
 }
 
+# rp serverless workers <id> — live worker ids/states/placement for an endpoint.
+# GET /v2/serverless/{id}/workers (listEndpointWorkers). --json emits the raw
+# envelope (workers + summary + endpointVersion); human mode prints the status
+# histogram on stderr, then tables the active workers.
+_serverless_workers() {
+  local id
+  rp::require_pos id "usage: rp serverless workers <id>"
+  local body
+  body="$(rp::http GET "/serverless/$id/workers")"
+  if ! rp::args_has json; then
+    rp::info "$(printf '%s' "$body" | jq -r '(.summary // {}) as $s | .endpointVersion as $v | "endpoint v\($v // "?")  workers: total=\($s.total // 0) running=\($s.running // 0) idle=\($s.idle // 0) init=\($s.initializing // 0) throttled=\($s.throttled // 0) unhealthy=\($s.unhealthy // 0)"')"
+  fi
+  local arr
+  arr="$(rp::unwrap workers "$body")"
+  rp::emit_json_or "$body" rp::table "$arr" --reshape \
+    'map({id, status, stale:(.isStale|tostring), version,
+         gpus:.gpuCount, gpuType:.gpuTypeId, dc:.dataCenterId,
+         uptime:.uptimeSeconds, image})' \
+    id status stale version gpus gpuType dc uptime image
+}
+
+# rp serverless releases <id> — release history (newest first) + rollout status.
+# GET /v2/serverless/{id}/releases (listEndpointReleases). --json emits the raw
+# envelope (releases + rollout + endpointVersion); human mode prints the rollout
+# summary on stderr, then tables the releases with a compact per-release diff.
+_serverless_releases() {
+  local id
+  rp::require_pos id "usage: rp serverless releases <id>"
+  local body
+  body="$(rp::http GET "/serverless/$id/releases")"
+  if ! rp::args_has json; then
+    rp::info "$(printf '%s' "$body" | jq -r '(.rollout // {}) as $r | .endpointVersion as $v | "endpoint v\($v // "?")  rollout: \($r.workersOnLatest // 0)/\($r.workersTotal // 0) on latest (\($r.percentOnLatest // 0)%)\(if ($r.inProgress // false) then " — in progress" else "" end)"')"
+  fi
+  local arr
+  arr="$(rp::unwrap releases "$body")"
+  rp::emit_json_or "$body" rp::table "$arr" --reshape \
+    'map({version:(.version // "?"), source, workers:.workerCount,
+         createdAt, build:.buildId,
+         diff:((.diff // [])
+               | map("\(.field): \(if .old == null then "(none)" else (.old|tostring) end) → \(if .new == null then "(none)" else (.new|tostring) end)")
+               | join("; "))})' \
+    version source workers createdAt build diff
+}
+
 rp::cmd_serverless() {
   local verb="${1:-help}"
   shift || true
@@ -388,6 +432,8 @@ rp::cmd_serverless() {
   update) _serverless_update ;;
   delete) rp::resource_delete serverless ;;
   scale) _serverless_scale ;;
+  workers) _serverless_workers ;;
+  releases) _serverless_releases ;;
   run) _serverless_run ;;
   -h | --help | help)
     cat <<'EOF'
@@ -400,6 +446,8 @@ Usage: rp serverless <verb> [flags]
            --env overlays the template's env, user value winning per key)
   list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types>] [--gpu-count N] [--registry <id>] | scale <id> --min N --max N [--idle S] | delete <id>
   run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]
+  workers <id>        live worker ids/states/placement (+ status histogram, --json for full envelope)
+  releases <id>       release history newest-first (+ rollout summary; per-release diff column)
 EOF
     ;;
   *) rp::usage "unknown serverless verb: '$verb'" ;;
