@@ -151,6 +151,67 @@ function test_should_merge_env_over_template_env_on_create() {
   rm -f "$marker" "$body"
 }
 
+function test_should_override_template_registry_when_create_flag_given() {
+  local marker body
+  marker="$(mktemp)"
+  body="$(mktemp)"
+  _mock_create_http "$marker" "$body" '{"id":"t","image":"img:1","disk":10,"registry":"reg-template"}'
+  rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --registry reg-123
+  _serverless_create >/dev/null 2>&1
+  assert_equals 'reg-123' "$(jq -r '.registry' "$body")"
+  rp::http() { :; }
+  rm -f "$marker" "$body"
+}
+
+function test_should_omit_registry_when_create_flag_absent() {
+  local marker body
+  marker="$(mktemp)"
+  body="$(mktemp)"
+  _mock_create_http "$marker" "$body" '{"id":"t","image":"img:1","disk":10,"registry":"reg-template"}'
+  rp::args_parse --name e1 --template t --gpu "NVIDIA L4"
+  _serverless_create >/dev/null 2>&1
+  assert_equals 'reg-template' "$(jq -r '.registry' "$body")"
+  rp::http() { :; }
+  rm -f "$marker" "$body"
+}
+
+function test_should_set_registry_on_hub_path() {
+  local fixture payload
+  payload="$(mktemp)"
+  fixture="$(jq -c -n --arg img 'vllm:1' --arg cfg '{"gpuIds":"ADA_80_PRO","gpuCount":1,"containerDiskInGb":20}' \
+    '{listing:{id:"h1",title:"vLLM",listedRelease:{tagName:"v1",build:{imageName:$img},config:$cfg}}}')"
+  rp::http() {
+    case "$1 $2" in
+    'GET /serverless') printf '{"endpoints":[]}' ;;
+    'POST /serverless')
+      printf '%s' "${3:-}" >"$payload"
+      printf '{"id":"newhub","name":"glm"}'
+      ;;
+    esac
+  }
+  rp::graphql() { printf '%s' "$fixture"; }
+  rp::args_parse --hub-id h1 --name glm --registry reg-789
+  _serverless_create >/dev/null 2>&1
+  assert_equals 'reg-789' "$(jq -r '.registry' "$payload")"
+  rp::http() { :; }
+  rp::graphql() { :; }
+  rm -f "$payload"
+}
+
+function test_should_set_registry_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"e1"}'
+  }
+  rp::args_parse e1 --registry reg-upd
+  _serverless_update >/dev/null 2>&1
+  assert_equals 'reg-upd' "$(jq -r '.registry' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
 function test_should_exit_usage_when_create_has_no_gpu() {
   rp::http() {
     case "$1 $2" in

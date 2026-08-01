@@ -195,6 +195,12 @@ _serverless_create() {
   # it key-by-key so the user wins on collision and the rest survives.
   rp::obj_merge_env obj "$(rp::args_get env)"
 
+  local registry
+  registry="$(rp::args_get registry)"
+  if [[ -n "$registry" ]]; then
+    rp::obj_set obj registry "$(rp::json_str "$registry")"
+  fi
+
   rp::resource_create serverless "$name" "$obj"
 }
 
@@ -273,6 +279,11 @@ _serverless_create_hub() {
   if [[ -n "$nvid" ]]; then
     body="$(_json_merge "$body" "$(rp::json_obj networkVolumes "$(rp::json_array "$nvid")" dataCenterIds "$(rp::json_array "$dc")")")"
   fi
+  local hreg
+  hreg="$(rp::args_get registry)"
+  if [[ -n "$hreg" ]]; then
+    body="$(_json_merge "$body" "$(rp::json_obj registry "$(rp::json_str "$hreg")")")"
+  fi
   rp::resource_create serverless "$name" "$body" "from hub listing $hubid"
 }
 
@@ -294,7 +305,7 @@ _serverless_scale() {
 
 _serverless_update() {
   local id
-  rp::require_pos id "usage: rp serverless update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>]"
+  rp::require_pos id "usage: rp serverless update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>] [--registry <id>]"
   local obj='{}' gpu
   local wmin wmax idle
   wmin="$(rp::args_get_uint workers-min)"
@@ -309,6 +320,11 @@ _serverless_update() {
     poolcsv="$(_serverless_gpu_poolcsv "$gpu")"
     count="$(rp::args_get_uint gpu-count 1)"
     rp::obj_set obj gpu "$(rp::json_gpu_endpoint "$poolcsv" "$count")"
+  fi
+  local registry
+  registry="$(rp::args_get registry)"
+  if [[ -n "$registry" ]]; then
+    rp::obj_set obj registry "$(rp::json_str "$registry")"
   fi
   [[ "$obj" != '{}' ]] || rp::usage "nothing to update"
   local res
@@ -378,11 +394,11 @@ rp::cmd_serverless() {
 Usage: rp serverless <verb> [flags]
   create --template <id> [--name <n>] [--gpu <type,..> | --gpus-from-volume <name>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids <id,id>]
           [--type QUEUE|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot] [--env K=V]…
-          [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] [--execution-timeout <s>] [--hub-id <listing-id>] [--force]
+          [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] [--execution-timeout <s>] [--hub-id <listing-id>] [--force] [--registry <id>]
           (idempotent by --name; --hub-id deploys from a Hub listing; --type defaults to QUEUE;
            --scaler-type defaults to QUEUE_DELAY with queueDelay 4; --idle sets workers.idleTimeout;
            --env overlays the template's env, user value winning per key)
-  list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types>] [--gpu-count N] | scale <id> --min N --max N [--idle S] | delete <id>
+  list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types>] [--gpu-count N] [--registry <id>] | scale <id> --min N --max N [--idle S] | delete <id>
   run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]
 EOF
     ;;

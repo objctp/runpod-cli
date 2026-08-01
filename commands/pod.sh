@@ -13,7 +13,7 @@ _pod_simple() {
 
 _pod_update() {
   local id
-  rp::require_pos id "usage: rp pod update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>] [--ports <a/b>] [--env K=V]… [--start-cmd <a,b,...>] (see: rp pod --help)"
+  rp::require_pos id "usage: rp pod update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>] [--ports <a/b>] [--env K=V]… [--start-cmd <a,b,...>] [--registry <id>] (see: rp pod --help)"
   local obj='{}' disk vol_gb name image ports start env
   disk="$(rp::args_get_uint container-disk-gb)"
   rp::obj_set obj disk "$disk"
@@ -40,6 +40,11 @@ _pod_update() {
   env="$(rp::args_get env)"
   if [[ -n "$env" ]]; then
     rp::obj_set obj env "$(rp::env_to_json "$env")"
+  fi
+  local registry
+  registry="$(rp::args_get registry)"
+  if [[ -n "$registry" ]]; then
+    rp::obj_set obj registry "$(rp::json_str "$registry")"
   fi
   [[ "$obj" != '{}' ]] || rp::usage "nothing to update (see: rp pod update --help)"
   rp::info "note: updating a running pod resets it — data outside /workspace or a network volume is wiped"
@@ -86,6 +91,11 @@ _pod_create() {
   env="$(rp::args_get env)"
   if [[ -n "$env" ]]; then
     rp::obj_set obj env "$(rp::env_to_json "$env")"
+  fi
+  local registry
+  registry="$(rp::args_get registry)"
+  if [[ -n "$registry" ]]; then
+    rp::obj_set obj registry "$(rp::json_str "$registry")"
   fi
 
   local gpu first_gpu gcount
@@ -145,9 +155,9 @@ rp::cmd_pod() {
 Usage: rp pod <verb> [flags]
   create --image <img> [--name <n>] [--gpu <id>] [--gpu-count N] [--dc <id,id>]
           [--cloud SECURE|COMMUNITY] [--network-volume-id <id>] [--volume-gb N] [--container-disk-gb N]
-          [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>] [--template <id>]
+          [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>] [--template <id>] [--registry <id>]
   update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>]
-          [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>]   (PATCH; resets a running pod)
+          [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>] [--registry <id>]   (PATCH; resets a running pod)
   list | get <id> | start|stop|restart <id> | delete <id>   (reset is an alias for restart; v2 dropped it)
 EOF
     ;;

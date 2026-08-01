@@ -5,6 +5,7 @@
 ### Added
 
 - Rename endpoint to serverless and expand billing surface
+- Add --registry <id> flag for private-image creds
 
 ### Changed
 

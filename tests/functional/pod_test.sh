@@ -73,6 +73,48 @@ function test_should_post_action_body_when_lifecycle_verb_given() {
   rm -f "$meta" "$body"
 }
 
+function test_should_set_registry_when_create_flag_given() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse pod1 --image img --registry reg-123
+  _pod_create >/dev/null 2>&1
+  assert_equals "reg-123" "$(jq -r '.registry' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_omit_registry_when_create_flag_absent() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse pod1 --image img
+  _pod_create >/dev/null 2>&1
+  assert_equals "false" "$(jq -r 'has("registry")' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_set_registry_when_update_flag_given() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{}'
+  }
+  rp::args_parse pod1 --registry reg-456
+  _pod_update >/dev/null 2>&1
+  assert_equals "reg-456" "$(jq -r '.registry' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
 # main-shell dispatcher call so the public rp::cmd_pod entry registers coverage.
 function test_should_show_help_when_help_verb_given() {
   local tmp
