@@ -10,7 +10,8 @@ _RP_VALIDATE=1
 # the live `dataCenters { s3apiEnabled }` query on 2026-07-20. The live query is
 # the source of truth (see _s3_dcs); this array only backs the guard when the
 # API is unreachable, so `rp volume create` / `sync` still work offline. `rp
-# stock dc` always renders the live s3apiEnabled value, never this snapshot.
+# stock dc` now sources its S3 column from the same `_s3_dcs` resolver, so it too
+# falls back to this snapshot when GraphQL is down (rather than blanking).
 RP_S3_DCS_FALLBACK=(
   EU-CZ-1
   EU-RO-1

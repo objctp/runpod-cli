@@ -55,7 +55,7 @@ Resources:
   account    balance + spend (GraphQL)
   hub        Hub marketplace search / get (GraphQL)
   ssh        registered SSH keys + pod ssh info (GraphQL)
-  stock      GPU types and datacentres (GraphQL)
+  stock      GPU types and datacentres
 
 Meta:
   version / --version / -v   print the installed version

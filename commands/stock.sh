@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# `rp stock` — GPU types and S3-enabled datacentres.
+# `rp stock` — GPU types and datacentres.
 # Usage: rp stock <verb> [flags]
 #
-# `gpu` uses REST API v2 (catalog/gpus); `dc` stays on GraphQL (v2 has no
-# s3apiEnabled equivalent — kept until RunPod exposes an S3-support field).
+# `gpu` and the DC *list* use REST API v2 (catalog/gpus, catalog/datacenters with
+# per-DC stock); the DC *S3 column* stays GraphQL (v2 has no s3apiEnabled field),
+# sourced via lib/validate.sh's `_s3_dcs` with an offline fallback.
 
 _stock_gpu() {
   local data
@@ -14,12 +15,26 @@ _stock_gpu() {
     ID DISPLAY VRAM_GB SECURE_PRICE STOCK
 }
 
+# rp stock dc — datacentre list (v2) with per-DC GPU stock + the S3-API column.
+# DC list + per-DC stock: GET /v2/catalog/datacenters (listDataCenters,
+# include=GPU_AVAILABILITY,CPU_AVAILABILITY). The S3-API column has no v2 field
+# (NO-V2-EQUIVALENT): it is sourced from lib/validate.sh's _s3_dcs — the same
+# GraphQL-backed, offline-fallback resolver `rp volume create` guards on — so the
+# column stays live where reachable and still renders when the API is down.
 _stock_dc() {
-  local data
-  data="$(rp::graphql 'query { dataCenters { id name s3apiEnabled } }')"
-  rp::emit_json_or "$data" rp::table "$data" \
-    --reshape '.dataCenters | map({DATACENTER:.id, S3_API:(if .s3apiEnabled then "yes" else "" end)}) | sort_by(.DATACENTER)' \
-    DATACENTER S3_API
+  local dcs s3set shaped
+  dcs="$(rp::http GET '/catalog/datacenters?include=GPU_AVAILABILITY,CPU_AVAILABILITY' | rp::unwrap dataCenters)"
+  s3set="$(printf '%s\n' "$(_s3_dcs)" | jq -R 'select(length>0)' | jq -sc 'map(ascii_upcase)')"
+  # rp::table takes no jq args, so pre-shape (joining the S3 set) then table it.
+  shaped="$(printf '%s' "$dcs" | jq -c --argjson s3 "$s3set" '
+    map((.id | ascii_upcase) as $dc | {
+      DATACENTER: .id,
+      NAME:       .name,
+      REGION:     .region,
+      GPUS:       ((.gpuAvailability // []) | map(select(.availability != "NONE")) | length),
+      S3_API:     (if ($s3 | index($dc)) then "yes" else "" end)
+    }) | sort_by(.DATACENTER)')"
+  rp::emit_json_or "$dcs" rp::table "$shaped" DATACENTER NAME REGION GPUS S3_API
 }
 
 rp::cmd_stock() {
@@ -31,7 +46,7 @@ rp::cmd_stock() {
   gpu) _stock_gpu ;;
   dc) _stock_dc ;;
   -h | --help | help | "")
-    echo "Usage: rp stock gpu | rp stock dc   (dc via GraphQL — v2 has no s3apiEnabled field)"
+    echo "Usage: rp stock gpu | rp stock dc   (dc list via v2; S3 column via GraphQL + fallback)"
     ;;
   *) rp::usage "unknown stock verb: '$verb'" ;;
   esac

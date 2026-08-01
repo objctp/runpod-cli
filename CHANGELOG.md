@@ -9,6 +9,7 @@
 - Add rp template update plus --public/--registry on template create
 - Add per-resource id filters and time-window flags
 - Add rp serverless workers and releases verbs
+- Migrate rp stock dc to v2 catalog/datacenters (keep S3 column via GraphQL fallback)
 
 ### Changed
 
