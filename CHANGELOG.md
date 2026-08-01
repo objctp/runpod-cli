@@ -7,6 +7,7 @@
 - Rename endpoint to serverless and expand billing surface
 - Add --registry <id> flag for private-image creds
 - Add rp template update plus --public/--registry on template create
+- Add per-resource id filters and time-window flags
 
 ### Changed
 

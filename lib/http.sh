@@ -44,6 +44,23 @@ rp::http() {
   _rp_http_emit "$tmp" "$1" "$2"
 }
 
+# Build a URL-encoded query string from alternating key/value pairs. Values are
+# encoded with jq's @uri so RFC 3339 ':' and a '+00:00' offset survive intact;
+# empty values are skipped. Prints nothing (not "?") when no pair survives, so
+# the caller can splice the result straight onto a path.
+rp::query_params() {
+  local q='' k v enc
+  while (($# >= 2)); do
+    k="$1"
+    v="$2"
+    shift 2
+    [[ -n "$v" ]] || continue
+    enc="$(printf '%s' "$v" | jq -Rr @uri)"
+    q+="${q:+&}${k}=${enc}"
+  done
+  [[ -n "$q" ]] && printf '?%s' "$q"
+}
+
 # Data-plane call under RP_API_BASE (https://api.runpod.ai/v2 — job submission to
 # deployed serverless endpoints). runsync blocks until the job completes, so the
 # default --max-time is 300 s; $4 overrides it.
