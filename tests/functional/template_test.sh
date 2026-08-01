@@ -88,6 +88,101 @@ function test_should_include_volumeInGb_when_not_serverless() {
   rm -f "$body"
 }
 
+function test_should_send_public_and_registry_when_creating() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[]'
+    else
+      printf '%s' "$3" >"$body"
+      printf '{"id":"x"}'
+    fi
+  }
+  rp::args_parse --name pub-tpl --image img --public true --registry cred1
+  _template_create >/dev/null 2>&1
+  assert_equals "true" "$(jq -r '.public' "$body")"
+  assert_equals "cred1" "$(jq -r '.registry' "$body")"
+  rp::args_parse --name plain-tpl --image img
+  _template_create >/dev/null 2>&1
+  assert_equals "null" "$(jq -r '.public' "$body")"
+  assert_equals "null" "$(jq -r '.registry' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_patch_template_fields_on_update() {
+  local cap body
+  cap="$(mktemp)"
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s %s' "$1" "$2" >"$cap"
+    printf '%s' "$3" >"$body"
+    printf '{"id":"t1"}'
+  }
+  rp::args_parse t1 --registry cred1 --name renamed --docker-cmd a,b --public false
+  _template_update >/dev/null 2>&1
+  assert_equals "PATCH /templates/t1" "$(<"$cap")"
+  assert_equals "cred1" "$(jq -r '.registry' "$body")"
+  assert_equals "renamed" "$(jq -r '.name' "$body")"
+  assert_equals "a b" "$(jq -r '.args' "$body")"
+  assert_equals "false" "$(jq -r '.public' "$body")"
+  rp::args_parse t1 --public true
+  _template_update >/dev/null 2>&1
+  assert_equals "true" "$(jq -r '.public' "$body")"
+  rp::http() { :; }
+  rm -f "$cap" "$body"
+}
+
+function test_should_die_when_update_has_no_fields() {
+  rp::http() { :; }
+  rp::args_parse t1
+  (_template_update >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_when_update_public_is_not_boolean() {
+  rp::http() { :; }
+  rp::args_parse t1 --public maybe
+  (_template_update >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_when_update_has_no_id() {
+  rp::http() { :; }
+  rp::args_parse --name n
+  (_template_update >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_when_category_outside_enum() {
+  rp::http() { :; }
+  rp::args_parse --name n --image i --category BOGUS
+  (_template_create >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::args_parse t1 --category GPU
+  (_template_update >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_accept_valid_category_enum_on_create() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[]'
+    else
+      printf '%s' "$3" >"$body"
+      printf '{"id":"x"}'
+    fi
+  }
+  rp::args_parse --name n --image i --category AMD
+  _template_create >/dev/null 2>&1
+  assert_equals "AMD" "$(jq -r '.category' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
 function test_should_filter_templates_by_name_substring() {
   rp::http() {
     printf '[{"id":"t1","name":"glm-ocr","imageName":"img1","isServerless":true},{"id":"t2","name":"flash-ocr","imageName":"img2","isServerless":false}]'
@@ -130,6 +225,8 @@ function test_should_route_each_template_verb() {
   assert_contains "GET /templates/t1" "$(<"$cap")"
   rp::cmd_template create --name n --image img >/dev/null 2>&1
   assert_contains "POST /templates" "$(<"$cap")"
+  rp::cmd_template update t1 --name renamed >/dev/null 2>&1
+  assert_contains "PATCH /templates/t1" "$(<"$cap")"
   rp::cmd_template search glm >/dev/null 2>&1
   assert_contains "GET /templates" "$(<"$cap")"
   rp::cmd_template delete t1 >/dev/null 2>&1
