@@ -8,9 +8,30 @@
 # has no s3apiEnabled field), sourced via lib/validate.sh's `_s3_dcs` with an
 # offline fallback.
 
+# rp stock gpu — GPU types (v2) with availability + optional filters.
+# GET /v2/catalog/gpus (listGpuTypes, include=AVAILABILITY). Filters compose onto
+# the query: --product (POD|CLUSTER|SERVERLESS, csv; default POD,SERVERLESS),
+# --min-count N (count), --cloud SECURE|COMMUNITY, --min-cuda <ver> (minCudaVersion).
 _stock_gpu() {
-  local data
-  data="$(rp::http GET '/catalog/gpus?include=AVAILABILITY&product=POD,SERVERLESS' | rp::unwrap gpus)"
+  local product cloud cuda count q data
+  product="$(rp::args_get product POD,SERVERLESS)"
+  cloud="$(rp::args_get cloud)"
+  case "$cloud" in '' | SECURE | COMMUNITY) ;; *) rp::usage "invalid --cloud '$cloud' (expected SECURE|COMMUNITY)" ;; esac
+  cuda="$(rp::args_get min-cuda)"
+  [[ -z "$cuda" || "$cuda" =~ ^[0-9]+(\.[0-9]+)?$ ]] || rp::usage "invalid --min-cuda '$cuda' (expected major or major.minor, e.g. 12 or 12.1)"
+  # Read raw and validate directly — not via rp::args_get_uint, which wraps
+  # rp::require_uint inside $() and so swallows the usage exit when errexit is
+  # off in tests. The direct call lets a non-integer / negative --min-count fail
+  # fast and stay testable (the -ge 1 floor below already runs direct for that
+  # reason). Mirrors the rp::require_* nameref-family rule in lib/args.sh.
+  count="$(rp::args_get min-count)"
+  rp::require_uint "$count" min-count
+  [[ -z "$count" || "$count" -ge 1 ]] || rp::usage "--min-count must be >= 1 (got $count)"
+  q="include=AVAILABILITY&product=$product"
+  [[ -z "$cloud" ]] || q+="&cloud=$cloud"
+  [[ -z "$cuda" ]] || q+="&minCudaVersion=$cuda"
+  [[ -z "$count" ]] || q+="&count=$count"
+  data="$(rp::http GET "/catalog/gpus?$q" | rp::unwrap gpus)"
   rp::emit_json_or "$data" rp::table "$data" \
     --reshape 'map({ID:.id, DISPLAY:.name, VRAM_GB:(.memory//0), SECURE_PRICE:(.price.secure//""), STOCK:(.availability//"")})' \
     ID DISPLAY VRAM_GB SECURE_PRICE STOCK
@@ -60,7 +81,7 @@ rp::cmd_stock() {
   cpus) _stock_cpus ;;
   dc) _stock_dc ;;
   -h | --help | help | "")
-    echo "Usage: rp stock gpu | rp stock cpus | rp stock dc   (dc list via v2; S3 column via GraphQL + fallback)"
+    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] | rp stock cpus | rp stock dc   (dc list via v2; S3 column via GraphQL + fallback)"
     ;;
   *) rp::usage "unknown stock verb: '$verb'" ;;
   esac

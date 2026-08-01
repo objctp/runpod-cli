@@ -52,6 +52,136 @@ function test_should_render_table_when_gpu_no_json() {
   assert_contains "Medium" "$rendered"
 }
 
+function test_should_default_query_unchanged_when_no_flags() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s' "$1" "$2" >"$cap"
+    printf '%s' "$STOCK_GPU_BODY"
+  }
+  rp::args_parse
+  _stock_gpu >/dev/null 2>&1
+  assert_equals "GET /catalog/gpus?include=AVAILABILITY&product=POD,SERVERLESS" "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_compose_product_when_flag_given() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s' "$1" "$2" >"$cap"
+    printf '%s' "$STOCK_GPU_BODY"
+  }
+  rp::args_parse --product CLUSTER
+  _stock_gpu >/dev/null 2>&1
+  assert_contains "product=CLUSTER" "$(<"$cap")"
+  assert_not_contains "POD,SERVERLESS" "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_compose_cloud_when_flag_given() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s' "$1" "$2" >"$cap"
+    printf '%s' "$STOCK_GPU_BODY"
+  }
+  rp::args_parse --cloud COMMUNITY
+  _stock_gpu >/dev/null 2>&1
+  assert_contains "cloud=COMMUNITY" "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_compose_min_cuda_when_flag_given() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s' "$1" "$2" >"$cap"
+    printf '%s' "$STOCK_GPU_BODY"
+  }
+  rp::args_parse --min-cuda 12.1
+  _stock_gpu >/dev/null 2>&1
+  assert_contains "minCudaVersion=12.1" "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_compose_min_count_when_flag_given() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s' "$1" "$2" >"$cap"
+    printf '%s' "$STOCK_GPU_BODY"
+  }
+  rp::args_parse --min-count 4
+  _stock_gpu >/dev/null 2>&1
+  assert_contains "count=4" "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_compose_all_filters_together() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s' "$1" "$2" >"$cap"
+    printf '%s' "$STOCK_GPU_BODY"
+  }
+  rp::args_parse --cloud SECURE --min-count 2 --min-cuda 12
+  _stock_gpu >/dev/null 2>&1
+  local path
+  path="$(<"$cap")"
+  assert_contains "include=AVAILABILITY" "$path"
+  assert_contains "product=POD,SERVERLESS" "$path"
+  assert_contains "cloud=SECURE" "$path"
+  assert_contains "count=2" "$path"
+  assert_contains "minCudaVersion=12" "$path"
+  rm -f "$cap"
+}
+
+function test_should_exit_two_on_bad_cloud() {
+  rp::http() { printf '%s' "$STOCK_GPU_BODY"; }
+  (
+    rp::args_parse --cloud BOGUS
+    _stock_gpu >/dev/null 2>&1
+  )
+  assert_exit_code 2
+}
+
+function test_should_exit_two_on_bad_min_cuda() {
+  rp::http() { printf '%s' "$STOCK_GPU_BODY"; }
+  (
+    rp::args_parse --min-cuda 12.x
+    _stock_gpu >/dev/null 2>&1
+  )
+  assert_exit_code 2
+}
+
+function test_should_exit_two_on_min_count_floor() {
+  rp::http() { printf '%s' "$STOCK_GPU_BODY"; }
+  (
+    rp::args_parse --min-count 0
+    _stock_gpu >/dev/null 2>&1
+  )
+  assert_exit_code 2
+}
+
+function test_should_exit_two_on_min_count_non_integer() {
+  rp::http() { printf '%s' "$STOCK_GPU_BODY"; }
+  (
+    rp::args_parse --min-count abc
+    _stock_gpu >/dev/null 2>&1
+  )
+  assert_exit_code 2
+}
+
+function test_should_exit_two_on_min_count_negative() {
+  rp::http() { printf '%s' "$STOCK_GPU_BODY"; }
+  (
+    rp::args_parse --min-count -5
+    _stock_gpu >/dev/null 2>&1
+  )
+  assert_exit_code 2
+}
+
 function test_should_return_raw_array_when_cpus_json() {
   rp::args_parse --json
   _stock_cpus >"$OUT"

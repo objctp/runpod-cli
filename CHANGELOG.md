@@ -15,6 +15,7 @@
 - Expose `--type` storage tier on create
 - Add global-networking, locked, volume-path flags and mount mutex guard
 - Add live SSE log streaming for pods and serverless workers
+- Add filter flags to `rp stock gpu`
 
 ### Changed
 
