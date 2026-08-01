@@ -357,6 +357,73 @@ function test_should_set_persistent_path_on_update() {
   rm -f "$body"
 }
 
+# rp::api_stream recording double: captures "<plane> <path> <leid>" into $cap.
+function test_should_route_pod_logs_to_stream() {
+  local cap
+  cap="$(mktemp)"
+  rp::api_stream() { printf '%s %s %s\n' "$1" "$2" "${3:-}" >"$cap"; }
+  rp::cmd_pod logs p1 >/dev/null 2>&1
+  assert_equals "rest /pods/p1/logs " "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_compose_pod_logs_flags_onto_query() {
+  local cap
+  cap="$(mktemp)"
+  rp::api_stream() { printf '%s %s %s\n' "$1" "$2" "${3:-}" >"$cap"; }
+  rp::cmd_pod logs p1 --source container --tail 50 >/dev/null 2>&1
+  assert_equals "rest /pods/p1/logs?source=container&tail=50 " "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_url_encode_since_in_pod_logs() {
+  local cap
+  cap="$(mktemp)"
+  rp::api_stream() { printf '%s %s %s\n' "$1" "$2" "${3:-}" >"$cap"; }
+  rp::cmd_pod logs p1 --since 2026-08-01T00:00:00Z >/dev/null 2>&1
+  assert_contains "since=2026-08-01T00%3A00%3A00Z" "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_pass_last_event_id_as_header_not_query() {
+  local cap
+  cap="$(mktemp)"
+  rp::api_stream() { printf '%s %s %s\n' "$1" "$2" "${3:-}" >"$cap"; }
+  rp::cmd_pod logs p1 --last-event-id 2026-08-01T00:00:00Z >/dev/null 2>&1
+  assert_equals "rest /pods/p1/logs 2026-08-01T00:00:00Z" "$(<"$cap")"
+  assert_not_contains "last-event-id=" "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_die_on_invalid_source_in_pod_logs() {
+  rp::api_stream() { :; }
+  (rp::cmd_pod logs p1 --source bogus >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_on_tail_over_bound_in_pod_logs() {
+  rp::api_stream() { :; }
+  (rp::cmd_pod logs p1 --tail 9999 >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_pass_tail_bounds_in_pod_logs() {
+  local cap
+  cap="$(mktemp)"
+  rp::api_stream() { printf '%s %s %s\n' "$1" "$2" "${3:-}" >"$cap"; }
+  rp::cmd_pod logs p1 --tail 0 >/dev/null 2>&1
+  assert_contains "/pods/p1/logs?tail=0 " "$(<"$cap")"
+  rp::cmd_pod logs p1 --tail 5000 >/dev/null 2>&1
+  assert_contains "/pods/p1/logs?tail=5000 " "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_exit_usage_when_pod_logs_missing_id() {
+  rp::api_stream() { :; }
+  (rp::cmd_pod logs >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
 # main-shell dispatcher call so the public rp::cmd_pod entry registers coverage.
 function test_should_show_help_when_help_verb_given() {
   local tmp

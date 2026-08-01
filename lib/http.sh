@@ -80,3 +80,12 @@ rp::http_api() {
   rp::api_call api "$1" "$2" "${3:-}" "${4:-300}" >"$tmp" || true
   _rp_http_emit "$tmp" "$1" "$2"
 }
+
+# Stream a control-plane SSE log endpoint (GET) straight to stdout under
+# RP_REST_BASE. $1 path (with its query string), $2 optional Last-Event-ID cursor.
+# Used by the pod/serverless logs verbs; the buffered rp::http cannot stream.
+rp::stream_rest() {
+  rp::require_api_key
+  rp::require_cmd curl
+  rp::api_stream rest "$1" "${2:-}"
+}

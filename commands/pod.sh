@@ -167,6 +167,23 @@ _pod_create() {
   rp::resource_create pod "" "$obj"
 }
 
+# rp pod logs <id> — live SSE log stream (container + system).
+# GET /v2/pods/{id}/logs (getPodLogs). Flags map to the source/tail/since query
+# params and the Last-Event-ID header. Streams raw to stdout (no trailing ok
+# line — stdout is the data). Ctrl-C ends the stream.
+_pod_logs() {
+  local id src tail since leid q
+  rp::require_pos id "usage: rp pod logs <id> [--source container|system] [--tail N] [--since <rfc3339>] [--last-event-id <ts>]"
+  src="$(rp::args_get source)"
+  case "$src" in '' | container | system) ;; *) rp::usage "invalid --source '$src' (expected container|system)" ;; esac
+  tail="$(rp::args_get_uint tail)"
+  [[ -z "$tail" ]] || ((tail <= 5000)) || rp::usage "--tail must be <= 5000 (got $tail)"
+  since="$(rp::args_get since)"
+  leid="$(rp::args_get last-event-id)"
+  q="$(rp::query_params source "$src" tail "$tail" since "$since")"
+  rp::stream_rest "/pods/$id/logs$q" "$leid"
+}
+
 rp::cmd_pod() {
   local verb="${1:-help}"
   shift || true
@@ -186,6 +203,7 @@ rp::cmd_pod() {
     _pod_simple restart
     ;;
   restart) _pod_simple restart ;;
+  logs) _pod_logs ;;
   -h | --help | help)
     cat <<'EOF'
 Usage: rp pod <verb> [flags]
@@ -197,7 +215,8 @@ Usage: rp pod <verb> [flags]
   update <id> [--container-disk-gb N] [--volume-gb N] [--volume-path <p>] [--name <n>] [--image <img>]
           [--global-networking true|false] [--locked true|false]
           [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>] [--registry <id>]   (PATCH; resets a running pod)
-  list | get <id> | start|stop|restart <id> | delete <id>   (reset is an alias for restart; v2 dropped it)
+  list | get <id> | start|stop|restart <id> | logs <id> | delete <id>   (reset is an alias for restart; v2 dropped it)
+  logs <id> [--source container|system] [--tail N] [--since <rfc3339>] [--last-event-id <ts>]   (live SSE stream; --tail 0 = live only)
 EOF
     ;;
   *) rp::usage "unknown pod verb: '$verb'" ;;

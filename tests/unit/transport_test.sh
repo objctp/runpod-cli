@@ -79,3 +79,31 @@ function test_should_return_1_on_http_400_soft() {
   rp::graphql_soft 'query { x }' >/dev/null 2>&1
   assert_general_error "$?"
 }
+
+function test_should_classify_clean_stream_as_ok() {
+  assert_equals "ok" "$(_rp_stream_classify 0 "HTTP/2 200")"
+}
+
+function test_should_classify_sigint_as_interrupted_without_status() {
+  assert_equals "interrupted" "$(_rp_stream_classify 130 "")"
+}
+
+function test_should_classify_sigint_as_interrupted_with_status() {
+  assert_equals "interrupted" "$(_rp_stream_classify 130 "HTTP/2 200")"
+}
+
+function test_should_classify_http1_server_error_as_http_code() {
+  assert_equals "http 404" "$(_rp_stream_classify 22 "HTTP/1.1 404 Not Found")"
+}
+
+function test_should_classify_http2_server_error_as_http_code() {
+  assert_equals "http 429" "$(_rp_stream_classify 22 "HTTP/2 429")"
+}
+
+function test_should_classify_ended_2xx_as_ended() {
+  assert_equals "ended" "$(_rp_stream_classify 18 "HTTP/2 200")"
+}
+
+function test_should_classify_curl_failure_without_status_as_transport() {
+  assert_equals "transport" "$(_rp_stream_classify 7 "")"
+}

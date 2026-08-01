@@ -62,6 +62,64 @@ _curl_json() {
   return 0
 }
 
+# Classify the outcome of a streamed GET so rp::api_stream can apply its
+# die/return policy. Pure (never exits) so it is unit-testable. $1 curl exit
+# code, $2 the first dumped HTTP status line (empty if curl died before any
+# headers arrived). Prints one of:
+#   ok           — 2xx stream, curl clean
+#   interrupted  — SIGINT (curl 130); quiet regardless of header state
+#   http <code>  — server error >= 400 (die)
+#   ended        — 2xx/3xx stream ended mid-flight (return the curl code)
+#   transport    — curl failed with no usable status (die)
+_rp_stream_classify() {
+  local rc="$1" first="$2" status
+  status="${first#HTTP/}" # -> "<version> <code> <reason…>"
+  status="${status#* }"   # -> "<code> <reason…>"
+  status="${status%% *}"  # -> "<code>"
+  if ((rc == 0)); then
+    printf 'ok'
+  elif ((rc == 130)); then
+    printf 'interrupted' # SIGINT: quiet even before headers
+  elif [[ "$status" == [0-9][0-9][0-9] && "$status" -ge 400 ]]; then
+    printf 'http %s' "$status"
+  elif [[ "$status" == [0-9][0-9][0-9] ]]; then
+    printf 'ended'
+  else
+    printf 'transport'
+  fi
+}
+
+# Stream a GET endpoint (SSE logs) straight to stdout, unbuffered. The buffered
+# _curl_json above would collect the whole stream into a temp file first; this
+# path is for the two log surfaces that must stream. Auth + the optional
+# Last-Event-ID cursor go through a header file (argv leaks the key / mangles the
+# timestamp's ':'). $1 plane, $2 path (with query), $3 optional Last-Event-ID.
+# HTTP >= 400 -> rp::die (status read from a -D header dump); a finished or
+# interrupted live stream returns its curl code without dying.
+rp::api_stream() {
+  local plane="$1" path="$2" leid="${3:-}"
+  local base hdr hdrs rc first verdict
+  base="$(_rp_plane_base "$plane")" || rp::die "unknown transport plane: '$plane'"
+  _mktemp hdr
+  _mktemp hdrs
+  printf 'Authorization: Bearer %s\n' "$RUNPOD_API_KEY" >"$hdr"
+  [[ -z "$leid" ]] || printf 'Last-Event-ID: %s\n' "$leid" >>"$hdr"
+  curl -s --no-buffer --connect-timeout 15 \
+    -H @"$hdr" -H 'Accept: text/event-stream' -D "$hdrs" -f "$base$path"
+  rc=$?
+  rm -f -- "$hdr"
+  # Recover the HTTP status from the dumped first line, then let the classifier
+  # tell API errors (die) from a finished/interrupted/SIGINT'd stream (return).
+  first="$(grep -m1 -E '^HTTP/' "$hdrs" 2>/dev/null || true)"
+  rm -f -- "$hdrs"
+  verdict="$(_rp_stream_classify "$rc" "$first")"
+  case "$verdict" in
+  ok | interrupted | ended) return "$rc" ;; # rc is 0 for ok; pass curl's code otherwise
+  http\ *) rp::die "RunPod GET $path -> HTTP ${verdict#http }" ;;
+  transport) rp::die "curl transport error: GET $path" ;;
+  esac
+}
+
 # Plane-addressed call: resolves <plane> to its base URL + default timeout, then
 # delegates to _curl_json. Dies only on an unknown plane (a programming error);
 # transport/HTTP outcomes are left to the caller's die/soft policy.

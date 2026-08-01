@@ -420,6 +420,26 @@ _serverless_releases() {
     version source workers createdAt build diff
 }
 
+# rp serverless logs <id> --worker <w> — live SSE log stream for one worker.
+# GET /v2/serverless/{id}/workers/{workerId}/logs (getWorkerLogs). --worker is
+# required (a worker id from `rp serverless workers <id>`); the parser keeps only
+# the first positional, so the worker id rides a flag, not a second positional.
+# Same source/tail/since/last-event-id flags as `rp pod logs`.
+_serverless_logs() {
+  local id worker src tail since leid q
+  rp::require_pos id "usage: rp serverless logs <id> --worker <workerId> [--source container|system] [--tail N] [--since <rfc3339>] [--last-event-id <ts>]"
+  worker="$(rp::args_get worker)"
+  [[ -n "$worker" ]] || rp::usage "rp serverless logs requires --worker <workerId> (list them with: rp serverless workers $id)"
+  src="$(rp::args_get source)"
+  case "$src" in '' | container | system) ;; *) rp::usage "invalid --source '$src' (expected container|system)" ;; esac
+  tail="$(rp::args_get_uint tail)"
+  [[ -z "$tail" ]] || ((tail <= 5000)) || rp::usage "--tail must be <= 5000 (got $tail)"
+  since="$(rp::args_get since)"
+  leid="$(rp::args_get last-event-id)"
+  q="$(rp::query_params source "$src" tail "$tail" since "$since")"
+  rp::stream_rest "/serverless/$id/workers/$worker/logs$q" "$leid"
+}
+
 rp::cmd_serverless() {
   local verb="${1:-help}"
   shift || true
@@ -434,6 +454,7 @@ rp::cmd_serverless() {
   scale) _serverless_scale ;;
   workers) _serverless_workers ;;
   releases) _serverless_releases ;;
+  logs) _serverless_logs ;;
   run) _serverless_run ;;
   -h | --help | help)
     cat <<'EOF'
@@ -448,6 +469,7 @@ Usage: rp serverless <verb> [flags]
   run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]
   workers <id>        live worker ids/states/placement (+ status histogram, --json for full envelope)
   releases <id>       release history newest-first (+ rollout summary; per-release diff column)
+  logs <id> --worker <id>   live worker log stream (--worker id from `workers`; same source/tail/since/last-event-id flags)
 EOF
     ;;
   *) rp::usage "unknown serverless verb: '$verb'" ;;

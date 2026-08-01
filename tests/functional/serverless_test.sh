@@ -415,6 +415,31 @@ function test_should_exit_usage_when_run_input_is_invalid_json() {
   assert_exit_code 2
 }
 
+# rp::api_stream recording double: captures "<plane> <path> <leid>" into $cap.
+function test_should_route_serverless_logs_to_stream() {
+  local cap
+  cap="$(mktemp)"
+  rp::api_stream() { printf '%s %s %s\n' "$1" "$2" "${3:-}" >"$cap"; }
+  rp::cmd_serverless logs e1 --worker w1 >/dev/null 2>&1
+  assert_equals "rest /serverless/e1/workers/w1/logs " "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_should_require_worker_in_serverless_logs() {
+  rp::api_stream() { :; }
+  (rp::cmd_serverless logs e1 >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_compose_serverless_logs_flags_onto_query() {
+  local cap
+  cap="$(mktemp)"
+  rp::api_stream() { printf '%s %s %s\n' "$1" "$2" "${3:-}" >"$cap"; }
+  rp::cmd_serverless logs e1 --worker w1 --source system --tail 0 >/dev/null 2>&1
+  assert_equals "rest /serverless/e1/workers/w1/logs?source=system&tail=0 " "$(<"$cap")"
+  rm -f "$cap"
+}
+
 # main-shell dispatcher call so the public rp::cmd_serverless entry registers coverage.
 function test_should_show_help_when_help_verb_given() {
   local tmp
