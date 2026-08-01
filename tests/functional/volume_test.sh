@@ -75,6 +75,98 @@ function test_should_post_when_volume_name_is_new() {
   rm -f "$marker"
 }
 
+# Capture the POST body ($3) so the create-time `--type` tier is asserted.
+function test_create_sends_type_when_given() {
+  local marker body
+  marker="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[]'
+    else
+      printf '%s' "$3" >"$marker"
+      printf '{"id":"new1"}'
+    fi
+  }
+  rp::args_parse --name n --size 10 --dc EU-RO-1 --type HIGH_PERFORMANCE
+  _volume_create >/dev/null 2>&1
+  body="$(<"$marker")"
+  assert_equals "HIGH_PERFORMANCE" "$(printf '%s' "$body" | jq -r '.type')"
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
+function test_create_omits_type_when_absent() {
+  local marker body
+  marker="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[]'
+    else
+      printf '%s' "$3" >"$marker"
+      printf '{"id":"new1"}'
+    fi
+  }
+  rp::args_parse --name n --size 10 --dc EU-RO-1
+  _volume_create >/dev/null 2>&1
+  body="$(<"$marker")"
+  assert_equals "false" "$(printf '%s' "$body" | jq -r 'has("type")')"
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
+function test_create_accepts_standard_type() {
+  local marker body
+  marker="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[]'
+    else
+      printf '%s' "$3" >"$marker"
+      printf '{"id":"new1"}'
+    fi
+  }
+  rp::args_parse --name n --size 10 --dc EU-RO-1 --type STANDARD
+  _volume_create >/dev/null 2>&1
+  body="$(<"$marker")"
+  assert_equals "STANDARD" "$(printf '%s' "$body" | jq -r '.type')"
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
+function test_create_normalises_type_case() {
+  local marker body
+  marker="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[]'
+    else
+      printf '%s' "$3" >"$marker"
+      printf '{"id":"new1"}'
+    fi
+  }
+  rp::args_parse --name n --size 10 --dc EU-RO-1 --type high_performance
+  _volume_create >/dev/null 2>&1
+  body="$(<"$marker")"
+  assert_equals "HIGH_PERFORMANCE" "$(printf '%s' "$body" | jq -r '.type')"
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
+function test_create_bad_type_exits_without_http() {
+  local marker
+  marker="$(mktemp)"
+  rp::http() {
+    printf 'POSTED' >>"$marker"
+    printf '{"id":"x"}'
+  }
+  rp::args_parse --name n --size 10 --dc EU-RO-1 --type TURBO
+  (_volume_create >/dev/null 2>&1)
+  assert_exit_code 2
+  assert_equals "" "$(cat "$marker")"
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
 function test_should_show_help_when_help_flag_follows_verb() {
   local out
   out="$(rp::cmd_volume list --help 2>/dev/null)"

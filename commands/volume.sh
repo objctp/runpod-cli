@@ -14,14 +14,22 @@ _model_repo() {
 }
 
 _volume_create() {
-  local name size dc
+  local name size dc vtype
   name="$(rp::args_get name)"
   size="$(rp::args_get_uint size)"
   dc="$(rp::args_get dc)"
-  [[ -n "$name" && -n "$size" && -n "$dc" ]] || rp::usage "usage: rp volume create --name <n> --size <gb> --dc <id>"
+  [[ -n "$name" && -n "$size" && -n "$dc" ]] || rp::usage "usage: rp volume create --name <n> --size <gb> --dc <id> [--type STANDARD|HIGH_PERFORMANCE]"
+  vtype="$(rp::args_get type)"
+  case "${vtype^^}" in
+  '' | STANDARD | HIGH_PERFORMANCE) vtype="${vtype^^}" ;;
+  *) rp::usage "--type must be STANDARD or HIGH_PERFORMANCE (got: '$vtype')" ;;
+  esac
   rp::warn_unless_s3_dc "$dc"
-  local body
-  body="$(rp::json_obj name "$(rp::json_str "$name")" size "$size" dataCenter "$(rp::json_str "$dc")")"
+  local body='{}'
+  rp::obj_set body name "$(rp::json_str "$name")"
+  rp::obj_set body size "$size"
+  rp::obj_set body dataCenter "$(rp::json_str "$dc")"
+  [[ -z "$vtype" ]] || rp::obj_set body type "$(rp::json_str "$vtype")"
   rp::resource_create volume "$name" "$body" "$dc, ${size}GB"
 }
 
@@ -122,7 +130,7 @@ rp::cmd_volume() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp volume <verb> [flags]
-  create --name <n> --size <gb> --dc <id>   (idempotent by name; warns if DC is not S3-capable)
+  create --name <n> --size <gb> --dc <id> [--type STANDARD|HIGH_PERFORMANCE]   (idempotent by name; warns if DC is not S3-capable; tier is immutable)
   list | get <id> | update <id> [--name <n>] [--size <gb>] | delete <id>
   sync <name> --source <dir> | --models glm,flash,deepseek  [--prefix models]
   ls <name> [--path <remote-path>]
