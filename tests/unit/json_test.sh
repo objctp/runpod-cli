@@ -62,6 +62,25 @@ function test_should_split_env_on_first_equals_only() {
   assert_equals '{"TOKEN":"a==b"}' "$(rp::env_to_json "TOKEN=a==b")"
 }
 
+function test_should_overlay_env_keeping_untouched_keys() {
+  local obj='{"image":"img:1","env":{"A":"1","B":"2"}}'
+  rp::obj_merge_env obj "B=9"
+  assert_equals '{"A":"1","B":"9"}' "$(jq -c '.env' <<<"$obj")"
+  assert_equals 'img:1' "$(jq -r '.image' <<<"$obj")"
+}
+
+function test_should_add_env_map_when_object_has_none() {
+  local obj='{"image":"img:1"}'
+  rp::obj_merge_env obj "$(printf 'A=1\nB=x,y=z')"
+  assert_equals '{"A":"1","B":"x,y=z"}' "$(jq -c '.env' <<<"$obj")"
+}
+
+function test_should_leave_object_untouched_when_env_empty() {
+  local obj='{"env":{"A":"1"}}'
+  rp::obj_merge_env obj ""
+  assert_equals '{"env":{"A":"1"}}' "$obj"
+}
+
 function test_should_build_jsonarray_when_csv_given() {
   assert_equals '["x","y"]' "$(rp::csv_to_jsonarray "x,y")"
 }

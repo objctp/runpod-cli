@@ -58,10 +58,12 @@ function test_should_require_template_even_when_name_exists() {
 function _mock_create_http() {
   MOCK_MARKER="$1"
   MOCK_BODY="${2:-}"
+  MOCK_TEMPLATE="${3:-}"
+  [[ -n "$MOCK_TEMPLATE" ]] || MOCK_TEMPLATE='{"id":"t","image":"img:1","disk":10}'
   rp::http() {
     case "$1 $2" in
     'GET /serverless') printf '{"endpoints":[]}' ;;
-    'GET /templates/t') printf '{"id":"t","image":"img:1","disk":10}' ;;
+    'GET /templates/t') printf '%s' "$MOCK_TEMPLATE" ;;
     'GET /catalog/gpus'*) printf '{"gpus":[{"id":"NVIDIA L4","pool":"ADA_24"}]}' ;;
     'POST /serverless')
       printf 'POSTED' >>"$MOCK_MARKER"
@@ -133,16 +135,20 @@ function test_should_ignore_min_cuda_version_on_create() {
   rm -f "$marker" "$body"
 }
 
-function test_should_warn_when_env_given_with_template() {
-  local marker
+# --env must overlay the template's env (user wins per key), not be dropped.
+function test_should_merge_env_over_template_env_on_create() {
+  local marker body err
   marker="$(mktemp)"
-  _mock_create_http "$marker"
-  rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --env FOO=bar
-  local err
+  body="$(mktemp)"
+  _mock_create_http "$marker" "$body" '{"id":"t","image":"img:1","disk":10,"env":{"KEEP":"1","OVERRIDE":"template"}}'
+  rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --env OVERRIDE=user --env NEW=2
   err="$(_serverless_create 2>&1 >/dev/null)"
-  assert_contains "ignored" "$err"
+  assert_equals '1' "$(jq -r '.env.KEEP' "$body")"
+  assert_equals 'user' "$(jq -r '.env.OVERRIDE' "$body")"
+  assert_equals '2' "$(jq -r '.env.NEW' "$body")"
+  assert_not_contains "ignored" "$err"
   rp::http() { :; }
-  rm -f "$marker"
+  rm -f "$marker" "$body"
 }
 
 function test_should_exit_usage_when_create_has_no_gpu() {

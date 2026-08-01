@@ -20,3 +20,4 @@ coverage/
 # Release artefacts (make package / release workflow)
 /rp-*.tar.gz
 /SHA256SUMS
+.bashunit/

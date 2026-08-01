@@ -65,6 +65,22 @@ rp::env_to_json() {
   printf '%s' "$obj"
 }
 
+# Overlay newline-delimited K=V pairs onto the `.env` map of an object.
+# Arguments:
+#   $1 - dest: caller's variable name (nameref) holding a JSON object
+#   $2 - pairs: newline-delimited K=V (rp::env_to_json shape); empty is a no-op
+# Returns:
+#   0 - dest gains the merged env; keys in $2 win, untouched keys survive
+# Shallow overlay, not replacement: a template's env stays intact except for the
+# keys the user set (rp::obj_set would clobber the whole map).
+rp::obj_merge_env() {
+  local -n dest="$1"
+  [[ -n "$2" ]] || return 0
+  local envuser
+  envuser="$(rp::env_to_json "$2")"
+  dest="$(printf '%s' "$dest" | jq -c --argjson u "$envuser" '.env = ((.env // {}) * $u)')"
+}
+
 rp::csv_to_jsonarray() {
   local -a a
   mapfile -t a < <(rp::split_csv "$1")

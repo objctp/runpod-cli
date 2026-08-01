@@ -191,11 +191,9 @@ _serverless_create() {
     rp::obj_set obj networkVolumes "$nvjson"
   fi
 
-  local envcfg
-  envcfg="$(rp::args_get env)"
-  if [[ -n "$envcfg" ]]; then
-    rp::warn "note: --env is ignored with --template (the template carries the container env; use --hub-id to set env)"
-  fi
+  # The template spread already carries the template's env map; --env overlays
+  # it key-by-key so the user wins on collision and the rest survives.
+  rp::obj_merge_env obj "$(rp::args_get env)"
 
   rp::resource_create serverless "$name" "$obj"
 }
@@ -379,10 +377,11 @@ rp::cmd_serverless() {
     cat <<'EOF'
 Usage: rp serverless <verb> [flags]
   create --template <id> [--name <n>] [--gpu <type,..> | --gpus-from-volume <name>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids <id,id>]
-          [--type QUEUE|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot]
+          [--type QUEUE|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot] [--env K=V]…
           [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] [--execution-timeout <s>] [--hub-id <listing-id>] [--force]
           (idempotent by --name; --hub-id deploys from a Hub listing; --type defaults to QUEUE;
-           --scaler-type defaults to QUEUE_DELAY with queueDelay 4; --idle sets workers.idleTimeout)
+           --scaler-type defaults to QUEUE_DELAY with queueDelay 4; --idle sets workers.idleTimeout;
+           --env overlays the template's env, user value winning per key)
   list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types>] [--gpu-count N] | scale <id> --min N --max N [--idle S] | delete <id>
   run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]
 EOF
