@@ -181,6 +181,182 @@ function test_should_allow_network_volume_on_cpu_pod() {
   rm -f "$body"
 }
 
+function test_should_die_when_volume_gb_and_network_volume_id_given() {
+  # Sentinel: the guard must exit before any request — if rp::http runs, the
+  # subshell exits 99 and assert_exit_code 2 fails.
+  rp::http() {
+    echo "rp::http called before the mount guard" >&2
+    exit 99
+  }
+  rp::args_parse --image img --volume-gb 20 --network-volume-id nv1
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+}
+
+function test_should_set_network_mount_path_when_volume_path_given() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --network-volume-id nv1 --volume-path /data
+  _pod_create >/dev/null 2>&1
+  assert_equals "nv1" "$(jq -r '.mounts.network[0].volumeId' "$body")"
+  assert_equals "/data" "$(jq -r '.mounts.network[0].path' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_set_persistent_mount_path_when_volume_path_given() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --volume-gb 20 --volume-path /data
+  _pod_create >/dev/null 2>&1
+  assert_equals "20" "$(jq -r '.mounts.persistent.size' "$body")"
+  assert_equals "/data" "$(jq -r '.mounts.persistent.path' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_set_global_networking_true_on_create() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --global-networking true
+  _pod_create >/dev/null 2>&1
+  assert_equals "true" "$(jq -r '.globalNetworking' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_set_global_networking_false_on_create() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --global-networking false
+  _pod_create >/dev/null 2>&1
+  assert_equals "false" "$(jq -r '.globalNetworking' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_omit_global_networking_when_absent_on_create() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img
+  _pod_create >/dev/null 2>&1
+  assert_equals "false" "$(jq -r 'has("globalNetworking")' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_die_when_global_networking_true_with_cpu_flavor() {
+  rp::http() { :; }
+  rp::args_parse --image img --cpu-flavor cpu5c --vcpu 4 --global-networking true
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_allow_global_networking_false_with_cpu_flavor() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --cpu-flavor cpu5c --vcpu 4 --global-networking false
+  _pod_create >/dev/null 2>&1
+  assert_equals "false" "$(jq -r '.globalNetworking' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_die_on_invalid_global_networking_token() {
+  rp::http() { :; }
+  rp::args_parse --image img --global-networking yes
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_set_locked_true_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{}'
+  }
+  rp::args_parse pod1 --locked true
+  _pod_update >/dev/null 2>&1
+  assert_equals "true" "$(jq -r '.locked' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_set_locked_false_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{}'
+  }
+  rp::args_parse pod1 --locked false
+  _pod_update >/dev/null 2>&1
+  assert_equals "false" "$(jq -r '.locked' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_die_on_invalid_locked_token() {
+  rp::http() { :; }
+  rp::args_parse pod1 --locked maybe
+  (_pod_update >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_set_global_networking_false_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{}'
+  }
+  rp::args_parse pod1 --global-networking false
+  _pod_update >/dev/null 2>&1
+  assert_equals "false" "$(jq -r '.globalNetworking' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_set_persistent_path_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{}'
+  }
+  rp::args_parse pod1 --volume-gb 20 --volume-path /data
+  _pod_update >/dev/null 2>&1
+  assert_equals "/data" "$(jq -r '.mounts.persistent.path' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
 # main-shell dispatcher call so the public rp::cmd_pod entry registers coverage.
 function test_should_show_help_when_help_verb_given() {
   local tmp

@@ -13,19 +13,6 @@ _template_search() {
   rp::emit_json_or "$rows" rp::table "$rows" id name image serverless
 }
 
-# Set `public` on the object named by $1 from --public, validating the token.
-# A JSON boolean, not a presence flag: `rp template update` must be able to flip
-# a public template back to private, which a bare bool cannot express.
-_template_set_public() {
-  local val
-  val="$(rp::args_get public)"
-  case "$val" in
-  '') ;;
-  true | false) rp::obj_set "$1" public "$val" ;;
-  *) rp::usage "invalid --public '$val' (expected true|false)" ;;
-  esac
-}
-
 # Validate --category against the TemplateCategory enum (CPU|NVIDIA|AMD). An empty
 # value passes through (create defaults NVIDIA; update omits). Call it as a direct
 # call in the main shell so rp::usage's exit propagates — not inside command
@@ -71,14 +58,16 @@ _template_create() {
   _template_validate_category "$category"
   rp::obj_set obj category "$(rp::json_str "$category")"
   # Omitted --public leaves the key unset, so the API applies its `false` default.
-  _template_set_public obj
+  local pub
+  rp::require_bool pub public
+  rp::obj_set obj public "$pub"
   rp::resource_create template "$name" "$obj"
 }
 
 _template_update() {
   local id
   rp::require_pos id "usage: rp template update <id> [--name <n>] [--image <img>] [--public true|false] [--registry <id>] [--docker-cmd <a,b>] [--env K=V]… [--ports <a/b>] [--container-disk-gb N] [--volume-gb N] [--category <c>] [--serverless]  (PATCH)"
-  local obj='{}' name image cmd env ports cdisk registry category vol_gb
+  local obj='{}' name image cmd env ports cdisk registry category vol_gb pub
   name="$(rp::args_get name)"
   [[ -n "$name" ]] && rp::obj_set obj name "$(rp::json_str "$name")"
   image="$(rp::args_get image)"
@@ -98,7 +87,8 @@ _template_update() {
   _template_validate_category "$category"
   [[ -n "$category" ]] && rp::obj_set obj category "$(rp::json_str "$category")"
   rp::args_has serverless && rp::obj_set obj serverless true
-  _template_set_public obj
+  rp::require_bool pub public
+  rp::obj_set obj public "$pub"
   vol_gb="$(rp::args_get_uint volume-gb)"
   if rp::args_has serverless && [[ -n "$vol_gb" ]]; then
     rp::warn "ignoring --volume-gb: serverless templates reject volumeInGb"

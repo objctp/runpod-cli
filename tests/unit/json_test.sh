@@ -135,8 +135,16 @@ function test_should_build_nv_mount_shape() {
   assert_equals '[{"volumeId":"vol_abc","path":"/workspace"}]' "$(rp::json_nv_mount "vol_abc")"
 }
 
+function test_should_build_nv_mount_with_custom_path() {
+  assert_equals '[{"volumeId":"v1","path":"/data"}]' "$(rp::json_nv_mount "v1" "/data")"
+}
+
 function test_should_build_persistent_mount_shape() {
   assert_equals '{"persistent":{"size":20,"path":"/workspace"}}' "$(rp::json_persistent_mount "20")"
+}
+
+function test_should_build_persistent_mount_with_custom_path() {
+  assert_equals '{"persistent":{"size":20,"path":"/data"}}' "$(rp::json_persistent_mount "20" "/data")"
 }
 
 # v2 ContainerConfig.args is a single string, not an array.

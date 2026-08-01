@@ -13,6 +13,7 @@
 - Add CPU-only pods and rp stock cpus
 - Add `rp registry delegations` sub-resource
 - Expose `--type` storage tier on create
+- Add global-networking, locked, volume-path flags and mount mutex guard
 
 ### Changed
 

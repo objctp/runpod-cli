@@ -13,13 +13,15 @@ _pod_simple() {
 
 _pod_update() {
   local id
-  rp::require_pos id "usage: rp pod update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>] [--ports <a/b>] [--env K=V]… [--start-cmd <a,b,...>] [--registry <id>] (see: rp pod --help)"
+  rp::require_pos id "usage: rp pod update <id> [--container-disk-gb N] [--volume-gb N] [--volume-path <p>] [--name <n>] [--image <img>] [--global-networking true|false] [--locked true|false] [--ports <a/b>] [--env K=V]… [--start-cmd <a,b,...>] [--registry <id>] (see: rp pod --help)"
   local obj='{}' disk vol_gb name image ports start env
   disk="$(rp::args_get_uint container-disk-gb)"
   rp::obj_set obj disk "$disk"
   vol_gb="$(rp::args_get_uint volume-gb)"
   if [[ -n "$vol_gb" ]]; then
-    rp::obj_set obj mounts "$(rp::json_persistent_mount "$vol_gb")"
+    local mpath
+    mpath="$(rp::args_get volume-path)"
+    rp::obj_set obj mounts "$(rp::json_persistent_mount "$vol_gb" "$mpath")"
   fi
   name="$(rp::args_get name)"
   if [[ -n "$name" ]]; then
@@ -46,6 +48,11 @@ _pod_update() {
   if [[ -n "$registry" ]]; then
     rp::obj_set obj registry "$(rp::json_str "$registry")"
   fi
+  local gn lk
+  rp::require_bool gn global-networking
+  rp::obj_set obj globalNetworking "$gn"
+  rp::require_bool lk locked
+  rp::obj_set obj locked "$lk"
   [[ "$obj" != '{}' ]] || rp::usage "nothing to update (see: rp pod update --help)"
   rp::info "note: updating a running pod resets it — data outside /workspace or a network volume is wiped"
   local res
@@ -72,7 +79,9 @@ _pod_create() {
   rp::obj_set obj disk "$disk"
   vol_gb="$(rp::args_get_uint volume-gb)"
   if [[ -n "$vol_gb" ]]; then
-    obj="$(_json_merge "$obj" "$(rp::json_obj mounts "$(rp::json_persistent_mount "$vol_gb")")")"
+    local mpath
+    mpath="$(rp::args_get volume-path)"
+    obj="$(_json_merge "$obj" "$(rp::json_obj mounts "$(rp::json_persistent_mount "$vol_gb" "$mpath")")")"
   fi
 
   local dc ports start env
@@ -126,10 +135,20 @@ _pod_create() {
     rp::usage "--vcpu requires --cpu-flavor <id> (see: rp pod --help)"
   fi
 
+  local gn
+  rp::require_bool gn global-networking
+  if [[ "$gn" == "true" && -n "$cpu_flavor" ]]; then
+    rp::usage "--global-networking requires an NVIDIA GPU and is incompatible with --cpu-flavor"
+  fi
+  rp::obj_set obj globalNetworking "$gn"
+
   local nv
   nv="$(rp::args_get network-volume-id)"
   if [[ -n "$nv" ]]; then
-    obj="$(_json_merge "$obj" "$(rp::json_obj mounts "$(rp::json_obj network "$(rp::json_nv_mount "$nv")")")")"
+    [[ -z "$vol_gb" ]] || rp::usage "--volume-gb and --network-volume-id are mutually exclusive (a pod takes one mount kind)"
+    local mpath
+    mpath="$(rp::args_get volume-path)"
+    obj="$(_json_merge "$obj" "$(rp::json_obj mounts "$(rp::json_obj network "$(rp::json_nv_mount "$nv" "$mpath")")")")"
   fi
 
   local template tmpl
@@ -173,8 +192,10 @@ Usage: rp pod <verb> [flags]
   create --image <img> [--name <n>] [--gpu <id>] [--gpu-count N] [--dc <id,id>]
           [--cpu-flavor <id>] [--vcpu <n>]   (CPU-only pod; excludes --gpu and --volume-gb)
           [--cloud SECURE|COMMUNITY] [--network-volume-id <id>] [--volume-gb N] [--container-disk-gb N]
-          [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>] [--template <id>] [--registry <id>]
-  update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>]
+          [--volume-path <p>] [--global-networking true|false] [--ports <a/b,...>] [--env K=V]…
+          [--start-cmd <a,b,...>] [--template <id>] [--registry <id>]
+  update <id> [--container-disk-gb N] [--volume-gb N] [--volume-path <p>] [--name <n>] [--image <img>]
+          [--global-networking true|false] [--locked true|false]
           [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>] [--registry <id>]   (PATCH; resets a running pod)
   list | get <id> | start|stop|restart <id> | delete <id>   (reset is an alias for restart; v2 dropped it)
 EOF

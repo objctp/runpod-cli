@@ -138,12 +138,15 @@ rp::json_scaling() {
   esac
 }
 
-# Pod network-volume mount: [{volumeId, path:/workspace}].
+# Pod network-volume mount: [{volumeId, path}]. path defaults to /workspace for
+# back-compat (the spec says network-mount path has no default — pass $2 to set it
+# explicitly).
 rp::json_nv_mount() {
-  jq -nc --arg v "$1" '[{volumeId:$v, path:"/workspace"}]'
+  jq -nc --arg v "$1" --arg p "${2:-/workspace}" '[{volumeId:$v, path:$p}]'
 }
 
-# Persistent container mount: {persistent:{size, path:/workspace}}.
+# Persistent container mount: {persistent:{size, path}}. path defaults to
+# /workspace (overridable via $2; the spec allows changing it via PATCH).
 rp::json_persistent_mount() {
-  rp::json_obj persistent "$(rp::json_obj size "$1" path "$(rp::json_str /workspace)")"
+  rp::json_obj persistent "$(rp::json_obj size "$1" path "$(rp::json_str "${2:-/workspace}")")"
 }

@@ -51,6 +51,29 @@ function test_should_die_when_uint_value_invalid() {
   assert_exit_code 2
 }
 
+function test_should_assign_bool_when_value_valid() {
+  local v
+  rp::args_parse --locked true
+  rp::require_bool v locked
+  assert_equals "true" "$v"
+}
+
+function test_should_assign_empty_when_bool_flag_missing() {
+  local v
+  rp::args_parse
+  rp::require_bool v locked
+  assert_empty "$v"
+}
+
+function test_should_die_when_bool_value_invalid() {
+  rp::args_parse --locked maybe
+  (
+    local v
+    rp::require_bool v locked >/dev/null 2>&1
+  )
+  assert_exit_code 2
+}
+
 # main-shell variants (bashunit skips lines run inside $(...)) so rp::args_get_uint
 # registers coverage.
 function test_should_return_uint_main_shell_when_value_valid() {

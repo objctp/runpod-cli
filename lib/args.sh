@@ -90,6 +90,23 @@ rp::args_get_uint() {
   printf '%s' "$val"
 }
 
+# Assign the true|false value of --$2 to the variable named by $1 (nameref);
+# empty when the flag is unset, rp::usage on any other token. For value flags
+# that must carry both directions (--public, --locked, --global-networking) so
+# update can DISABLE as well as enable — a bare bool flag can only express true.
+# Call DIRECTLY, never inside command substitution: rp::usage's exit must fire in
+# the caller's shell, and tests run with errexit off (so `v="$(rp::… F)"` would
+# swallow a bad token). Mirrors rp::require_pos.
+rp::require_bool() {
+  local -n require_bool_out="$1"
+  require_bool_out="$(rp::args_get "$2" "${3:-}")"
+  case "$require_bool_out" in
+  '') ;;
+  true | false) ;;
+  *) rp::usage "invalid --$2 '$require_bool_out' (expected true|false)" ;;
+  esac
+}
+
 rp::split_csv() {
   local -a arr
   IFS=, read -ra arr <<<"$1"
