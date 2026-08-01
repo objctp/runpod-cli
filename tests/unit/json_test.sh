@@ -90,6 +90,10 @@ function test_should_build_pod_gpu_shape() {
   assert_equals '{"id":"NVIDIA RTX 4090","count":1}' "$(rp::json_gpu_pod "NVIDIA RTX 4090" 1)"
 }
 
+function test_should_build_pod_cpu_shape() {
+  assert_equals '{"id":"cpu5c","vcpuCount":4}' "$(rp::json_cpu "cpu5c" 4)"
+}
+
 function test_should_build_endpoint_gpu_shape() {
   assert_equals '{"pools":["ADA_24","ADA_48"],"count":2}' "$(rp::json_gpu_endpoint "ADA_24,ADA_48" 2)"
 }

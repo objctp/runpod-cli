@@ -16,13 +16,18 @@ function set_up_before_script() {
 function set_up() {
   OUT="$(mktemp)"
   STOCK_GPU_BODY='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"price":{"secure":0.5},"availability":"Medium"}]}'
+  STOCK_CPU_BODY='{"cpus":[{"id":"cpu3c-2-4","name":"Compute-Optimized","group":"Gen 3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":2.5,"price":{"securePerVcpu":0.04,"serverlessPerVcpu":0.03},"availability":"MEDIUM"},{"id":"cpu5c","name":"Compute-Optimized","group":"Gen 5","vcpu":{"min":2,"max":16},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.05,"serverlessPerVcpu":0.04}}]}'
   STOCK_DC_BODY='{"dataCenters":[{"id":"US-KS-2","name":"US Kansas 2","region":"NORTH_AMERICA","globalNetwork":true,"networkVolumeTypes":["STANDARD","HIGH_PERFORMANCE"],"compliance":["SOC_2_TYPE_2"],"gpuAvailability":[{"id":"NVIDIA GeForce RTX 4090","name":"RTX 4090","availability":"HIGH"},{"id":"NVIDIA L4","name":"L4","availability":"NONE"}]},{"id":"EU-RO-1","name":"EU Romania 1","region":"EUROPE","globalNetwork":false,"networkVolumeTypes":["STANDARD"],"compliance":[],"gpuAvailability":[]}]}'
   _RP_S3_DCS=() # bust the cache so each test controls the S3 source
   # gpu is REST API v2; dc is now v2 too (S3 column comes from _s3_dcs). The S3
   # resolver defaults to offline (GraphQL unreachable -> snapshot); tests that
   # need a specific S3 set override _s3_dcs directly.
   rp::http() {
-    if [[ "${2:-}" == *datacenters* ]]; then printf '%s' "$STOCK_DC_BODY"; else printf '%s' "$STOCK_GPU_BODY"; fi
+    case "${2:-}" in
+    *datacenters*) printf '%s' "$STOCK_DC_BODY" ;;
+    *cpus*) printf '%s' "$STOCK_CPU_BODY" ;;
+    *) printf '%s' "$STOCK_GPU_BODY" ;;
+    esac
   }
   rp::graphql_soft() { return 1; }
 }
@@ -45,6 +50,24 @@ function test_should_render_table_when_gpu_no_json() {
   assert_contains "VRAM_GB" "$rendered"
   assert_contains "NVIDIA L4" "$rendered"
   assert_contains "Medium" "$rendered"
+}
+
+function test_should_return_raw_array_when_cpus_json() {
+  rp::args_parse --json
+  _stock_cpus >"$OUT"
+  assert_equals "$(printf '%s' "$STOCK_CPU_BODY" | jq -c '.cpus')" "$(<"$OUT")"
+}
+
+function test_should_render_table_when_cpus_no_json() {
+  rp::args_parse
+  _stock_cpus >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "RAM_GB_VCPU" "$rendered"
+  assert_contains "SECURE_PRICE_VCPU" "$rendered"
+  # VCPU is the min-max range; the second flavour has no availability, so STOCK is blank.
+  assert_contains $'cpu3c-2-4\tCompute-Optimized\tGen 3\t2-32\t2.5\t0.04\tMEDIUM' "$rendered"
+  assert_contains $'cpu5c\tCompute-Optimized\tGen 5\t2-16\t2\t0.05\t' "$rendered"
 }
 
 function test_should_return_raw_array_when_dc_json() {
@@ -95,10 +118,15 @@ function test_should_route_each_stock_verb() {
   cap="$(mktemp)"
   rp::http() {
     printf '%s %s' "$1" "$2" >"$cap"
-    printf '{"gpus":[]}'
+    case "$2" in
+    *cpus*) printf '{"cpus":[]}' ;;
+    *) printf '{"gpus":[]}' ;;
+    esac
   }
   rp::cmd_stock gpu >/dev/null 2>&1
   assert_contains "GET /catalog/gpus" "$(<"$cap")"
+  rp::cmd_stock cpus >/dev/null 2>&1
+  assert_contains "GET /catalog/cpus" "$(<"$cap")"
   rp::cmd_stock dc >/dev/null 2>&1
   assert_contains "GET /catalog/datacenters" "$(<"$cap")"
   rm -f "$cap"

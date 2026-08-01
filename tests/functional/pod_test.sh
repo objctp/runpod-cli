@@ -115,6 +115,72 @@ function test_should_set_registry_when_update_flag_given() {
   rm -f "$body"
 }
 
+function test_should_send_cpu_block_when_cpu_flavor_and_vcpu_given() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --cpu-flavor cpu5c --vcpu 8
+  _pod_create >/dev/null 2>&1
+  assert_equals "cpu5c" "$(jq -r '.cpu.id' "$body")"
+  assert_equals "8" "$(jq -r '.cpu.vcpuCount' "$body")"
+  assert_equals "false" "$(jq -r 'has("gpu")' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_die_when_both_gpu_and_cpu_flavor_given() {
+  rp::http() { :; }
+  rp::args_parse --image img --gpu "RTX 4090" --cpu-flavor cpu5c --vcpu 4
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_when_cpu_flavor_without_vcpu() {
+  rp::http() { :; }
+  rp::args_parse --image img --cpu-flavor cpu5c
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_when_vcpu_without_cpu_flavor() {
+  rp::http() { :; }
+  rp::args_parse --image img --vcpu 4
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_when_vcpu_not_power_of_two() {
+  rp::http() { :; }
+  rp::args_parse --image img --cpu-flavor cpu5c --vcpu 6
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_when_cpu_pod_asks_for_persistent_volume() {
+  rp::http() { :; }
+  rp::args_parse --image img --cpu-flavor cpu5c --vcpu 4 --volume-gb 20
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_allow_network_volume_on_cpu_pod() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --cpu-flavor cpu5c --vcpu 4 --network-volume-id nv1
+  _pod_create >/dev/null 2>&1
+  assert_equals "nv1" "$(jq -r '.mounts.network[0].volumeId' "$body")"
+  assert_equals "cpu5c" "$(jq -r '.cpu.id' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
 # main-shell dispatcher call so the public rp::cmd_pod entry registers coverage.
 function test_should_show_help_when_help_verb_given() {
   local tmp

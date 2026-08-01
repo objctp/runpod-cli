@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
-# `rp stock` — GPU types and datacentres.
+# `rp stock` — GPU types, CPU flavours, and datacentres.
 # Usage: rp stock <verb> [flags]
 #
-# `gpu` and the DC *list* use REST API v2 (catalog/gpus, catalog/datacenters with
-# per-DC stock); the DC *S3 column* stays GraphQL (v2 has no s3apiEnabled field),
-# sourced via lib/validate.sh's `_s3_dcs` with an offline fallback.
+# `gpu`, `cpus`, and the DC *list* use REST API v2 (catalog/gpus, catalog/cpus,
+# catalog/datacenters with per-DC stock); the DC *S3 column* stays GraphQL (v2
+# has no s3apiEnabled field), sourced via lib/validate.sh's `_s3_dcs` with an
+# offline fallback.
 
 _stock_gpu() {
   local data
@@ -13,6 +14,18 @@ _stock_gpu() {
   rp::emit_json_or "$data" rp::table "$data" \
     --reshape 'map({ID:.id, DISPLAY:.name, VRAM_GB:(.memory//0), SECURE_PRICE:(.price.secure//""), STOCK:(.availability//"")})' \
     ID DISPLAY VRAM_GB SECURE_PRICE STOCK
+}
+
+# rp stock cpus — CPU flavours (v2) with availability.
+# GET /v2/catalog/cpus (listCpuTypes, include=AVAILABILITY&product=POD,SERVERLESS).
+# The ID column is the value `rp pod create --cpu-flavor` takes; VCPU shows the
+# valid vcpuCount range (power-of-two within it).
+_stock_cpus() {
+  local data
+  data="$(rp::http GET '/catalog/cpus?include=AVAILABILITY&product=POD,SERVERLESS' | rp::unwrap cpus)"
+  rp::emit_json_or "$data" rp::table "$data" \
+    --reshape 'map({ID:.id, NAME:.name, GROUP:.group, VCPU:((.vcpu.min|tostring)+"-"+(.vcpu.max|tostring)), RAM_GB_VCPU:(.ramGbPerVcpu//""), SECURE_PRICE_VCPU:(.price.securePerVcpu//""), STOCK:(.availability//"")})' \
+    ID NAME GROUP VCPU RAM_GB_VCPU SECURE_PRICE_VCPU STOCK
 }
 
 # rp stock dc — datacentre list (v2) with per-DC GPU stock + the S3-API column.
@@ -44,9 +57,10 @@ rp::cmd_stock() {
   rp::args_has help && verb=help
   case "$verb" in
   gpu) _stock_gpu ;;
+  cpus) _stock_cpus ;;
   dc) _stock_dc ;;
   -h | --help | help | "")
-    echo "Usage: rp stock gpu | rp stock dc   (dc list via v2; S3 column via GraphQL + fallback)"
+    echo "Usage: rp stock gpu | rp stock cpus | rp stock dc   (dc list via v2; S3 column via GraphQL + fallback)"
     ;;
   *) rp::usage "unknown stock verb: '$verb'" ;;
   esac

@@ -109,6 +109,23 @@ _pod_create() {
     obj="$(_json_merge "$obj" "$(rp::json_obj gpu "$(rp::json_gpu_pod "$first_gpu" "$gcount")")")"
   fi
 
+  # CPU-only pod: exactly one of gpu/cpu, vcpuCount a power of two >= 2, and no
+  # persistent mount (the spec rejects mounts.persistent when cpu is set —
+  # --network-volume-id is the supported storage for CPU pods).
+  local cpu_flavor vcpu
+  cpu_flavor="$(rp::args_get cpu-flavor)"
+  if [[ -n "$cpu_flavor" ]]; then
+    [[ -z "$gpu" ]] || rp::usage "--cpu-flavor is mutually exclusive with --gpu (a pod uses exactly one)"
+    rp::args_has vcpu || rp::usage "--cpu-flavor requires --vcpu <n> (see: rp pod --help)"
+    vcpu="$(rp::args_get_uint vcpu)"
+    ((vcpu >= 2)) || rp::usage "--vcpu must be >= 2"
+    (((vcpu & (vcpu - 1)) == 0)) || rp::usage "--vcpu must be a power of two (2, 4, 8, …)"
+    [[ -z "$vol_gb" ]] || rp::usage "CPU pods take no persistent volume; use --network-volume-id instead"
+    obj="$(_json_merge "$obj" "$(rp::json_obj cpu "$(rp::json_cpu "$cpu_flavor" "$vcpu")")")"
+  elif rp::args_has vcpu; then
+    rp::usage "--vcpu requires --cpu-flavor <id> (see: rp pod --help)"
+  fi
+
   local nv
   nv="$(rp::args_get network-volume-id)"
   if [[ -n "$nv" ]]; then
@@ -154,6 +171,7 @@ rp::cmd_pod() {
     cat <<'EOF'
 Usage: rp pod <verb> [flags]
   create --image <img> [--name <n>] [--gpu <id>] [--gpu-count N] [--dc <id,id>]
+          [--cpu-flavor <id>] [--vcpu <n>]   (CPU-only pod; excludes --gpu and --volume-gb)
           [--cloud SECURE|COMMUNITY] [--network-volume-id <id>] [--volume-gb N] [--container-disk-gb N]
           [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>] [--template <id>] [--registry <id>]
   update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>]

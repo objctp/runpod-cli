@@ -101,6 +101,10 @@ rp::csv_to_argstring() {
 # Pod GPU: {id, count}.
 rp::json_gpu_pod() { rp::json_obj id "$(rp::json_str "$1")" count "$2"; }
 
+# Pod CPU: {id, vcpuCount}. vcpuCount must be a power of two >= 2 (validated by
+# the caller); pure mirror of rp::json_gpu_pod.
+rp::json_cpu() { rp::json_obj id "$(rp::json_str "$1")" vcpuCount "$2"; }
+
 # Serverless GPU: {pools:[...], count}.
 rp::json_gpu_endpoint() {
   rp::json_obj pools "$(rp::csv_to_jsonarray "$1")" count "$2"
