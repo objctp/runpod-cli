@@ -11,6 +11,7 @@
 - Add rp serverless workers and releases verbs
 - Migrate rp stock dc to v2 catalog/datacenters (keep S3 column via GraphQL fallback)
 - Add CPU-only pods and rp stock cpus
+- Add `rp registry delegations` sub-resource
 
 ### Changed
 

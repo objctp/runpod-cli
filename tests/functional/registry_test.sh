@@ -117,3 +117,97 @@ function test_should_exit_two_when_registry_verb_unknown() {
   (rp::cmd_registry __bogus__ >/dev/null 2>&1)
   assert_exit_code 2
 }
+
+# --- delegations ---
+
+function test_delegations_list_json_emits_array() {
+  local body='{"delegations":[{"id":"deleg_1","name":"d1","repository":"r/t","tag":"latest","awsRegion":"us-east-2","awsUser":"123","delegatorUserId":"u","createdAt":"2026-03-13T20:00:00Z"}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::cmd_registry delegations list --json >"$OUT"
+  assert_equals '[{"id":"deleg_1","name":"d1","repository":"r/t","tag":"latest","awsRegion":"us-east-2","awsUser":"123","delegatorUserId":"u","createdAt":"2026-03-13T20:00:00Z"}]' "$(<"$OUT")"
+}
+
+function test_delegations_list_renders_table() {
+  local body='{"delegations":[{"id":"deleg_1","name":"d1","repository":"r/t","tag":"latest","awsRegion":"us-east-2","awsUser":"123","delegatorUserId":"u","createdAt":"2026-03-13T20:00:00Z"}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::cmd_registry delegations list >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "ID	NAME	REPOSITORY	TAG	REGION	CREATED" "$rendered"
+  assert_contains "deleg_1	d1	r/t	latest	us-east-2	2026-03-13T20:00:00Z" "$rendered"
+}
+
+function test_delegations_create_sends_resource_and_name() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$cap"
+    printf '{"id":"deleg_9"}'
+  }
+  rp::args_parse --resource "arn:aws:ecr:us-east-2:1:repo/r" --name d1
+  local out
+  out="$(_registry_delegations_create 2>/dev/null)"
+  assert_equals "deleg_9" "$out"
+  assert_contains '"resource":"arn:aws:ecr:us-east-2:1:repo/r"' "$(<"$cap")"
+  assert_contains '"name":"d1"' "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_delegations_create_omits_name_when_absent() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$cap"
+    printf '{"id":"deleg_9"}'
+  }
+  rp::args_parse --resource "arn:aws:ecr:us-east-2:1:repo/r"
+  _registry_delegations_create >/dev/null 2>&1
+  assert_equals "false" "$(jq -c 'has("name")' <"$cap")"
+  assert_contains '"resource":"arn:aws:ecr:us-east-2:1:repo/r"' "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_delegations_create_exits_two_without_resource() {
+  (rp::cmd_registry delegations create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_delegations_revoke_routes_correctly() {
+  local marker
+  marker="$(mktemp)"
+  rp::http() { printf '%s %s' "$1" "$2" >"$marker"; }
+  rp::cmd_registry delegations revoke deleg_1 >/dev/null 2>&1
+  assert_equals "DELETE /registries/delegations/deleg_1" "$(<"$marker")"
+  rm -f "$marker"
+}
+
+function test_delegations_revoke_exits_two_without_id() {
+  (rp::cmd_registry delegations revoke >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_route_each_delegations_verb() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    if [[ "$1" == "GET" ]]; then printf '{"delegations":[]}'; else printf '{"id":"d1"}'; fi
+  }
+  rp::cmd_registry delegations list >/dev/null 2>&1
+  assert_contains "GET /registries/delegations" "$(<"$cap")"
+  rp::cmd_registry delegations create --resource arn:aws:ecr:us-east-2:1:repo/r >/dev/null 2>&1
+  assert_contains "POST /registries/delegations" "$(<"$cap")"
+  rp::cmd_registry delegations revoke d1 >/dev/null 2>&1
+  assert_contains "DELETE /registries/delegations/d1" "$(<"$cap")"
+  rm -f "$cap"
+}
+
+function test_delegations_help_mentions_usage() {
+  rp::cmd_registry delegations help >"$OUT" 2>/dev/null
+  assert_contains "Usage: rp registry delegations" "$(<"$OUT")"
+}
+
+function test_help_mentions_delegations() {
+  rp::cmd_registry help >"$OUT" 2>/dev/null
+  assert_contains "delegations" "$(<"$OUT")"
+}
