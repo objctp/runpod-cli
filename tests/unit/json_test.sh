@@ -87,6 +87,27 @@ function test_should_build_workers_shape_with_min_only() {
   assert_equals '{"min":1}' "$(rp::json_workers "1" "")"
 }
 
+function test_should_build_workers_shape_with_idle_timeout() {
+  assert_equals '{"min":1,"max":10,"idleTimeout":5}' "$(rp::json_workers "1" "10" "5")"
+}
+
+function test_should_build_workers_shape_skipping_empty_idle_timeout() {
+  assert_equals '{"max":10}' "$(rp::json_workers "" "10" "")"
+}
+
+function test_should_build_queue_delay_scaling_arm() {
+  assert_equals '{"type":"QUEUE_DELAY","queueDelay":0.5}' "$(rp::json_scaling QUEUE_DELAY 0.5)"
+}
+
+function test_should_build_request_count_scaling_arm() {
+  assert_equals '{"type":"REQUEST_COUNT","requestCount":3}' "$(rp::json_scaling REQUEST_COUNT 3)"
+}
+
+function test_should_error_on_unknown_scaler_type() {
+  (rp::json_scaling BOGUS 1 >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
 function test_should_build_nv_mount_shape() {
   assert_equals '[{"volumeId":"vol_abc","path":"/workspace"}]' "$(rp::json_nv_mount "vol_abc")"
 }

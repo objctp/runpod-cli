@@ -14,6 +14,7 @@
 ### Fixed
 
 - Surface transport errors and align docs with behaviour
+- Align create/update body to the live v2 spec
 
 ## [0.3.0] - 2026-07-30
 

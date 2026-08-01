@@ -94,9 +94,12 @@ function test_should_spread_template_and_map_gpu_pool_on_create() {
   _serverless_create >/dev/null 2>&1
   assert_equals 'img:1' "$(jq -r '.image' "$body")"
   assert_equals 'ADA_24' "$(jq -r '.gpu.pools[0]' "$body")"
+  assert_equals 'QUEUE' "$(jq -r '.type' "$body")"
+  assert_equals 'QUEUE_DELAY' "$(jq -r '.scaling.type' "$body")"
+  assert_equals '4' "$(jq -r '.scaling.queueDelay' "$body")"
   assert_equals '1' "$(jq -r '.workers.min' "$body")"
   assert_equals '3' "$(jq -r '.workers.max' "$body")"
-  assert_equals '10' "$(jq -r '.scaling.idleTimeout' "$body")"
+  assert_equals '10' "$(jq -r '.workers.idleTimeout' "$body")"
   rp::http() { :; }
   rm -f "$marker" "$body"
 }
@@ -179,6 +182,9 @@ function test_should_deploy_via_rest_when_hub_id_given() {
   assert_equals 'ADA_80_PRO' "$(jq -r '.gpu.pools[1]' "$payload")"
   assert_equals '20' "$(jq -r '.disk' "$payload")"
   assert_equals 'glm' "$(jq -r '.env.MODEL_NAME' "$payload")"
+  assert_equals 'QUEUE' "$(jq -r '.type' "$payload")"
+  assert_equals 'QUEUE_DELAY' "$(jq -r '.scaling.type' "$payload")"
+  assert_equals '4' "$(jq -r '.scaling.queueDelay' "$payload")"
   rp::http() { :; }
   rp::graphql() { :; }
   rm -f "$payload"
@@ -189,6 +195,70 @@ function test_should_reject_hub_id_with_template() {
   rp::args_parse --hub-id h1 --name glm --template t
   (_serverless_create >/dev/null 2>&1)
   assert_exit_code 2
+  rp::http() { :; }
+}
+
+# Live spec: type LOAD_BALANCER requires REQUEST_COUNT scaling; a queue-delay
+# scaler must be rejected locally before any HTTP call.
+function test_should_error_when_load_balancer_with_queue_delay_scaler() {
+  rp::http() {
+    case "$1 $2" in
+    'GET /serverless') printf '{"endpoints":[]}' ;;
+    'GET /templates/t') printf '{"id":"t","image":"img:1"}' ;;
+    esac
+  }
+  rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --type LOAD_BALANCER --scaler-type QUEUE_DELAY
+  (_serverless_create >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+}
+
+# LOAD_BALANCER with the default (REQUEST_COUNT) scaling is accepted and sends the
+# correct union arm.
+function test_should_default_request_count_scaling_for_load_balancer() {
+  local marker body
+  marker="$(mktemp)"
+  body="$(mktemp)"
+  _mock_create_http "$marker" "$body"
+  rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --type LOAD_BALANCER
+  _serverless_create >/dev/null 2>&1
+  assert_equals 'LOAD_BALANCER' "$(jq -r '.type' "$body")"
+  assert_equals 'REQUEST_COUNT' "$(jq -r '.scaling.type' "$body")"
+  assert_equals '1' "$(jq -r '.scaling.requestCount' "$body")"
+  rp::http() { :; }
+  rm -f "$marker" "$body"
+}
+
+# workers.idleTimeout is rejected for REQUEST_COUNT scaling; --idle must be
+# dropped with a warning rather than sent.
+function test_should_drop_idle_when_request_count_scaling() {
+  local marker body err
+  marker="$(mktemp)"
+  body="$(mktemp)"
+  _mock_create_http "$marker" "$body"
+  rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --scaler-type REQUEST_COUNT --scaler-value 2 --idle 10
+  err="$(_serverless_create 2>&1 >/dev/null)"
+  assert_equals 'null' "$(jq -c '.workers.idleTimeout' "$body")"
+  assert_equals 'REQUEST_COUNT' "$(jq -r '.scaling.type' "$body")"
+  assert_equals '2' "$(jq -r '.scaling.requestCount' "$body")"
+  assert_contains "ignored" "$err"
+  rp::http() { :; }
+  rm -f "$marker" "$body"
+}
+
+# rp serverless list reads idleTimeout from workers (not scaling) post-fix. The
+# reshape only runs in the human-table path (--json emits the raw array).
+function test_should_reshape_list_idle_timeout_from_workers() {
+  rp::http() {
+    case "$1 $2" in
+    'GET /serverless') printf '{"endpoints":[{"id":"e1","name":"glm","workers":{"min":0,"max":3,"idleTimeout":7}}]}' ;;
+    *) printf '[]' ;;
+    esac
+  }
+  local out
+  out="$(rp::cmd_serverless list 2>/dev/null)"
+  assert_contains "idleTimeout" "$out"
+  assert_contains "7" "$out"
   rp::http() { :; }
 }
 

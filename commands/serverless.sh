@@ -55,6 +55,41 @@ _serverless_resolve_nv() {
   fi
 }
 
+# Resolve the scaling discriminated-union object for a create. Applies the live
+# default when no scaler flags are given (QUEUE_DELAY on QUEUE, REQUEST_COUNT on
+# LOAD_BALANCER), enforces LOAD_BALANCER => REQUEST_COUNT, and sets two globals —
+# `_RP_SCALING_JSON` (the body object) and `_RP_SCALER_TYPE` (resolved arm) — so
+# the caller can drop workers.idleTimeout when it would be rejected (REQUEST_COUNT
+# scaling). queueDelay defaults to 4s and requestCount to 1 when a scaler type is
+# given without a value. Runs in the main shell (no command substitution) so the
+# globals land in the caller's scope.
+_serverless_scaling_obj() {
+  local etype="$1" stype="$2" sval="$3"
+  local _out_type
+  if [[ -z "$stype" && -z "$sval" ]]; then
+    if [[ "$etype" == "LOAD_BALANCER" ]]; then
+      _out_type=REQUEST_COUNT
+      sval=1
+    else
+      _out_type=QUEUE_DELAY
+      sval=4
+    fi
+  else
+    _out_type="$stype"
+    if [[ -z "$sval" ]]; then
+      case "$_out_type" in
+      REQUEST_COUNT) sval=1 ;;
+      *) sval=4 ;;
+      esac
+    fi
+  fi
+  if [[ "$etype" == "LOAD_BALANCER" && "$_out_type" != "REQUEST_COUNT" ]]; then
+    rp::usage "scaling must be REQUEST_COUNT when --type LOAD_BALANCER (got scaler-type '$_out_type')"
+  fi
+  _RP_SCALER_TYPE="$_out_type"
+  _RP_SCALING_JSON="$(rp::json_scaling "$_out_type" "$sval")"
+}
+
 _serverless_create() {
   local name
   name="$(rp::args_get name)"
@@ -106,23 +141,32 @@ _serverless_create() {
   count="$(rp::args_get_uint gpu-count 1)"
   rp::obj_set obj gpu "$(rp::json_gpu_endpoint "$poolcsv" "$count")"
 
+  # `type` is required by the live spec on create (immutable thereafter).
+  local etype idle
+  etype="$(rp::args_get type QUEUE)"
+  case "$etype" in
+  QUEUE | LOAD_BALANCER) ;;
+  *) rp::usage "invalid --type '$etype' (expected QUEUE|LOAD_BALANCER)" ;;
+  esac
+  rp::obj_set obj type "$(rp::json_str "$etype")"
+
   local wmin wmax
   wmin="$(rp::args_get_uint workers-min)"
   wmax="$(rp::args_get_uint workers-max)"
-  if [[ -n "$wmin" || -n "$wmax" ]]; then
-    rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax")"
-  fi
-
-  local stype sval idle
-  stype="$(rp::args_get scaler-type)"
-  sval="$(rp::args_get scaler-value)"
   idle="$(rp::args_get_uint idle)"
-  if [[ -n "$stype" || -n "$sval" || -n "$idle" ]]; then
-    local scaling='{}'
-    [[ -n "$stype" ]] && rp::obj_set scaling type "$(rp::json_str "$stype")"
-    [[ -n "$sval" ]] && rp::obj_set scaling value "$sval"
-    [[ -n "$idle" ]] && rp::obj_set scaling idleTimeout "$idle"
-    rp::obj_set obj scaling "$scaling"
+
+  # scaling is required on create; default to a valid union arm when no scaler
+  # flags are supplied, and honour the LOAD_BALANCER => REQUEST_COUNT rule.
+  _serverless_scaling_obj "$etype" "$(rp::args_get scaler-type)" "$(rp::args_get scaler-value)"
+  rp::obj_set obj scaling "$_RP_SCALING_JSON"
+
+  # workers.idleTimeout is rejected for REQUEST_COUNT scaling; drop with a note.
+  if [[ -n "$idle" && "$_RP_SCALER_TYPE" == "REQUEST_COUNT" ]]; then
+    rp::warn "note: --idle (workers.idleTimeout) is ignored with REQUEST_COUNT scaling"
+    idle=''
+  fi
+  if [[ -n "$wmin" || -n "$wmax" || -n "$idle" ]]; then
+    rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax" "$idle")"
   fi
 
   # FlashBoot enum is OFF|FLASHBOOT|PRIORITY_FLASHBOOT in v2 ("ON" is rejected).
@@ -203,17 +247,31 @@ _serverless_create_hub() {
     rp::info "hub endpoint scoped to NV datacenter: $dc"
   fi
 
-  local hwmin hwmax
+  local hwmin hwmax hidle htype hscaling
   hwmin="$(rp::args_get_uint workers-min 0)"
   hwmax="$(rp::args_get_uint workers-max 0)"
+  hidle="$(rp::args_get_uint idle)"
+  htype="$(rp::args_get type QUEUE)"
+  case "$htype" in
+  QUEUE | LOAD_BALANCER) ;;
+  *) rp::usage "invalid --type '$htype' (expected QUEUE|LOAD_BALANCER)" ;;
+  esac
+  _serverless_scaling_obj "$htype" "$(rp::args_get scaler-type)" "$(rp::args_get scaler-value)"
+  hscaling="$_RP_SCALING_JSON"
+  if [[ -n "$hidle" && "$_RP_SCALER_TYPE" == "REQUEST_COUNT" ]]; then
+    rp::warn "note: --idle (workers.idleTimeout) is ignored with REQUEST_COUNT scaling"
+    hidle=''
+  fi
   local body
   body="$(rp::json_obj \
     name "$(rp::json_str "$name")" \
     image "$(rp::json_str "$image")" \
     disk "$cdisk" \
     env "$envjson" \
+    type "$(rp::json_str "$htype")" \
     gpu "$(rp::json_gpu_endpoint "$poolcsv" "$gpucount")" \
-    workers "$(rp::json_workers "$hwmin" "$hwmax")")"
+    scaling "$hscaling" \
+    workers "$(rp::json_workers "$hwmin" "$hwmax" "$hidle")")"
   if [[ -n "$nvid" ]]; then
     body="$(_json_merge "$body" "$(rp::json_obj networkVolumes "$(rp::json_array "$nvid")" dataCenterIds "$(rp::json_array "$dc")")")"
   fi
@@ -227,10 +285,9 @@ _serverless_scale() {
   wmin="$(rp::args_get_uint min)"
   wmax="$(rp::args_get_uint max)"
   idle="$(rp::args_get_uint idle)"
-  if [[ -n "$wmin" || -n "$wmax" ]]; then
-    rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax")"
+  if [[ -n "$wmin" || -n "$wmax" || -n "$idle" ]]; then
+    rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax" "$idle")"
   fi
-  [[ -n "$idle" ]] && rp::obj_set obj scaling "$(rp::json_obj idleTimeout "$idle")"
   [[ "$obj" != '{}' ]] || rp::usage "nothing to scale (pass --min/--max/--idle)"
   local res
   res="$(rp::http PATCH "/serverless/$id" "$obj")"
@@ -245,10 +302,9 @@ _serverless_update() {
   wmin="$(rp::args_get_uint workers-min)"
   wmax="$(rp::args_get_uint workers-max)"
   idle="$(rp::args_get_uint idle)"
-  if [[ -n "$wmin" || -n "$wmax" ]]; then
-    rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax")"
+  if [[ -n "$wmin" || -n "$wmax" || -n "$idle" ]]; then
+    rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax" "$idle")"
   fi
-  [[ -n "$idle" ]] && rp::obj_set obj scaling "$(rp::json_obj idleTimeout "$idle")"
   gpu="$(rp::args_get gpu)"
   if [[ -n "$gpu" ]]; then
     local poolcsv count
@@ -313,7 +369,7 @@ rp::cmd_serverless() {
   rp::args_has help && verb=help
   case "$verb" in
   create) _serverless_create ;;
-  list) rp::resource_list serverless --reshape 'map({id, name, workersMin:.workers.min, workersMax:.workers.max, idleTimeout:.scaling.idleTimeout})' id name workersMin workersMax idleTimeout ;;
+  list) rp::resource_list serverless --reshape 'map({id, name, workersMin:.workers.min, workersMax:.workers.max, idleTimeout:.workers.idleTimeout})' id name workersMin workersMax idleTimeout ;;
   get) rp::resource_get serverless ;;
   update) _serverless_update ;;
   delete) rp::resource_delete serverless ;;
@@ -323,9 +379,10 @@ rp::cmd_serverless() {
     cat <<'EOF'
 Usage: rp serverless <verb> [flags]
   create --template <id> [--name <n>] [--gpu <type,..> | --gpus-from-volume <name>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids <id,id>]
-          [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot]
-          [--scaler-type T] [--scaler-value V] [--execution-timeout <s>] [--hub-id <listing-id>] [--force]
-          (idempotent by --name; --hub-id deploys from a Hub listing)
+          [--type QUEUE|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot]
+          [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] [--execution-timeout <s>] [--hub-id <listing-id>] [--force]
+          (idempotent by --name; --hub-id deploys from a Hub listing; --type defaults to QUEUE;
+           --scaler-type defaults to QUEUE_DELAY with queueDelay 4; --idle sets workers.idleTimeout)
   list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types>] [--gpu-count N] | scale <id> --min N --max N [--idle S] | delete <id>
   run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]
 EOF

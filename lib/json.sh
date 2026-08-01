@@ -90,12 +90,32 @@ rp::json_gpu_endpoint() {
   rp::json_obj pools "$(rp::csv_to_jsonarray "$1")" count "$2"
 }
 
-# Worker scaling: {min, max}, omitting any empty field.
+# Worker scaling: {min, max, idleTimeout?}, omitting any empty field.
+# Arguments:
+#   $1 - min workers (int>=0, optional)
+#   $2 - max workers (int>=0, optional)
+#   $3 - idleTimeout (int 1-3600, optional); an empty value is a silent no-op
 rp::json_workers() {
   local obj='{}'
   rp::obj_set obj min "$1"
   rp::obj_set obj max "$2"
+  rp::obj_set obj idleTimeout "$3"
   printf '%s' "$obj"
+}
+
+# v2 EndpointScaling discriminated union on `type`.
+# Arguments:
+#   $1 - scaler type: QUEUE_DELAY | REQUEST_COUNT
+#   $2 - value: float seconds (queueDelay, minimum 0.5) or int (requestCount, minimum 1)
+# Returns:
+#   0 - the matching union arm; prints JSON to stdout
+#   2 - unknown scaler type (rp::usage)
+rp::json_scaling() {
+  case "$1" in
+  QUEUE_DELAY) rp::json_obj type "$(rp::json_str QUEUE_DELAY)" queueDelay "$2" ;;
+  REQUEST_COUNT) rp::json_obj type "$(rp::json_str REQUEST_COUNT)" requestCount "$2" ;;
+  *) rp::usage "unknown scaler type: '$1' (expected QUEUE_DELAY|REQUEST_COUNT)" ;;
+  esac
 }
 
 # Pod network-volume mount: [{volumeId, path:/workspace}].
