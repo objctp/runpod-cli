@@ -9,9 +9,9 @@ S3-compatible API.
 
 ```
 bin/rp            entry point — loads .env, sources lib/, dispatches to commands/
-lib/              shared helpers (common, http, graphql, s3, args, json, validate, resource)
-commands/         one file per resource (volume, serverless, pod, template, registry, billing, stock)
-                  plus endpoint.sh — deprecated alias that delegates to serverless
+lib/              shared helpers (common, constants, transport, http, graphql, s3, args, json, validate, resource, hub, _version)
+commands/         one file per resource (volume, serverless, pod, template, registry, billing, stock, account, hub, ssh, upgrade)
+                   plus endpoint.sh — deprecated alias that delegates to serverless
 tests/unit/       bashunit unit tests for lib helpers
 tests/functional/ bashunit functional tests for commands
 Makefile          fmt / lint / test / check + listing shortcuts

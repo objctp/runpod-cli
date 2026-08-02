@@ -8,7 +8,7 @@ _hub_search_cmd() {
   local q
   rp::require_pos q "usage: rp hub search <query>"
   local data
-  data="$(rp::hub_search "$q" 20)"
+  data="$(rp::hub_search "$q" "$RP_HUB_SEARCH_LIMIT")"
   rp::emit_json_or "$data" rp::table "$data" id title repoOwner type
 }
 

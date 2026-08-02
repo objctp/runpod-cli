@@ -141,7 +141,7 @@ function test_should_add_time_window_filters() {
     printf '{}'
   }
   rp::cmd_billing pods p1 --start 2026-07-01T00:00:00Z --end 2026-08-01T00:00:00Z --bucket-size day >/dev/null 2>&1
-  assert_equals "GET /billing/pods?podId=p1&startTime=2026-07-01T00%3A00%3A00Z&endTime=2026-08-01T00%3A00%3A00Z&bucketSize=day" "$(<"$cap")"
+  assert_equals "GET /billing/pods?podId=p1&startTime=2026-07-01T00:00:00Z&endTime=2026-08-01T00:00:00Z&bucketSize=day" "$(<"$cap")"
   rm -f "$cap"
 }
 

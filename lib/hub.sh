@@ -21,7 +21,7 @@ _gpu_pools_json() {
 
 # listings(input: ListingsInput!) -> JSON array of {id,title,repoOwner,repoName,type}
 rp::hub_search() {
-  local query="$1" limit="${2:-20}"
+  local query="$1" limit="${2:-$RP_HUB_SEARCH_LIMIT}"
   local q='query($input:ListingsInput!){ listings(input:$input){ id title repoOwner repoName type } }'
   local vars
   vars="$(jq -c -n --arg s "$query" --argjson l "$limit" '{input:{searchQuery:$s,limit:$l}}')"

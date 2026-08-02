@@ -3,15 +3,13 @@
 _RP_VALIDATE=1
 
 # Datacentre + S3-API validation helpers. Guards `volume create`/`sync` on
-# S3-enabled datacentres and resolves datacentre stock; the offline fallback
-# snapshot below backs the S3 guard when the API is unreachable.
+# S3-enabled datacentres and resolves datacentre stock.
 
 # Offline fallback snapshot of S3-API-enabled datacentres — verified identical to
 # the live `dataCenters { s3apiEnabled }` query on 2026-07-20. The live query is
-# the source of truth (see _s3_dcs); this array only backs the guard when the
-# API is unreachable, so `rp volume create` / `sync` still work offline. `rp
-# stock dc` now sources its S3 column from the same `_s3_dcs` resolver, so it too
-# falls back to this snapshot when GraphQL is down (rather than blanking).
+# the source of truth (see _s3_dcs below); this array only backs the guard when
+# the API is unreachable, so `rp volume create` / `sync` still work offline.
+# `rp stock dc` also falls back to it when GraphQL is down.
 RP_S3_DCS_FALLBACK=(
   EU-CZ-1
   EU-RO-1

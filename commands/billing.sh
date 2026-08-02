@@ -32,8 +32,8 @@ _billing() {
   # lastN minimum is 1 (per spec); rp::require_uint only blocks non-numbers, so
   # 0 must be rejected here rather than in the shared helper (workers-min/max
   # legitimately default to 0 elsewhere).
-  if [[ -n "$lastn" && "$lastn" -le 0 ]]; then
-    rp::usage "--last-n must be at least 1"
+  if [[ -n "$lastn" && "$lastn" -lt "$RP_LAST_N_MIN" ]]; then
+    rp::usage "--last-n must be at least $RP_LAST_N_MIN"
   fi
   case "$bucket" in
   '' | hour | day | week | month | year) ;;

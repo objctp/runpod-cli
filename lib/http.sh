@@ -40,14 +40,21 @@ rp::http() {
   rp::require_cmd curl
   local tmp
   _mktemp tmp
-  rp::api_call rest "$1" "$2" "${3:-}" "${4:-120}" >"$tmp" || true
+  rp::api_call rest "$1" "$2" "${3:-}" "${4:-$RP_TIMEOUT_REST}" >"$tmp" || true
   _rp_http_emit "$tmp" "$1" "$2"
 }
 
-# Build a URL-encoded query string from alternating key/value pairs. Values are
-# encoded with jq's @uri so RFC 3339 ':' and a '+00:00' offset survive intact;
-# empty values are skipped. Prints nothing (not "?") when no pair survives, so
-# the caller can splice the result straight onto a path.
+# Build a query string from alternating key/value pairs; empty values are
+# skipped. Prints nothing (not "?") when no pair survives, so the caller can
+# splice the result straight onto a path.
+#
+# Values go through jq's @uri, which encodes everything outside the unreserved
+# set, then ',' and ':' are decoded back. RFC 3986 §3.4 allows both unencoded in
+# a query, and they are the only reserved characters this CLI emits — csv
+# filters (--product POD,SERVERLESS) and RFC 3339 timestamps (--start). Leaving
+# them readable keeps logged URLs and error messages legible. Everything else
+# stays encoded: '+' in particular must remain %2B or a '+00:00' offset decodes
+# as a space, and '&'/'='/';' would split the query itself.
 rp::query_params() {
   local q='' k v enc
   while (($# >= 2)); do
@@ -56,6 +63,8 @@ rp::query_params() {
     shift 2
     [[ -n "$v" ]] || continue
     enc="$(printf '%s' "$v" | jq -Rr @uri)"
+    enc="${enc//%2C/,}"
+    enc="${enc//%3A/:}"
     q+="${q:+&}${k}=${enc}"
   done
   [[ -n "$q" ]] && printf '?%s' "$q"
@@ -77,7 +86,7 @@ rp::http_api() {
   rp::require_cmd curl
   local tmp
   _mktemp tmp
-  rp::api_call api "$1" "$2" "${3:-}" "${4:-300}" >"$tmp" || true
+  rp::api_call api "$1" "$2" "${3:-}" "${4:-$RP_TIMEOUT_API}" >"$tmp" || true
   _rp_http_emit "$tmp" "$1" "$2"
 }
 

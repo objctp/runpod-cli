@@ -63,13 +63,13 @@ Meta:
 
 Examples:
   rp _ping
-  rp volume create --name ocr-models --size 20 --dc EU-RO-1
-  rp volume sync ocr-models --models glm
-  rp volume gpus ocr-models
-  rp serverless create --template <id> --network-volume-id <nv> \
-      --gpus-from-volume ocr-models --workers-min 0 --workers-max 1 --idle 600
-  rp stock gpu
   rp stock dc
+  rp volume create --name shared-data --size 100 --dc EU-RO-1
+  rp pod create --name dev --image nvcr.io/nvidia/pytorch:23.10-py3 --gpu NVIDIA L4
+  rp serverless create --template <id> --network-volume-id <nv> \
+      --gpus-from-volume shared-data --workers-min 0 --workers-max 1 --idle 600
+  rp serverless run <id> --input '{"prompt":"hello"}'
+  rp billing all
 
 Add --json to list/get commands for raw JSON.
 EOF
@@ -102,7 +102,11 @@ rp::main() {
     return 0
     ;;
   _ping)
-    rp::http GET /pods >/dev/null
+    # Cheapest authenticated GET: the descriptor supplies the path, but we skip
+    # rp::resource_list because unwrapping and rendering a table only to discard
+    # it proves nothing beyond what the HTTP status already did.
+    _resource_meta pod
+    rp::http GET "$RP_RES_PATH" >/dev/null
     rp::ok "ok: REST auth works ($RP_REST_BASE)"
     return 0
     ;;

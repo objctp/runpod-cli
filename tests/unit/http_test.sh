@@ -177,10 +177,20 @@ function test_query_params_should_skip_empty_values() {
   assert_equals "?k=v&kept=keep" "$(rp::query_params k v empty "" kept keep)"
 }
 
-function test_query_params_should_encode_colon_in_timestamp() {
-  assert_equals "?startTime=2026-07-01T00%3A00%3A00Z" "$(rp::query_params startTime "2026-07-01T00:00:00Z")"
+function test_query_params_should_keep_colon_readable_in_timestamp() {
+  assert_equals "?startTime=2026-07-01T00:00:00Z" "$(rp::query_params startTime "2026-07-01T00:00:00Z")"
 }
 
+# ':' is readable but '+' must stay %2B, or the API decodes the offset as a space.
 function test_query_params_should_encode_plus_offset() {
-  assert_equals "?t=2026-07-01T00%3A00%3A00%2B00%3A00" "$(rp::query_params t "2026-07-01T00:00:00+00:00")"
+  assert_equals "?t=2026-07-01T00:00:00%2B00:00" "$(rp::query_params t "2026-07-01T00:00:00+00:00")"
+}
+
+function test_query_params_should_keep_csv_comma_readable() {
+  assert_equals "?product=POD,SERVERLESS" "$(rp::query_params product "POD,SERVERLESS")"
+}
+
+# '&' and '=' stay encoded so a value can never inject an extra parameter.
+function test_query_params_should_encode_query_separators() {
+  assert_equals "?q=a%26admin%3Dtrue" "$(rp::query_params q "a&admin=true")"
 }

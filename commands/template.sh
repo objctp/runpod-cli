@@ -54,7 +54,7 @@ _template_create() {
     rp::obj_set obj registry "$(rp::json_str "$registry")"
   fi
   local category
-  category="$(rp::args_get category NVIDIA)"
+  category="$(rp::args_get category "$RP_DEFAULT_TEMPLATE_CATEGORY")"
   _template_validate_category "$category"
   rp::obj_set obj category "$(rp::json_str "$category")"
   # Omitted --public leaves the key unset, so the API applies its `false` default.

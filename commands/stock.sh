@@ -14,7 +14,7 @@
 # --min-count N (count), --cloud SECURE|COMMUNITY, --min-cuda <ver> (minCudaVersion).
 _stock_gpu() {
   local product cloud cuda count q data
-  product="$(rp::args_get product POD,SERVERLESS)"
+  product="$(rp::args_get product "$RP_DEFAULT_PRODUCT")"
   cloud="$(rp::args_get cloud)"
   case "$cloud" in '' | SECURE | COMMUNITY) ;; *) rp::usage "invalid --cloud '$cloud' (expected SECURE|COMMUNITY)" ;; esac
   cuda="$(rp::args_get min-cuda)"
@@ -26,12 +26,9 @@ _stock_gpu() {
   # reason). Mirrors the rp::require_* nameref-family rule in lib/args.sh.
   count="$(rp::args_get min-count)"
   rp::require_uint "$count" min-count
-  [[ -z "$count" || "$count" -ge 1 ]] || rp::usage "--min-count must be >= 1 (got $count)"
-  q="include=AVAILABILITY&product=$product"
-  [[ -z "$cloud" ]] || q+="&cloud=$cloud"
-  [[ -z "$cuda" ]] || q+="&minCudaVersion=$cuda"
-  [[ -z "$count" ]] || q+="&count=$count"
-  data="$(rp::http GET "/catalog/gpus?$q" | rp::unwrap gpus)"
+  [[ -z "$count" || "$count" -ge "$RP_STOCK_COUNT_MIN" ]] || rp::usage "--min-count must be >= $RP_STOCK_COUNT_MIN (got $count)"
+  q="$(rp::query_params include AVAILABILITY product "$product" cloud "$cloud" minCudaVersion "$cuda" count "$count")"
+  data="$(rp::http GET "/catalog/gpus$q" | rp::unwrap gpus)"
   rp::emit_json_or "$data" rp::table "$data" \
     --reshape 'map({ID:.id, DISPLAY:.name, VRAM_GB:(.memory//0), SECURE_PRICE:(.price.secure//""), STOCK:(.availability//"")})' \
     ID DISPLAY VRAM_GB SECURE_PRICE STOCK
@@ -43,7 +40,7 @@ _stock_gpu() {
 # valid vcpuCount range (power-of-two within it).
 _stock_cpus() {
   local data
-  data="$(rp::http GET '/catalog/cpus?include=AVAILABILITY&product=POD,SERVERLESS' | rp::unwrap cpus)"
+  data="$(rp::http GET "/catalog/cpus$(rp::query_params include AVAILABILITY product "$RP_DEFAULT_PRODUCT")" | rp::unwrap cpus)"
   rp::emit_json_or "$data" rp::table "$data" \
     --reshape 'map({ID:.id, NAME:.name, GROUP:.group, VCPU:((.vcpu.min|tostring)+"-"+(.vcpu.max|tostring)), RAM_GB_VCPU:(.ramGbPerVcpu//""), SECURE_PRICE_VCPU:(.price.securePerVcpu//""), STOCK:(.availability//"")})' \
     ID NAME GROUP VCPU RAM_GB_VCPU SECURE_PRICE_VCPU STOCK

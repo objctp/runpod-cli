@@ -25,9 +25,10 @@ _rp_plane_base() {
 # completion, so it gets a longer budget than the control plane / GraphQL.
 _rp_plane_timeout() {
   case "$1" in
-  rest | graphql) printf '%s' 120 ;;
-  api) printf '%s' 300 ;;
-  *) printf '%s' 120 ;;
+  rest) printf '%s' "$RP_TIMEOUT_REST" ;;
+  graphql) printf '%s' "$RP_TIMEOUT_GRAPHQL" ;;
+  api) printf '%s' "$RP_TIMEOUT_API" ;;
+  *) printf '%s' "$RP_TIMEOUT_REST" ;;
   esac
 }
 
@@ -38,11 +39,11 @@ _rp_plane_timeout() {
 # -H/--data would leak the API key (and, on `rp registry create`, a registry
 # password; on `rp serverless run`, the job payload).
 _curl_json() {
-  local url="$1" method="$2" body="${3:-}" max_time="${4:-120}"
+  local url="$1" method="$2" body="${3:-}" max_time="${4:-$RP_TIMEOUT_REST}"
   local hdr body_tmp tmp status out
   _mktemp hdr
   printf 'Authorization: Bearer %s\n' "$RUNPOD_API_KEY" >"$hdr"
-  local -a args=(-sSL --connect-timeout 15 --max-time "$max_time" -X "$method" -H @"$hdr" -H 'Content-Type: application/json')
+  local -a args=(-sSL --connect-timeout "$RP_TIMEOUT_CONNECT" --max-time "$max_time" -X "$method" -H @"$hdr" -H 'Content-Type: application/json')
   _mktemp tmp
   if [[ -n "$body" ]]; then
     _mktemp body_tmp
@@ -104,7 +105,7 @@ rp::api_stream() {
   _mktemp hdrs
   printf 'Authorization: Bearer %s\n' "$RUNPOD_API_KEY" >"$hdr"
   [[ -z "$leid" ]] || printf 'Last-Event-ID: %s\n' "$leid" >>"$hdr"
-  curl -s --no-buffer --connect-timeout 15 \
+  curl -s --no-buffer --connect-timeout "$RP_TIMEOUT_CONNECT" \
     -H @"$hdr" -H 'Accept: text/event-stream' -D "$hdrs" -f "$base$path"
   rc=$?
   rm -f -- "$hdr"

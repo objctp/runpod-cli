@@ -36,7 +36,7 @@ rp::s3_sync() {
   aws s3 sync "$src" "$dst/" \
     --region "$(_s3_region "$dc")" \
     --endpoint-url "$(_s3_endpoint "$dc")" \
-    --cli-read-timeout 7200
+    --cli-read-timeout "$RP_TIMEOUT_S3_READ"
 }
 
 # List an S3 bucket/prefix.

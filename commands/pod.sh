@@ -72,7 +72,7 @@ _pod_create() {
     rp::obj_set obj name "$(rp::json_str "$name_val")"
   fi
   rp::obj_set obj image "$(rp::json_str "$image")"
-  rp::obj_set obj cloud "$(rp::json_str "$(rp::args_get cloud SECURE)")"
+  rp::obj_set obj cloud "$(rp::json_str "$(rp::args_get cloud "$RP_DEFAULT_CLOUD")")"
 
   local disk vol_gb
   disk="$(rp::args_get_uint container-disk-gb)"
@@ -114,7 +114,7 @@ _pod_create() {
     if [[ "$gpu" == *,* ]]; then
       rp::warn "v2 supports one GPU type per pod; using the first ($first_gpu)"
     fi
-    gcount="$(rp::args_get_uint gpu-count 1)"
+    gcount="$(rp::args_get_uint gpu-count "$RP_DEFAULT_GPU_COUNT")"
     obj="$(_json_merge "$obj" "$(rp::json_obj gpu "$(rp::json_gpu_pod "$first_gpu" "$gcount")")")"
   fi
 
@@ -177,7 +177,7 @@ _pod_logs() {
   src="$(rp::args_get source)"
   case "$src" in '' | container | system) ;; *) rp::usage "invalid --source '$src' (expected container|system)" ;; esac
   tail="$(rp::args_get_uint tail)"
-  [[ -z "$tail" ]] || ((tail <= 5000)) || rp::usage "--tail must be <= 5000 (got $tail)"
+  [[ -z "$tail" ]] || ((tail <= RP_LOG_TAIL_MAX)) || rp::usage "--tail must be <= $RP_LOG_TAIL_MAX (got $tail)"
   since="$(rp::args_get since)"
   leid="$(rp::args_get last-event-id)"
   q="$(rp::query_params source "$src" tail "$tail" since "$since")"

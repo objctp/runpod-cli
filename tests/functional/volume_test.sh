@@ -259,14 +259,14 @@ function test_volume_sync_models_invokes_huggingface_then_aws_per_model() {
   _stub_volume_http
   _aws_calls=()
   _hf_calls=()
-  rp::cmd_volume sync myvol --models glm,flash >/dev/null 2>&1
+  rp::cmd_volume sync myvol --models zai-org/GLM-OCR,infly/Infinity-Parser2-Flash >/dev/null 2>&1
   assert_equals 2 "${#_hf_calls[@]}"
-  assert_contains "download zai-org/GLM-OCR --local-dir $cache/glm" "${_hf_calls[0]}"
-  assert_contains "download infly/Infinity-Parser2-Flash --local-dir $cache/flash" "${_hf_calls[1]}"
+  assert_contains "download zai-org/GLM-OCR --local-dir $cache/zai-org/GLM-OCR" "${_hf_calls[0]}"
+  assert_contains "download infly/Infinity-Parser2-Flash --local-dir $cache/infly/Infinity-Parser2-Flash" "${_hf_calls[1]}"
   assert_equals 2 "${#_aws_calls[@]}"
   assert_contains "s3 sync" "${_aws_calls[0]}"
-  assert_contains "s3://vol1/models/glm/" "${_aws_calls[0]}"
-  assert_contains "s3://vol1/models/flash/" "${_aws_calls[1]}"
+  assert_contains "s3://vol1/models/zai-org/GLM-OCR/" "${_aws_calls[0]}"
+  assert_contains "s3://vol1/models/infly/Infinity-Parser2-Flash/" "${_aws_calls[1]}"
   assert_contains "--endpoint-url https://s3api-eu-ro-1.runpod.io/" "${_aws_calls[0]}"
   rp::http() { :; }
   rm -rf "$cache"

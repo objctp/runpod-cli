@@ -4,13 +4,14 @@
 # Usage: rp volume <verb> [flags]
 #
 
+# `rp volume sync --models <slug>` -> HuggingFace repo slug. Any `owner/repo`
+# slug is accepted verbatim (no curated alias list, so the CLI stays
+# workload-agnostic); reject anything that is not a well-formed slug. A case
+# rather than an associative array: the test harnesses source this file from
+# inside a function, where `declare -A` without -g would scope the array away.
 _model_repo() {
-  case "$1" in
-  glm) printf 'zai-org/GLM-OCR' ;;
-  flash) printf 'infly/Infinity-Parser2-Flash' ;;
-  deepseek) printf 'deepseek-ai/DeepSeek-OCR-2' ;;
-  *) return 1 ;;
-  esac
+  [[ "$1" == */* ]] || return 1
+  printf '%s' "$1"
 }
 
 _volume_create() {
@@ -54,12 +55,12 @@ _volume_update() {
 
 _volume_sync() {
   local name
-  rp::require_pos name "usage: rp volume sync <name> [--source <dir> | --models glm,flash,deepseek] [--prefix models]"
+  rp::require_pos name "usage: rp volume sync <name> [--source <dir> | --models <owner/repo>,...] [--prefix models]"
   rp::volume_dc "$name"
   local id="$RP_VOLUME_ID" dc="$RP_VOLUME_DC"
   rp::is_s3_dc "$dc" || rp::usage "volume's datacenter '$dc' is not S3-API supported (see: rp stock dc)"
   local prefix source models
-  prefix="$(rp::args_get prefix models)"
+  prefix="$(rp::args_get prefix "$RP_DEFAULT_MODEL_PREFIX")"
   source="$(rp::args_get source)"
   models="$(rp::args_get models)"
   if [[ -n "$source" ]]; then
@@ -69,16 +70,16 @@ _volume_sync() {
     rp::ok "synced $source -> $name"
     return 0
   fi
-  [[ -n "$models" ]] || rp::usage "provide --source <dir> or --models <glm,flash,deepseek>"
+  [[ -n "$models" ]] || rp::usage "provide --source <dir> or --models <owner/repo>,..."
   rp::require_cmd huggingface-cli
   local cache
-  cache="${RP_MODEL_CACHE:-$RP_ROOT/.cache/models}"
+  cache="${RP_MODEL_CACHE:-$RP_DEFAULT_MODEL_CACHE}"
   mkdir -p "$cache"
   local -a ms
   mapfile -t ms < <(rp::split_csv "$models")
   local m repo
   for m in "${ms[@]}"; do
-    repo="$(_model_repo "$m")" || rp::usage "unknown model: $m (expected glm|flash|deepseek)"
+    repo="$(_model_repo "$m")" || rp::usage "invalid model repo: $m (expected owner/repo, e.g. meta-llama/Llama-3-8B)"
     rp::info "fetching $m ($repo) -> $cache/$m"
     huggingface-cli download "$repo" --local-dir "$cache/$m"
     rp::info "uploading -> s3://$id/$prefix/$m"
@@ -132,7 +133,7 @@ rp::cmd_volume() {
 Usage: rp volume <verb> [flags]
   create --name <n> --size <gb> --dc <id> [--type STANDARD|HIGH_PERFORMANCE]   (idempotent by name; warns if DC is not S3-capable; tier is immutable)
   list | get <id> | update <id> [--name <n>] [--size <gb>] | delete <id>
-  sync <name> --source <dir> | --models glm,flash,deepseek  [--prefix models]
+  sync <name> --source <dir> | --models <owner/repo>,...  [--prefix models]
   ls <name> [--path <remote-path>]
   gpus <name> [--gpu <id,id>]   (account-wide availability for this NV's datacenter)
 EOF

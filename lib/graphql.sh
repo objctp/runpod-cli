@@ -51,7 +51,7 @@ rp::graphql() {
   local payload tmp
   payload="$(_rp_graphql_payload "$1" "${2:-}")" || rp::die "invalid GraphQL variables JSON"
   _mktemp tmp
-  rp::api_call graphql POST '' "$payload" 120 >"$tmp" || true
+  rp::api_call graphql POST '' "$payload" "$RP_TIMEOUT_GRAPHQL" >"$tmp" || true
   _rp_graphql_emit "$tmp" "GraphQL"
 }
 
@@ -70,7 +70,7 @@ rp::graphql_soft() {
   local payload tmp
   payload="$(_rp_graphql_payload "$query" "$variables")" || return 1
   _mktemp tmp
-  rp::api_call graphql POST '' "$payload" 120 >"$tmp" || return 1
+  rp::api_call graphql POST '' "$payload" "$RP_TIMEOUT_GRAPHQL" >"$tmp" || return 1
   _rp_graphql_emit_soft "$tmp"
 }
 

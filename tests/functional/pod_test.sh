@@ -376,12 +376,12 @@ function test_should_compose_pod_logs_flags_onto_query() {
   rm -f "$cap"
 }
 
-function test_should_url_encode_since_in_pod_logs() {
+function test_should_pass_since_timestamp_through_to_pod_logs() {
   local cap
   cap="$(mktemp)"
   rp::api_stream() { printf '%s %s %s\n' "$1" "$2" "${3:-}" >"$cap"; }
   rp::cmd_pod logs p1 --since 2026-08-01T00:00:00Z >/dev/null 2>&1
-  assert_contains "since=2026-08-01T00%3A00%3A00Z" "$(<"$cap")"
+  assert_contains "since=2026-08-01T00:00:00Z" "$(<"$cap")"
   rm -f "$cap"
 }
 

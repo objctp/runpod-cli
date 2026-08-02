@@ -4,6 +4,10 @@
 _RP_COMMON=1
 
 RP_ROOT="${RP_ROOT:-$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)}"
+# Tunable defaults / magic values (timeouts, size defaults, data tables) live in
+# lib/constants.sh. Sourced here so every consumer — including the test harnesses
+# that source common.sh directly — has them without a separate include.
+. "$RP_ROOT/lib/constants.sh"
 # Control-plane REST API v2 (https://api.runpod.io/v2). Override to pin an
 # older base or a staging host. The job-submission data plane (RP_API_BASE) is
 # a different host (api.runpod.ai) and is already v2 — it is unchanged.

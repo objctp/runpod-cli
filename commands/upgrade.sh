@@ -6,9 +6,6 @@
 # Usage: rp upgrade [--version <x.y.z>]
 #
 
-# Where the public installer lives; kept in sync with install.sh's RP_REPO.
-_RP_UPGRADE_REPO="objctp/runpod-cli"
-
 rp::cmd_upgrade() {
   rp::args_parse "$@"
   if rp::args_has help; then
@@ -23,9 +20,9 @@ rp::cmd_upgrade() {
   # Pin the installer to the matching tag when a version is requested, so a
   # downgrade runs the old installer against the old payload (not main's).
   if [[ -n "$ver_arg" ]]; then
-    url="https://raw.githubusercontent.com/${_RP_UPGRADE_REPO}/v${ver_arg}/install.sh"
+    url="https://raw.githubusercontent.com/${RP_UPGRADE_REPO}/v${ver_arg}/install.sh"
   else
-    url="https://raw.githubusercontent.com/${_RP_UPGRADE_REPO}/main/install.sh"
+    url="https://raw.githubusercontent.com/${RP_UPGRADE_REPO}/main/install.sh"
   fi
 
   rp::info "rp ${cur} -> ${ver_arg:-latest}"

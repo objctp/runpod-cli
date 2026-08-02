@@ -4,7 +4,10 @@
 # replaced by POST /v2/serverless in API v2).
 # Usage: rp serverless <verb> [flags]
 #
-RP_DEFAULT_GPUS=(
+
+# GPU type ranking for --gpus-from-volume: the display names tried, in order,
+# against the volume's in-stock catalogue.
+RP_DEFAULT_GPU_TYPES=(
   "NVIDIA RTX 4000 Ada Generation"
   "NVIDIA GeForce RTX 4090"
   "NVIDIA L4"
@@ -19,7 +22,7 @@ _resolve_gpus_from_volume() {
   dc="$RP_VOLUME_DC"
   rp::info "resolving in-stock GPUs for NV '$name' (dc=$dc; stock is account-wide)"
   local wantjson
-  wantjson="$(rp::json_array "${RP_DEFAULT_GPUS[@]}")"
+  wantjson="$(rp::json_array "${RP_DEFAULT_GPU_TYPES[@]}")"
   rp::http GET '/catalog/gpus?include=AVAILABILITY&product=SERVERLESS' | rp::unwrap gpus | jq -r --argjson want "$wantjson" '
     map(select(.availability != null and .availability != "NONE"))
     | map(select(.id as $id | $want | index($id)))
@@ -69,17 +72,17 @@ _serverless_scaling_obj() {
   if [[ -z "$stype" && -z "$sval" ]]; then
     if [[ "$etype" == "LOAD_BALANCER" ]]; then
       _out_type=REQUEST_COUNT
-      sval=1
+      sval="$RP_DEFAULT_SCALER_REQUEST_COUNT"
     else
       _out_type=QUEUE_DELAY
-      sval=4
+      sval="$RP_DEFAULT_SCALER_QUEUE_DELAY_S"
     fi
   else
     _out_type="$stype"
     if [[ -z "$sval" ]]; then
       case "$_out_type" in
-      REQUEST_COUNT) sval=1 ;;
-      *) sval=4 ;;
+      REQUEST_COUNT) sval="$RP_DEFAULT_SCALER_REQUEST_COUNT" ;;
+      *) sval="$RP_DEFAULT_SCALER_QUEUE_DELAY_S" ;;
       esac
     fi
   fi
@@ -138,12 +141,12 @@ _serverless_create() {
     rp::usage "rp serverless create requires --gpu <type,..> (or --gpus-from-volume) in API v2"
   fi
   local count
-  count="$(rp::args_get_uint gpu-count 1)"
+  count="$(rp::args_get_uint gpu-count "$RP_DEFAULT_GPU_COUNT")"
   rp::obj_set obj gpu "$(rp::json_gpu_endpoint "$poolcsv" "$count")"
 
   # `type` is required by the live spec on create (immutable thereafter).
   local etype idle
-  etype="$(rp::args_get type QUEUE)"
+  etype="$(rp::args_get type "$RP_DEFAULT_SERVERLESS_TYPE")"
   case "$etype" in
   QUEUE | LOAD_BALANCER) ;;
   *) rp::usage "invalid --type '$etype' (expected QUEUE|LOAD_BALANCER)" ;;
@@ -178,7 +181,7 @@ _serverless_create() {
     rp::warn "note: --min-cuda-version has no v2 equivalent on create and was ignored (v2 keeps it only as a /catalog/gpus filter)"
   fi
   execto="$(rp::args_get_uint execution-timeout)"
-  [[ -n "$execto" ]] && rp::obj_set obj timeout "$((execto * 1000))"
+  [[ -n "$execto" ]] && rp::obj_set obj timeout "$((execto * RP_MS_PER_SECOND))"
 
   local -a nv_arr=()
   [[ -n "$nvid" ]] && nv_arr+=("$nvid")
@@ -233,8 +236,8 @@ _serverless_create_hub() {
   fi
 
   local gpucount cdisk
-  gpucount="$(rp::args_get_uint gpu-count "$(printf '%s' "$cfg" | jq -r '.gpuCount // 1')")"
-  cdisk="$(printf '%s' "$cfg" | jq -r '.containerDiskInGb // 20')"
+  gpucount="$(rp::args_get_uint gpu-count "$(printf '%s' "$cfg" | jq -r ".gpuCount // $RP_DEFAULT_GPU_COUNT")")"
+  cdisk="$(printf '%s' "$cfg" | jq -r ".containerDiskInGb // $RP_DEFAULT_CONTAINER_DISK_GB")"
 
   # v2 ContainerConfig.env is an object map {K:"V"}, not [{key,value}].
   local envuser envjson
@@ -252,10 +255,10 @@ _serverless_create_hub() {
   fi
 
   local hwmin hwmax hidle htype hscaling
-  hwmin="$(rp::args_get_uint workers-min 0)"
-  hwmax="$(rp::args_get_uint workers-max 0)"
+  hwmin="$(rp::args_get_uint workers-min "$RP_DEFAULT_WORKERS_MIN")"
+  hwmax="$(rp::args_get_uint workers-max "$RP_DEFAULT_WORKERS_MAX")"
   hidle="$(rp::args_get_uint idle)"
-  htype="$(rp::args_get type QUEUE)"
+  htype="$(rp::args_get type "$RP_DEFAULT_SERVERLESS_TYPE")"
   case "$htype" in
   QUEUE | LOAD_BALANCER) ;;
   *) rp::usage "invalid --type '$htype' (expected QUEUE|LOAD_BALANCER)" ;;
@@ -298,14 +301,16 @@ _serverless_scale() {
     rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax" "$idle")"
   fi
   [[ "$obj" != '{}' ]] || rp::usage "nothing to scale (pass --min/--max/--idle)"
+  _resource_meta serverless
   local res
-  res="$(rp::http PATCH "/serverless/$id" "$obj")"
+  res="$(rp::http PATCH "$RP_RES_PATH/$id" "$obj")"
   rp::emit_json_or "$res" rp::ok "scaled endpoint $id"
 }
 
 _serverless_update() {
   local id
   rp::require_pos id "usage: rp serverless update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>] [--registry <id>]"
+  _resource_meta serverless
   local obj='{}' gpu
   local wmin wmax idle
   wmin="$(rp::args_get_uint workers-min)"
@@ -318,7 +323,7 @@ _serverless_update() {
   if [[ -n "$gpu" ]]; then
     local poolcsv count
     poolcsv="$(_serverless_gpu_poolcsv "$gpu")"
-    count="$(rp::args_get_uint gpu-count 1)"
+    count="$(rp::args_get_uint gpu-count "$RP_DEFAULT_GPU_COUNT")"
     rp::obj_set obj gpu "$(rp::json_gpu_endpoint "$poolcsv" "$count")"
   fi
   local registry
@@ -328,7 +333,7 @@ _serverless_update() {
   fi
   [[ "$obj" != '{}' ]] || rp::usage "nothing to update"
   local res
-  res="$(rp::http PATCH "/serverless/$id" "$obj")"
+  res="$(rp::http PATCH "$RP_RES_PATH/$id" "$obj")"
   rp::emit_json_or "$res" rp::ok "updated endpoint $id"
 }
 
@@ -433,7 +438,7 @@ _serverless_logs() {
   src="$(rp::args_get source)"
   case "$src" in '' | container | system) ;; *) rp::usage "invalid --source '$src' (expected container|system)" ;; esac
   tail="$(rp::args_get_uint tail)"
-  [[ -z "$tail" ]] || ((tail <= 5000)) || rp::usage "--tail must be <= 5000 (got $tail)"
+  [[ -z "$tail" ]] || ((tail <= RP_LOG_TAIL_MAX)) || rp::usage "--tail must be <= $RP_LOG_TAIL_MAX (got $tail)"
   since="$(rp::args_get since)"
   leid="$(rp::args_get last-event-id)"
   q="$(rp::query_params source "$src" tail "$tail" since "$since")"

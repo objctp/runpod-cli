@@ -6,6 +6,7 @@ function set_up_before_script() {
   _opts=$(shopt -po errexit nounset pipefail 2>/dev/null || true)
   source "$RP_ROOT/lib/common.sh"
   source "$RP_ROOT/lib/graphql.sh"
+  source "$RP_ROOT/lib/http.sh"
   source "$RP_ROOT/lib/args.sh"
   source "$RP_ROOT/lib/json.sh"
   source "$RP_ROOT/lib/validate.sh"
