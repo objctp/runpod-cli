@@ -8,6 +8,7 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/http.sh"
   source "$RP_ROOT/lib/args.sh"
   source "$RP_ROOT/lib/json.sh"
+  source "$RP_ROOT/lib/paginate.sh"
   source "$RP_ROOT/lib/resource.sh"
   eval "$_opts"
 }

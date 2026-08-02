@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Source lib/paginate.sh in resource_test setup
+
 ## [0.4.0] - 2026-08-02
 
 ### Added
