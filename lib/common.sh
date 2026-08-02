@@ -72,7 +72,15 @@ _mktemp() {
 # return here would abort rp whenever .env is correctly locked down (mode 600).
 _warn_if_world_readable() {
   local f="$1" perm
-  perm="$(stat -f '%Lp' "$f" 2>/dev/null || stat -c '%a' "$f" 2>/dev/null)" || return 0
+  # Probe for the BSD (macOS) stat dialect first. GNU stat accepts -f but uses it
+  # for filesystem output and still emits to stdout on a bad directive, so a
+  # `stat -f … || stat -c …` chain would concatenate that junk with the fallback
+  # and leave $perm non-numeric — which would silently skip the check on Linux.
+  if stat -f '%Lp' /dev/null >/dev/null 2>&1; then
+    perm="$(stat -f '%Lp' "$f")"
+  else
+    perm="$(stat -c '%a' "$f")"
+  fi
   [[ "$perm" =~ ^[0-7]+$ ]] || return 0
   if ((8#$perm & 077)); then
     rp::warn "note: $f is group/world-readable (mode $perm); tighten with 'chmod 600 $f' — it holds your API key"

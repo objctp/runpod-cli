@@ -5,6 +5,7 @@
 ### Fixed
 
 - Source lib/paginate.sh in resource_test setup
+- Resolve Linux CI failures in unit suite
 
 ## [0.4.0] - 2026-08-02
 
