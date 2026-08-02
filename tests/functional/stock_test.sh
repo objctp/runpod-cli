@@ -197,8 +197,10 @@ function test_should_render_table_when_cpus_no_json() {
   assert_contains "RAM_GB_VCPU" "$rendered"
   assert_contains "SECURE_PRICE_VCPU" "$rendered"
   # VCPU is the min-max range; the second flavour has no availability, so STOCK is blank.
-  assert_contains $'cpu3c-2-4\tCompute-Optimized\tGen 3\t2-32\t2.5\t0.04\tMEDIUM' "$rendered"
-  assert_contains $'cpu5c\tCompute-Optimized\tGen 5\t2-16\t2\t0.05\t' "$rendered"
+  assert_matches "cpu3c-2-4 +Compute-Optimized +Gen 3 +2-32 +2\.5 +0\.04 +MEDIUM" "$rendered"
+  # cpu5c has no availability: its row ends at SECURE_PRICE_VCPU with STOCK blank
+  # (line-anchored, since grep -E $ matches end of each rendered row).
+  assert_matches "cpu5c +Compute-Optimized +Gen 5 +2-16 +2 +0\.05 *$" "$rendered"
 }
 
 function test_should_return_raw_array_when_dc_json() {
@@ -223,8 +225,9 @@ function test_should_render_columns_and_s3_yes_when_dc_no_json() {
   assert_contains "NORTH_AMERICA" "$rendered"
   assert_contains "yes" "$rendered"
   # GPUS = 1 for US-KS-2 (4090 HIGH; L4 NONE excluded); 0 for EU-RO-1.
-  assert_contains $'US-KS-2\tUS Kansas 2\tNORTH_AMERICA\t1\tyes' "$rendered"
-  assert_contains $'EU-RO-1\tEU Romania 1\tEUROPE\t0\t' "$rendered"
+  assert_matches "US-KS-2 +US Kansas 2 +NORTH_AMERICA +1 +yes" "$rendered"
+  # EU-RO-1 is not in the S3 set, so its row ends at GPUS with S3_API blank.
+  assert_matches "EU-RO-1 +EU Romania 1 +EUROPE +0 *$" "$rendered"
 }
 
 function test_should_render_s3_column_via_fallback_when_graphql_down() {
@@ -235,7 +238,7 @@ function test_should_render_s3_column_via_fallback_when_graphql_down() {
   local rendered
   rendered="$(<"$OUT")"
   # US-KS-2 is in the fallback snapshot, so its S3 column still populates.
-  assert_contains $'US-KS-2\tUS Kansas 2\tNORTH_AMERICA\t1\tyes' "$rendered"
+  assert_matches "US-KS-2 +US Kansas 2 +NORTH_AMERICA +1 +yes" "$rendered"
 }
 
 function test_should_show_help_when_help_verb_given() {

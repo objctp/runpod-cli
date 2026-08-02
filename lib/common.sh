@@ -164,39 +164,82 @@ rp::emit_json_or() {
   "$@"
 }
 
-# Render a JSON array (or object wrapping one) as a TSV table with a header row.
+# Column-aligned table renderer. Pure jq (no column(1)) so output is portable
+# across macOS/Linux/BSD. Numeric columns right-align; on a TTY with NO_COLOR
+# unset the header is bold and status tokens are tinted. --json is handled
+# upstream by rp::emit_json_or, not here.
 # Arguments:
-#   $1 - json: the payload to table
-#   $2.. - columns: column names to extract in order; missing values render empty
+#   $1      - json: payload to table (array, or object wrapping one)
+#   $2..    - columns: column names to extract in order; missing values render empty
+#   --reshape <jq>  remap the payload before tabling (rename / nest / coerce / sort)
+#   --color         force ANSI colour on
+#   --no-color      force ANSI colour off
 # Returns:
-#   0 - always; prints the table (empty on a null payload) to stdout
-# Optional --reshape: a jq filter applied to the raw payload before tabling. It
-# must map the input into an array of objects keyed by the column names (which
-# double as the header labels), so callers can rename fields, nest (workers.min),
-# coerce (memory // 0), transform (boolean -> "yes"), or sort. The reshape runs
-# after a null guard, so a null payload yields an empty table; a malformed
-# reshape fails loudly (non-zero) rather than printing a blank table. Omitting
-# --reshape keeps the original field-name extraction, so existing callers are
-# untouched.
+#   0 - always (a null payload prints the header row alone)
+#   1 - malformed --reshape filter (fails loud rather than a blank table)
 rp::table() {
   local json="$1"
   shift
-  local reshape='.'
-  if [[ "${1:-}" == "--reshape" ]]; then
-    reshape="$2"
-    shift 2
-  fi
+  local reshape='.' color_mode=auto
+  while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+    --reshape)
+      reshape="$2"
+      shift 2
+      ;;
+    --color)
+      color_mode=on
+      shift
+      ;;
+    --no-color)
+      color_mode=off
+      shift
+      ;;
+    *) break ;;
+    esac
+  done
   local cols=("$@")
-  local hdr
-  hdr="$(printf '\t%s' "${cols[@]}")"
-  printf '%s\n' "${hdr#$'\t'}"
 
-  local rows
-  rows="$(printf '%s' "$json" | jq -c 'if . == null then [] else . end' | jq -c "$reshape")" || return 1
+  local body
+  body="$(printf '%s' "$json" | jq -c 'if . == null then [] else . end' | jq -c "$reshape")" || return 1
+
+  # Colour gate: on for a TTY stdout unless NO_COLOR is set, or forced via flags.
+  local c_on=0
+  case "$color_mode" in
+  on) c_on=1 ;;
+  off) c_on=0 ;;
+  *) [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]] && c_on=1 ;;
+  esac
+  local c_bold='' c_red='' c_grn='' c_yel='' c_rst=''
+  if ((c_on)); then
+    c_bold=$'\033[1m'
+    c_red=$'\033[31m'
+    c_grn=$'\033[32m'
+    c_yel=$'\033[33m'
+    c_rst=$'\033[0m'
+  fi
+
   # Inlined `jq -R . | jq -sc .` (rather than rp::json_array) to keep common.sh
   # free of a dependency on lib/json.sh; this is the lowest-level renderer.
-  printf '%s' "$rows" | jq -r --argjson fields "$(printf '%s\n' "${cols[@]}" | jq -R . | jq -sc .)" \
-    '(if . == null then [] else . end) | .[] | [ $fields[] as $f | .[$f] // "" ] | @tsv'
+  printf '%s' "$body" | jq -r --argjson fields "$(printf '%s\n' "${cols[@]}" | jq -R . | jq -sc .)" \
+    --arg c_bold "$c_bold" --arg c_red "$c_red" --arg c_grn "$c_grn" --arg c_yel "$c_yel" --arg c_rst "$c_rst" '
+  def colorize($col; $v):
+    if ($col == "GPUS" and $v == "0") then $c_red + $v + $c_rst
+    elif ($v == "LOW" or $v == "NONE" or $v == "UNAVAILABLE" or $v == "DEPLETED" or $v == "THROTTLED" or $v == "unhealthy") then $c_red + $v + $c_rst
+    elif ($v == "HIGH" or $v == "AVAILABLE" or $v == "yes" or $v == "READY" or $v == "ACTIVE" or $v == "healthy") then $c_grn + $v + $c_rst
+    elif ($v == "MEDIUM" or $v == "WARNING") then $c_yel + $v + $c_rst
+    else $v end;
+  (if . == null then [] else . end) as $data
+  | ($fields | map(tostring)) as $heads
+  | ($data | map([ $fields[] as $f | ((.[$f] // "") | tostring) ])) as $rows
+  | ($heads | length) as $n
+  | [ range(0;$n) ] as $ci
+  # Column width = widest of the header cell and the values beneath it.
+  | ($ci | map(. as $c | ([$heads[$c]] + [$rows[][$c]] | map(length) | max // 0))) as $w
+  # A column right-aligns only when every non-empty value parses as a number.
+  | ($ci | map(. as $c | ([$rows[][$c]] | map(select(length > 0)) | if length == 0 then false else all(test("^[-+]?[0-9]+(\\.[0-9]+)?$")) end))) as $num
+  | (($ci | map(. as $c | ($c_bold + $heads[$c] + $c_rst) + (" " * (($w[$c]) - ($heads[$c] | length))))) | join("  ") | sub(" +$"; ""))
+  , ($rows | map(. as $r | ($ci | map(. as $c | ($r[$c]) as $v | (($w[$c]) - ($v | length)) as $pad | if $num[$c] then (" " * $pad) + colorize($heads[$c]; $v) else colorize($heads[$c]; $v) + (" " * $pad) end) | join("  ") | sub(" +$"; ""))))[]'
 }
 
 # Unwrap a v2 list response that is wrapped in a single named array key

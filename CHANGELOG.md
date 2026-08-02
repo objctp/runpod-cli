@@ -25,6 +25,7 @@
 - Apply conventions across the codebase
 - Provision bash 4+ on macOS and pin bashunit via action
 - Generalize CLI framing and centralize tunable defaults
+- Rewrite rp::table as portable, column-aligned renderer
 
 ### Fixed
 

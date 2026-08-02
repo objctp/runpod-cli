@@ -133,8 +133,8 @@ function test_delegations_list_renders_table() {
   rp::cmd_registry delegations list >"$OUT" 2>/dev/null
   local rendered
   rendered="$(<"$OUT")"
-  assert_contains "ID	NAME	REPOSITORY	TAG	REGION	CREATED" "$rendered"
-  assert_contains "deleg_1	d1	r/t	latest	us-east-2	2026-03-13T20:00:00Z" "$rendered"
+  assert_matches "ID +NAME +REPOSITORY +TAG +REGION +CREATED" "$rendered"
+  assert_matches "deleg_1 +d1 +r/t +latest +us-east-2 +2026-03-13T20:00:00Z" "$rendered"
 }
 
 function test_delegations_create_sends_resource_and_name() {
