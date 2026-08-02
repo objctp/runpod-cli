@@ -67,13 +67,13 @@ _pod_update() {
 }
 
 _pod_create() {
-  local image
+  local image name_val
   image="$(rp::args_get image)"
   [[ -n "$image" ]] || rp::usage "usage: rp pod create --image <img> (see: rp pod --help)"
+  name_val="$(rp::args_get name)"
+  [[ -n "$name_val" ]] || rp::usage "usage: rp pod create --name <n> (see: rp pod --help)"
 
   local obj='{}'
-  local name_val
-  name_val="$(rp::args_get name)"
   if [[ -n "$name_val" ]]; then
     rp::obj_set obj name "$(rp::json_str "$name_val")"
   fi
@@ -140,6 +140,8 @@ _pod_create() {
   elif rp::args_has vcpu; then
     rp::usage "--vcpu requires --cpu-flavor <id> (see: rp pod --help)"
   fi
+
+  [[ -n "$gpu" || -n "$cpu_flavor" ]] || rp::usage "usage: rp pod create needs --gpu <type> or --cpu-flavor <id> (exactly one; see: rp pod --help)"
 
   local gn
   rp::require_bool gn global-networking
@@ -221,10 +223,10 @@ _pod_logs() {
 #
 # Notes:
 #   A pod is either a GPU pod or a CPU pod: pass --gpu or --cpu-flavor, never
-#   both. The API rejects a create that sets neither, and the CLI does not
-#   pre-check that, so the failure arrives as an API error.
-#   --name is likewise required by the API but not by the CLI, which only
-#   checks --image.
+#   both. The CLI enforces "exactly one": it rejects a create that sets neither
+#   or that sets both, so the failure is a local usage error, not an API error.
+#   --name is required by the API and checked by the CLI up front, so a missing
+#   --name fails locally before any request.
 #   --image is required even with --template, and always wins over the
 #   template's own image.
 #   Storage is one kind or the other: --volume-gb is host-local, pinned to the

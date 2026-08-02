@@ -80,7 +80,7 @@ function test_should_set_registry_when_create_flag_given() {
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
-  rp::args_parse pod1 --image img --registry reg-123
+  rp::args_parse pod1 --image img --name foo --gpu "RTX 4090" --registry reg-123
   _pod_create >/dev/null 2>&1
   assert_equals "reg-123" "$(jq -r '.registry' "$body")"
   rp::http() { :; }
@@ -94,7 +94,7 @@ function test_should_omit_registry_when_create_flag_absent() {
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
-  rp::args_parse pod1 --image img
+  rp::args_parse pod1 --image img --name foo --gpu "RTX 4090"
   _pod_create >/dev/null 2>&1
   assert_equals "false" "$(jq -r 'has("registry")' "$body")"
   rp::http() { :; }
@@ -122,7 +122,7 @@ function test_should_send_cpu_block_when_cpu_flavor_and_vcpu_given() {
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
-  rp::args_parse --image img --cpu-flavor cpu5c --vcpu 8
+  rp::args_parse --image img --name foo --cpu-flavor cpu5c --vcpu 8
   _pod_create >/dev/null 2>&1
   assert_equals "cpu5c" "$(jq -r '.cpu.id' "$body")"
   assert_equals "8" "$(jq -r '.cpu.vcpuCount' "$body")"
@@ -173,7 +173,7 @@ function test_should_allow_network_volume_on_cpu_pod() {
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
-  rp::args_parse --image img --cpu-flavor cpu5c --vcpu 4 --network-volume-id nv1
+  rp::args_parse --image img --name foo --cpu-flavor cpu5c --vcpu 4 --network-volume-id nv1
   _pod_create >/dev/null 2>&1
   assert_equals "nv1" "$(jq -r '.mounts.network[0].volumeId' "$body")"
   assert_equals "cpu5c" "$(jq -r '.cpu.id' "$body")"
@@ -194,6 +194,20 @@ function test_should_die_when_volume_gb_and_network_volume_id_given() {
   rp::http() { :; }
 }
 
+function test_should_die_when_create_missing_name() {
+  rp::http() { :; }
+  rp::args_parse --image img --gpu "RTX 4090"
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_when_create_has_neither_gpu_nor_cpu_flavor() {
+  rp::http() { :; }
+  rp::args_parse --image img --name foo
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
 function test_should_set_network_mount_path_when_volume_path_given() {
   local body
   body="$(mktemp)"
@@ -201,7 +215,7 @@ function test_should_set_network_mount_path_when_volume_path_given() {
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
-  rp::args_parse --image img --network-volume-id nv1 --volume-path /data
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --network-volume-id nv1 --volume-path /data
   _pod_create >/dev/null 2>&1
   assert_equals "nv1" "$(jq -r '.mounts.network[0].volumeId' "$body")"
   assert_equals "/data" "$(jq -r '.mounts.network[0].path' "$body")"
@@ -216,7 +230,7 @@ function test_should_set_persistent_mount_path_when_volume_path_given() {
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
-  rp::args_parse --image img --volume-gb 20 --volume-path /data
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --volume-gb 20 --volume-path /data
   _pod_create >/dev/null 2>&1
   assert_equals "20" "$(jq -r '.mounts.persistent.size' "$body")"
   assert_equals "/data" "$(jq -r '.mounts.persistent.path' "$body")"
@@ -231,7 +245,7 @@ function test_should_set_global_networking_true_on_create() {
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
-  rp::args_parse --image img --global-networking true
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --global-networking true
   _pod_create >/dev/null 2>&1
   assert_equals "true" "$(jq -r '.globalNetworking' "$body")"
   rp::http() { :; }
@@ -245,7 +259,7 @@ function test_should_set_global_networking_false_on_create() {
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
-  rp::args_parse --image img --global-networking false
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --global-networking false
   _pod_create >/dev/null 2>&1
   assert_equals "false" "$(jq -r '.globalNetworking' "$body")"
   rp::http() { :; }
@@ -259,7 +273,7 @@ function test_should_omit_global_networking_when_absent_on_create() {
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
-  rp::args_parse --image img
+  rp::args_parse --image img --name foo --gpu "RTX 4090"
   _pod_create >/dev/null 2>&1
   assert_equals "false" "$(jq -r 'has("globalNetworking")' "$body")"
   rp::http() { :; }
@@ -280,7 +294,7 @@ function test_should_allow_global_networking_false_with_cpu_flavor() {
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
-  rp::args_parse --image img --cpu-flavor cpu5c --vcpu 4 --global-networking false
+  rp::args_parse --image img --name foo --cpu-flavor cpu5c --vcpu 4 --global-networking false
   _pod_create >/dev/null 2>&1
   assert_equals "false" "$(jq -r '.globalNetworking' "$body")"
   rp::http() { :; }
@@ -446,7 +460,7 @@ function test_should_route_each_pod_verb() {
   assert_contains "GET /pods" "$(<"$cap")"
   rp::cmd_pod get p1 >/dev/null 2>&1
   assert_contains "GET /pods/p1" "$(<"$cap")"
-  rp::cmd_pod create --image img >/dev/null 2>&1
+  rp::cmd_pod create --image img --name foo --gpu "RTX 4090" >/dev/null 2>&1
   assert_contains "POST /pods" "$(<"$cap")"
   rp::cmd_pod update p1 --volume-gb 5 >/dev/null 2>&1
   assert_contains "PATCH /pods/p1" "$(<"$cap")"

@@ -52,6 +52,16 @@ function test_should_require_template_even_when_name_exists() {
   rp::http() { :; }
 }
 
+# --name is required on the --template path too (mirrors the --hub-id path); a
+# bare --template with no --name must die locally, not reach the API.
+function test_should_die_when_create_missing_name_on_template_path() {
+  rp::http() { :; }
+  rp::args_parse --template t
+  (_serverless_create >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+}
+
 # v2-shaped mock for the create path: endpoint lookup, template fetch, GPU
 # catalogue (pool mapping), and the final POST /serverless. Captures go to the
 # MOCK_MARKER / MOCK_BODY files when set.
@@ -466,7 +476,7 @@ function test_should_route_each_serverless_verb() {
   assert_contains "GET /serverless" "$(<"$cap")"
   rp::cmd_serverless get e1 >/dev/null 2>&1
   assert_contains "GET /serverless/e1" "$(<"$cap")"
-  rp::cmd_serverless create --template t --gpu "NVIDIA L4" >/dev/null 2>&1
+  rp::cmd_serverless create --template t --name e1 --gpu "NVIDIA L4" >/dev/null 2>&1
   assert_contains "POST /serverless" "$(<"$cap")"
   rp::cmd_serverless update e1 --workers-min 1 >/dev/null 2>&1
   assert_contains "PATCH /serverless/e1" "$(<"$cap")"

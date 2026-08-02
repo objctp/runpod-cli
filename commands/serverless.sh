@@ -112,6 +112,7 @@ _serverless_create() {
   local template
   template="$(rp::args_get template)"
   [[ -n "$template" ]] || rp::usage "usage: rp serverless create --template <id> [--name <n>] [--gpu <type,..>] [--force] … (see: rp serverless --help; idempotent by name)"
+  [[ -n "$name" ]] || rp::usage "usage: rp serverless create --template <id> --name <n> [--gpu <type,..>] … (see: rp serverless --help; idempotent by name)"
 
   # Idempotency gate after the --template requirement but before GPU resolution:
   # the v2 --gpu check (and its catalogue lookups) would otherwise exit before
@@ -447,7 +448,7 @@ _serverless_logs() {
 # doc: create
 # Create a serverless endpoint from a template or a Hub listing.
 #
-# Usage: rp serverless create --template <id> [--name <n>] [--gpu <type,..>]
+# Usage: rp serverless create --template <id> --name <n> [--gpu <type,..>]
 #                             [--network-volume <name> | --network-volume-id <id>
 #                              | --network-volume-ids <id,id>]
 #                             [--type QUEUE|LOAD_BALANCER] [flags]
@@ -456,7 +457,7 @@ _serverless_logs() {
 #   --template <id>               template id to deploy (required unless --hub-id)
 #   --hub-id <listing-id>         deploy from a Hub listing (requires --name;
 #                                 mutually exclusive with --template)
-#   --name <n>                    endpoint name; idempotent by name
+#   --name <n>                    endpoint name (required); idempotent by name
 #   --gpu <type,..>               GPU type ids (comma-separated) for the pool
 #   --gpus-from-volume <name>     resolve in-stock GPU types from a network
 #                                 volume's datacentre instead of --gpu
@@ -482,6 +483,9 @@ _serverless_logs() {
 #   --json                        print the raw API response
 #
 # Notes:
+#   --name is required by the live v2 spec on both the --template and --hub-id
+#   paths; the CLI checks it up front, so a missing --name fails locally before
+#   any request rather than as an API error.
 #   --type and --scaling are required by the live v2 spec; when omitted the CLI
 #   defaults type to QUEUE and scaling to QUEUE_DELAY with a 4s delay, so a
 #   create neither errors nor needs them spelled out.
