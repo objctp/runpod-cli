@@ -185,6 +185,7 @@ a file), `--plane rest|api`, `--jq`, `--limit`, and `--cursor`.
 | `ssh` | `list-keys` · `add-key <file\|->` · `remove-key <fp\|key>` · `info <pod-id>` (GraphQL) |
 | `stock` | `gpu` · `cpus` (CPU flavours: id, vCPU range, per-vCPU RAM/price) · `dc` (S3-API datacentres flagged) |
 | `api` | `GET\|POST\|PUT\|DELETE <path>` (`<path>` may omit the leading `/`) · `--body <json>` (prefix `@` to read a file) · `--plane rest\|api` · `--jq <filter>` · `--limit N` · `--cursor N` |
+| `doc` | `[command] [verb]` (omit to list every command) — prints the source-comment docs for a user-facing command and, with a verb, its options/flags (`rp doc serverless`, `rp doc serverless create`) |
 | `upgrade` | `[--version <x.y.z>]` (self-update in place; re-runs the installer) |
 
 `make` exposes a few shortcuts: `make stock` (GPU + DC stock), `make volumes` /

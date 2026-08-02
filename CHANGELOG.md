@@ -17,6 +17,7 @@
 - Add live SSE log streaming for pods and serverless workers
 - Add filter flags to `rp stock gpu`
 - Add `rp api` escape hatch, list pagination, and file-based auth
+- Add `rp doc` for user-facing command and verb documentation
 
 ### Changed
 

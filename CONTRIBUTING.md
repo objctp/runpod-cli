@@ -123,8 +123,32 @@ in `commands/`.
    unwrapped array through `rp::paginate` and honour `--jq` / `--limit` / `--cursor`
    (see `rp::resource_list` for the pattern) so paging and field selection work
    uniformly across every resource.
-6. Add a `tests/functional/<resource>_test.sh` covering the happy path and the
+6. Document the command for `rp doc` (see below) — its header comment and a
+   `# doc: <verb>` block per verb — so users can read the options without `--help`.
+7. Add a `tests/functional/<resource>_test.sh` covering the happy path and the
    argument errors. Run `make check` until green.
+
+### Documenting a command for `rp doc`
+
+`rp doc` surfaces source comments only — never library internals — so a command
+is self-documenting once its comments are in place. Two sources feed it:
+
+- **Command intro** — the comment block at the top of `commands/<resource>.sh`
+  (after the shebang). `rp doc <resource>` prints this as the command overview,
+  and `rp doc` (no filter) shows its first line as the catalogue summary.
+- **Per-verb docs** — a `# doc: <verb>` marker block anywhere in the file, e.g.:
+
+  ```bash
+  # doc: create
+  # Create a serverless endpoint from a template.
+  # Options:
+  #   --template <id>   template to deploy
+  #   --gpu <type,…>    GPU pool
+  ```
+
+  `rp doc <resource> <verb>` prints this block. As a fallback it also reads the
+  comment directly above the `_<resource>_<verb>` handler function. Keep these
+  comments in sync with the code; `rp doc` needs no separate doc file.
 
 The existing `commands/volume.sh` is the fullest reference — REST, GraphQL, S3,
 idempotent create, and `--json` all appear there.
