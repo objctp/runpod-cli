@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 #
-# `rp serverless` — serverless endpoint CRUD plus Hub-listing deploy (saveEndpoint
-# replaced by POST /v2/serverless in API v2).
+# Serverless endpoints: deploy, scale, inspect and invoke.
+#
+# An endpoint runs a container image on demand behind a queue or a load
+# balancer, scaling a pool of workers between a minimum and a maximum. The
+# image comes from a template or a Hub listing rather than from flags, and jobs
+# are submitted on the data plane with `rp serverless run`.
+#
 # Usage: rp serverless <verb> [flags]
 #
 
@@ -381,10 +386,7 @@ _serverless_run() {
   rp::emit_json_or "$body" _serverless_run_human "$id" "$body"
 }
 
-# rp serverless workers <id> — live worker ids/states/placement for an endpoint.
-# GET /v2/serverless/{id}/workers (listEndpointWorkers). --json emits the raw
-# envelope (workers + summary + endpointVersion); human mode prints the status
-# histogram on stderr, then tables the active workers.
+# Histogram to stderr; --json passes the raw envelope through.
 _serverless_workers() {
   local id
   rp::require_pos id "usage: rp serverless workers <id>"
@@ -402,10 +404,7 @@ _serverless_workers() {
     id status stale version gpus gpuType dc uptime image
 }
 
-# rp serverless releases <id> — release history (newest first) + rollout status.
-# GET /v2/serverless/{id}/releases (listEndpointReleases). --json emits the raw
-# envelope (releases + rollout + endpointVersion); human mode prints the rollout
-# summary on stderr, then tables the releases with a compact per-release diff.
+# Rollout summary to stderr; per-release diff column from the API's diff array.
 _serverless_releases() {
   local id
   rp::require_pos id "usage: rp serverless releases <id>"
@@ -425,11 +424,7 @@ _serverless_releases() {
     version source workers createdAt build diff
 }
 
-# rp serverless logs <id> --worker <w> — live SSE log stream for one worker.
-# GET /v2/serverless/{id}/workers/{workerId}/logs (getWorkerLogs). --worker is
-# required (a worker id from `rp serverless workers <id>`); the parser keeps only
-# the first positional, so the worker id rides a flag, not a second positional.
-# Same source/tail/since/last-event-id flags as `rp pod logs`.
+# Live SSE log stream for one worker (getWorkerLogs); --worker is required.
 _serverless_logs() {
   local id worker src tail since leid q
   rp::require_pos id "usage: rp serverless logs <id> --worker <workerId> [--source container|system] [--tail N] [--since <rfc3339>] [--last-event-id <ts>]"
@@ -444,6 +439,242 @@ _serverless_logs() {
   q="$(rp::query_params source "$src" tail "$tail" since "$since")"
   rp::stream_rest "/serverless/$id/workers/$worker/logs$q" "$leid"
 }
+
+###
+### :::: documentation (rp doc serverless) :::: ##################################
+###
+
+# doc: create
+# Create a serverless endpoint from a template or a Hub listing.
+#
+# Usage: rp serverless create --template <id> [--name <n>] [--gpu <type,..>]
+#                             [--network-volume <name> | --network-volume-id <id>
+#                              | --network-volume-ids <id,id>]
+#                             [--type QUEUE|LOAD_BALANCER] [flags]
+#
+# Options:
+#   --template <id>               template id to deploy (required unless --hub-id)
+#   --hub-id <listing-id>         deploy from a Hub listing (requires --name;
+#                                 mutually exclusive with --template)
+#   --name <n>                    endpoint name; idempotent by name
+#   --gpu <type,..>               GPU type ids (comma-separated) for the pool
+#   --gpus-from-volume <name>     resolve in-stock GPU types from a network
+#                                 volume's datacentre instead of --gpu
+#   --network-volume <name>       attach a network volume by name
+#   --network-volume-id <id>      attach a network volume by id
+#   --network-volume-ids <id,id>  attach several network volumes by id
+#   --type QUEUE|LOAD_BALANCER    endpoint type (default: QUEUE)
+#   --workers-min N               minimum worker count
+#   --workers-max N               maximum worker count
+#   --idle S                      workers.idleTimeout; ignored with
+#                                 REQUEST_COUNT scaling
+#   --gpu-count N                 GPUs per worker (default: 1)
+#   --flashboot                   enable FlashBoot (boolean flag)
+#   --env K=V                     environment variable; repeatable; merged over
+#                                 the template's env on the --template path
+#   --scaler-type QUEUE_DELAY|REQUEST_COUNT   scaling policy
+#   --scaler-value V              scaling threshold (default: 4s / 1 request)
+#   --execution-timeout <s>       per-job timeout, sent as milliseconds
+#   --registry <id>               registry credential for a private image
+#   --force                       skip the name idempotency check
+#   --min-cuda-version <ver>      accepted but ignored: v2 keeps it only as a
+#                                 /catalog/gpus filter
+#   --json                        print the raw API response
+#
+# Notes:
+#   --type and --scaling are required by the live v2 spec; when omitted the CLI
+#   defaults type to QUEUE and scaling to QUEUE_DELAY with a 4s delay, so a
+#   create neither errors nor needs them spelled out.
+#   --env is merged over the template's environment on the --template path, so
+#   `rp serverless create --template X --env K=V` overrides per key.
+#   --idle (workers.idleTimeout) is rejected for REQUEST_COUNT scaling and is
+#   ignored with a warning when set.
+#   --min-cuda-version is accepted and dropped with a warning: v2 has no
+#   create-side CUDA-version field, only the /catalog/gpus filter.
+#
+# Examples:
+#   rp serverless create --name ocr --template tmpl_abc --gpu "NVIDIA L4"
+#   rp serverless create --name diff --hub-id hub_xyz --gpu "NVIDIA A40"
+#
+# API: POST /v2/serverless
+
+# doc: list
+# List your endpoints: id, name, worker bounds and idle timeout.
+#
+# Usage: rp serverless list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
+#
+# Options:
+#   --limit N        return at most N endpoints
+#   --cursor <c>     offset to resume from; pairs with --limit
+#   --jq <filter>    jq filter applied to the array
+#   --json           print the raw API response
+#
+# Notes:
+#   The table shows the configured worker min/max and idle timeout; live worker
+#   counts come from `rp serverless workers <id>`.
+#
+# API: GET /v2/serverless
+
+# doc: get
+# Show one endpoint's full record and scaling config.
+#
+# Usage: rp serverless get <id> [--jq <filter>] [--json]
+#
+# Arguments:
+#   <id>             endpoint id — from `rp serverless list`
+#
+# Options:
+#   --jq <filter>    jq filter applied to the record
+#   --json           print the raw API response instead of pretty JSON
+#
+# API: GET /v2/serverless/{id}
+
+# doc: update
+# Change an endpoint's workers, GPU pool, or registry credential.
+#
+# Usage: rp serverless update <id> [--workers-min N] [--workers-max N]
+#                            [--idle S] [--gpu <types>] [--gpu-count N]
+#                            [--registry <id>]
+#
+# Arguments:
+#   <id>             endpoint id — from `rp serverless list`
+#
+# Options:
+#   --workers-min N  new minimum worker count
+#   --workers-max N  new maximum worker count
+#   --idle S         workers.idleTimeout (ignored with REQUEST_COUNT scaling)
+#   --gpu <types>    GPU type ids for the worker pool
+#   --gpu-count N    GPUs per worker (default: 1)
+#   --registry <id>  registry credential for a private image
+#   --json           print the raw API response
+#
+# Notes:
+#   At least one flag is required; with none, the command exits with a usage
+#   error rather than sending an empty PATCH.
+#   A --gpu change re-resolves pool ids from the type names.
+#
+# API: PATCH /v2/serverless/{id}
+
+# doc: delete
+# Delete a serverless endpoint permanently.
+#
+# Usage: rp serverless delete <id>
+#
+# Arguments:
+#   <id>             endpoint id — from `rp serverless list`
+#
+# Notes:
+#   Deletion is irreversible; any scaled workers are torn down with it.
+#
+# API: DELETE /v2/serverless/{id}
+
+# doc: scale
+# Set an endpoint's worker bounds and idle timeout in one call.
+#
+# Usage: rp serverless scale <id> --min N --max N [--idle S]
+#
+# Arguments:
+#   <id>             endpoint id — from `rp serverless list`
+#
+# Options:
+#   --min N          minimum worker count
+#   --max N          maximum worker count
+#   --idle S         workers.idleTimeout (ignored with REQUEST_COUNT scaling)
+#   --json           print the raw API response
+#
+# Notes:
+#   At least one of --min/--max/--idle is required.
+#
+# API: PATCH /v2/serverless/{id}
+
+# doc: workers
+# Show an endpoint's live workers: ids, states, placement, versions.
+#
+# Usage: rp serverless workers <id> [--json]
+#
+# Arguments:
+#   <id>             endpoint id — from `rp serverless list`
+#
+# Options:
+#   --json           print the raw envelope (workers + summary + endpointVersion)
+#
+# Notes:
+#   Human mode prints a status histogram (total/running/idle/init/throttled/
+#   unhealthy) on stderr, then tables the active workers.
+#
+# API: GET /v2/serverless/{id}/workers
+
+# doc: releases
+# Show an endpoint's release history and rollout.
+#
+# Usage: rp serverless releases <id> [--json]
+#
+# Arguments:
+#   <id>             endpoint id — from `rp serverless list`
+#
+# Options:
+#   --json           print the raw envelope (releases + rollout + endpointVersion)
+#
+# Notes:
+#   Human mode prints the rollout summary (workers on latest / total, percent)
+#   on stderr, then tables the releases with a per-release field diff.
+#
+# API: GET /v2/serverless/{id}/releases
+
+# doc: logs
+# Stream one worker's container and system logs live.
+#
+# Usage: rp serverless logs <id> --worker <workerId>
+#                     [--source container|system] [--tail N]
+#                     [--since <rfc3339>] [--last-event-id <ts>]
+#
+# Arguments:
+#   <id>                      endpoint id — from `rp serverless list`
+#
+# Options:
+#   --worker <workerId>       worker id (from `rp serverless workers <id>`);
+#                             required
+#   --source container|system restrict the stream; omit for both
+#   --tail N                  historical lines to backfill (default: 100,
+#                             maximum 5000); 0 streams live with no backfill
+#   --since <rfc3339>         resume from a timestamp instead of backfilling
+#   --last-event-id <ts>      SSE reconnect cursor emitted by this endpoint
+#
+# Notes:
+#   The stream is Server-Sent Events written raw to stdout (no --json); Ctrl-C
+#   ends it. The three resume flags follow --last-event-id > --since > --tail
+#   precedence.
+#   container is the worker's stdout/stderr; system is the host lifecycle log.
+#
+# API: GET /v2/serverless/{id}/workers/{workerId}/logs
+
+# doc: run
+# Submit a job to a deployed endpoint on the data plane.
+#
+# Usage: rp serverless run <id> --input '<json>' | --input-file <path|->
+#                     [--sync|--async] [--timeout <s>] [--json]
+#
+# Arguments:
+#   <id>             endpoint id — from `rp serverless list`
+#
+# Options:
+#   --input '<json>'          job input as a JSON string
+#   --input-file <path|->     read job input from a file, or - for stdin
+#   --sync                    block until the job completes (default)
+#   --async                   queue and print the job id instead of waiting
+#   --timeout <s>             request timeout in seconds (default: 300)
+#   --json                    print the raw API response
+#
+# Notes:
+#   --input and --input-file are mutually exclusive, as are --sync and --async.
+#   The body is wrapped as { "input": <json> } and POSTed to the endpoint's
+#   runsync (or run, with --async) route on the data plane.
+#
+# Examples:
+#   rp serverless run end_abc --input '{"prompt":"hi"}'
+#   rp serverless run end_abc --input-file job.json --async
+#
+# API: POST /v2/{id}/runsync  (or /run with --async)
 
 rp::cmd_serverless() {
   local verb="${1:-help}"

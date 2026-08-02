@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 #
-# `rp pod` — on-demand pod CRUD (REST API v2).
+# On-demand GPU and CPU pod lifecycle.
+#
+# A pod is a single container billed per second, built from an image (or from a
+# template's container config) and addressed by id. Every pod is either a GPU
+# pod or a CPU pod, never both. Storage is one host-local persistent volume or
+# one network volume, and the choice is fixed at create time.
+#
 # Usage: rp pod <verb> [flags]
 #
 
@@ -167,10 +173,6 @@ _pod_create() {
   rp::resource_create pod "" "$obj"
 }
 
-# rp pod logs <id> — live SSE log stream (container + system).
-# GET /v2/pods/{id}/logs (getPodLogs). Flags map to the source/tail/since query
-# params and the Last-Event-ID header. Streams raw to stdout (no trailing ok
-# line — stdout is the data). Ctrl-C ends the stream.
 _pod_logs() {
   local id src tail since leid q
   rp::require_pos id "usage: rp pod logs <id> [--source container|system] [--tail N] [--since <rfc3339>] [--last-event-id <ts>]"
@@ -183,6 +185,257 @@ _pod_logs() {
   q="$(rp::query_params source "$src" tail "$tail" since "$since")"
   rp::stream_rest "/pods/$id/logs$q" "$leid"
 }
+
+###
+### :::: documentation (rp doc pod) :::: ######################################
+###
+
+# doc: create
+# Create a pod from an image, optionally seeded by a template.
+#
+# Usage: rp pod create --image <ref> --name <n>
+#                      (--gpu <type> | --cpu-flavor <id> --vcpu N) [flags]
+#
+# Options:
+#   --image <ref>                  Docker image reference (required)
+#   --name <n>                     pod name (required)
+#   --gpu <type>                   GPU type id — see `rp stock gpu`
+#   --gpu-count N                  GPUs to attach (default: 1)
+#   --cpu-flavor <id>              CPU flavour id — see `rp stock cpus`
+#   --vcpu N                       vCPUs; a power of two, minimum 2
+#   --cloud SECURE|COMMUNITY       hardware tier (default: SECURE)
+#   --dc <id,…>                    preferred datacentres; omit to let the
+#                                  scheduler place the pod
+#   --volume-gb N                  host-local persistent volume, GB (minimum 10)
+#   --network-volume-id <id>       attach an existing network volume instead
+#   --volume-path <path>           mount path for either volume kind
+#                                  (default: /workspace)
+#   --container-disk-gb N          ephemeral container disk, GB (minimum 1)
+#   --global-networking true|false give the pod a private IP reachable across
+#                                  datacentres; omit for the API default (false)
+#   --ports <a/b,…>                exposed ports, each as port/protocol
+#   --env K=V                      environment variable; repeatable
+#   --start-cmd <a,b,…>            arguments passed to the container entrypoint
+#   --template <id>                template whose container config seeds the pod
+#   --registry <id>                registry credential for a private image
+#
+# Notes:
+#   A pod is either a GPU pod or a CPU pod: pass --gpu or --cpu-flavor, never
+#   both. The API rejects a create that sets neither, and the CLI does not
+#   pre-check that, so the failure arrives as an API error.
+#   --name is likewise required by the API but not by the CLI, which only
+#   checks --image.
+#   --image is required even with --template, and always wins over the
+#   template's own image.
+#   Storage is one kind or the other: --volume-gb is host-local, pinned to the
+#   machine and lost if that host fails, whilst --network-volume-id is durable
+#   and must already live in the pod's datacentre. CPU pods reject --volume-gb.
+#   The mount kind is fixed at create — `rp pod update` cannot switch it.
+#   --gpu takes a single type in v2. A comma-separated list is still accepted,
+#   but only the first entry is used and a warning is printed.
+#   --global-networking needs an NVIDIA GPU and a datacentre that supports it,
+#   so it is rejected alongside --cpu-flavor.
+#   v2 has no templateId parameter. --template fetches the template and spreads
+#   its container config as defaults, which any explicit flag then overrides.
+#   --interruptible is accepted and ignored: v2 has no interruptible pod tier.
+#   --force is accepted and ignored. Unlike `rp volume create` and
+#   `rp template create`, pod creation is not idempotent by name, so re-running
+#   this command creates a second pod.
+#
+# Examples:
+#   rp pod create --name trainer --image runpod/pytorch:2.2.0 \
+#     --gpu "NVIDIA GeForce RTX 4090" --container-disk-gb 50
+#   rp pod create --name cpu-box --image alpine --cpu-flavor cpu5c --vcpu 4
+#   rp pod create --name shared --image alpine --gpu "NVIDIA L4" \
+#     --network-volume-id vol_xyz --volume-path /runpod-volume
+#
+# API: POST /v2/pods
+
+# doc: list
+# List your pods as a table: id, name, image, status, cost.
+#
+# Usage: rp pod list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
+#
+# Options:
+#   --limit N        return at most N pods
+#   --cursor <c>     offset to resume from; pairs with --limit
+#   --jq <filter>    jq filter applied to the array
+#   --json           print the raw API response
+#
+# Notes:
+#   status is one of PROVISIONING, STARTING, RUNNING, EXITED, ERROR or
+#   TERMINATED.
+#   Paging is client-side: the whole list is fetched, then sliced. When output
+#   is truncated the next cursor is printed to stderr, leaving stdout clean.
+#
+# API: GET /v2/pods
+
+# doc: get
+# Show one pod's full record, including runtime ports and utilisation.
+#
+# Usage: rp pod get <id> [--jq <filter>] [--json]
+#
+# Arguments:
+#   <id>             pod id — from `rp pod list`
+#
+# Options:
+#   --jq <filter>    jq filter applied to the record
+#   --json           print the raw API response instead of pretty JSON
+#
+# Notes:
+#   runtime is null until the pod reaches RUNNING, which is why
+#   `rp ssh info` reports no connection line for a stopped pod.
+#
+# API: GET /v2/pods/{id}
+
+# doc: update
+# Change a pod's configuration in place, restarting it.
+#
+# Usage: rp pod update <id> [flags]
+#
+# Arguments:
+#   <id>                           pod id — from `rp pod list`
+#
+# Options:
+#   --name <n>                     rename the pod
+#   --image <ref>                  Docker image reference
+#   --container-disk-gb N          ephemeral container disk, GB (minimum 1)
+#   --volume-gb N                  resize the host-local persistent volume, GB
+#   --volume-path <path>           mount path (default: /workspace)
+#   --ports <a/b,…>                exposed ports, each as port/protocol
+#   --env K=V                      environment variable; repeatable
+#   --start-cmd <a,b,…>            arguments passed to the container entrypoint
+#   --registry <id>                registry credential for a private image
+#   --global-networking true|false enable or disable global networking; omit to
+#                                  leave it unchanged
+#   --locked true|false            lock the pod against stop and restart; omit
+#                                  to leave it unchanged
+#   --json                         print the raw API response
+#
+# Notes:
+#   This resets a running pod. Anything outside /workspace or a network volume
+#   is wiped, and the CLI prints a reminder before sending the request.
+#   At least one flag is required; with none, the command exits with a usage
+#   error rather than sending an empty PATCH.
+#   The mount kind is fixed at create. Introducing a kind the pod was not
+#   created with — persistent on a network pod, or either on a pod created
+#   without a mount — is rejected by the API.
+#   A network volume's id is immutable; only its mount path may change.
+#   --global-networking takes effect on the next start or restart, not live.
+#   A locked pod cannot be stopped or restarted until it is unlocked.
+#
+# Examples:
+#   rp pod update pod_abc123 --name renamed
+#   rp pod update pod_abc123 --container-disk-gb 80 --env HF_TOKEN=xxx
+#
+# API: PATCH /v2/pods/{id}
+
+# doc: delete
+# Terminate a pod permanently.
+#
+# Usage: rp pod delete <id>
+#
+# Arguments:
+#   <id>             pod id — from `rp pod list`
+#
+# Notes:
+#   Termination is irreversible and is not the same as `rp pod stop`: a stopped
+#   pod keeps its disks and can be started again, whilst a terminated one is
+#   gone.
+#   Host-local persistent storage dies with the pod. An attached network volume
+#   outlives it and must be removed with `rp volume delete`.
+#
+# API: DELETE /v2/pods/{id}
+
+# doc: start
+# Start a stopped pod.
+#
+# Usage: rp pod start <id>
+#
+# Arguments:
+#   <id>             pod id — from `rp pod list`
+#
+# Notes:
+#   Starting is asynchronous: the command returns once the transition is
+#   accepted, not once the container is RUNNING. Poll with `rp pod get <id>`.
+#   A start can fail later if the pod's GPU type is out of stock in its
+#   datacentre.
+#
+# API: POST /v2/pods/{id}/action  (action: start)
+
+# doc: stop
+# Stop a running pod, keeping its disks.
+#
+# Usage: rp pod stop <id>
+#
+# Arguments:
+#   <id>             pod id — from `rp pod list`
+#
+# Notes:
+#   A stopped pod still bills for its storage, only the GPU or CPU charge
+#   ceases. Use `rp pod delete` to stop paying entirely.
+#   A locked pod refuses to stop; unlock it with
+#   `rp pod update <id> --locked false`.
+#
+# API: POST /v2/pods/{id}/action  (action: stop)
+
+# doc: reset
+# Deprecated: alias for `restart` — v2 removed the reset action.
+#
+# Usage: rp pod reset <id>
+#
+# Notes:
+#   v2's action enum is start, stop, restart and terminate; there is no reset.
+#   The verb is kept so existing scripts keep working: it warns and performs a
+#   restart. Use `rp pod restart` instead.
+#
+# API: POST /v2/pods/{id}/action  (action: restart)
+
+# doc: restart
+# Restart a running pod.
+#
+# Usage: rp pod restart <id>
+#
+# Arguments:
+#   <id>             pod id — from `rp pod list`
+#
+# Notes:
+#   The container is recreated, so anything written outside /workspace or a
+#   network volume is lost.
+#   A locked pod refuses to restart.
+#
+# API: POST /v2/pods/{id}/action  (action: restart)
+
+# doc: logs
+# Stream a pod's container and system logs live.
+#
+# Usage: rp pod logs <id> [--source container|system] [--tail N]
+#                    [--since <rfc3339>] [--last-event-id <ts>]
+#
+# Arguments:
+#   <id>                      pod id — from `rp pod list`
+#
+# Options:
+#   --source container|system restrict the stream; omit for both
+#   --tail N                  historical lines to backfill (default: 100,
+#                             maximum 5000); 0 streams live with no backfill
+#   --since <rfc3339>         resume from a timestamp instead of backfilling
+#   --last-event-id <ts>      SSE reconnect cursor emitted by this endpoint
+#
+# Notes:
+#   The stream is Server-Sent Events written raw to stdout, so it pipes and
+#   redirects cleanly and there is no --json. Ctrl-C ends it.
+#   The three resume flags have a precedence: --last-event-id beats --since,
+#   which beats --tail. Setting a lower-precedence flag alongside a higher one
+#   has no effect.
+#   container is the container's stdout and stderr; system is the host
+#   lifecycle log, which is where pull failures and OOM kills appear.
+#
+# Examples:
+#   rp pod logs pod_abc123 --tail 0
+#   rp pod logs pod_abc123 --source system --tail 500
+#
+# API: GET /v2/pods/{id}/logs
 
 rp::cmd_pod() {
   local verb="${1:-help}"

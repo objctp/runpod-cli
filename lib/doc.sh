@@ -51,7 +51,9 @@ rp::doc_intro_summary() {
 }
 
 # The `# doc: <verb>` block for a verb in a command file. Prints the body
-# (leading "# " stripped); nothing if the marker is absent.
+# (leading "# " stripped); nothing if the marker is absent. A marker name may
+# carry a space (`# doc: delegations create`) so a sub-resource's verbs are
+# addressed as the user types them, not under an invented hyphenated name.
 rp::doc_verb_marker() {
   local file="$1" verb="$2"
   local -a block=()
@@ -68,10 +70,11 @@ rp::doc_verb_marker() {
       else
         break
       fi
-    elif [[ "$line" =~ ^[[:space:]]*#\ doc:\ ([-a-z0-9]+) ]]; then
+    elif [[ "$line" =~ ^[[:space:]]*#\ doc:\ ([-a-z0-9]+([[:space:]]+[-a-z0-9]+)*)[[:space:]]*$ ]]; then
       [[ "${BASH_REMATCH[1]}" == "$verb" ]] && capturing=1
     fi
   done <"$file"
+  _doc_trim block
   ((${#block[@]})) || return 0
   printf '%s\n' "${block[@]}"
 }
@@ -105,7 +108,11 @@ rp::doc_func_doc() {
   printf '%s\n' "${block[@]}"
 }
 
-# Verb names declared in a command's `case "$verb" in` block (excludes help/*).
+# Verb names declared in a command's `case "$verb" in` block (excludes help/*),
+# plus any *group* verb — one dispatched by an `if [[ "$verb" == "x" ]]` guard
+# to its own sub-case rather than by a case arm (`rp registry delegations`).
+# Groups are emitted where the guard appears, so the order this prints is the
+# order the doc section must follow.
 rp::doc_verbs() {
   local file="$1" line in_case=0 label
   while IFS= read -r line; do
@@ -121,6 +128,29 @@ rp::doc_verbs() {
       fi
     elif [[ "$line" == *'case "$verb" in'* ]]; then
       in_case=1
+    elif [[ "$line" =~ \"\$verb\"[[:space:]]*==[[:space:]]*\"([a-z][a-z0-9-]*)\" ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}"
+    fi
+  done <"$file"
+}
+
+# Sub-verb names of a group verb: the labels of the `case "$sub" in` block that
+# follows the group's `if [[ "$verb" == "<group>" ]]` guard. Prints nothing when
+# $2 is not a group.
+rp::doc_subverbs() {
+  local file="$1" group="$2" line found=0 in_case=0 label
+  while IFS= read -r line; do
+    if ((in_case)); then
+      [[ "$line" == *esac* ]] && break
+      if [[ "$line" =~ ^[[:space:]]*([a-z][a-z0-9-]+)[[:space:]]*\) ]]; then
+        label="${BASH_REMATCH[1]}"
+        [[ "$label" == "help" || "$label" == "*" ]] && continue
+        printf '%s\n' "$label"
+      fi
+    elif ((found)); then
+      [[ "$line" == *'case "$sub" in'* ]] && in_case=1
+    elif [[ "$line" =~ \"\$verb\"[[:space:]]*==[[:space:]]*\"$group\" ]]; then
+      found=1
     fi
   done <"$file"
 }

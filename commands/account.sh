@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 #
-# `rp account` has a single useful action (show balance + spend), so the default
-# verb is `info`: both `rp account` and `rp account info` print the same thing.
+# Show your account balance and spend.
+#
+# The only verb is `info`, also the default: `rp account` and `rp account info`
+# print the same balance, spend limit and per-hour spend.
+#
 # Usage: rp account <verb> [flags]
 #
 
@@ -19,6 +22,25 @@ _account_info() {
   data="$(rp::graphql 'query { myself { id clientBalance spendLimit currentSpendPerHr } }')"
   rp::emit_json_or "$data" _account_info_human "$data"
 }
+
+###
+### :::: documentation (rp doc account) :::: ######################################
+###
+
+# doc: info
+# Show your account balance and spend.
+#
+# Usage: rp account [info]
+#
+# Options:
+#   --json  print the raw GraphQL response
+#
+# Notes:
+#   Backed by the GraphQL `myself` query — there is no API v2 equivalent
+#   (see docs/API_ALIGNMENT_REPORT_V2.md, NO-V2-EQUIVALENT list, line ~753).
+#
+# API: GraphQL `myself { id clientBalance spendLimit currentSpendPerHr }`
+#      (NO-V2-EQUIVALENT)
 
 rp::cmd_account() {
   local verb="${1:-info}"

@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 #
-# `rp stock` — GPU types, CPU flavours, and datacentres.
+# Catalogue of GPU types, CPU flavours, and datacentres.
+#
+# Read-only lookups against the API v2 catalogue: what hardware exists, what it
+# costs, and where it is in stock right now. The ids printed here are the ones
+# `rp pod create` takes for --gpu, --cpu-flavor and --dc. Every column is v2
+# REST bar the S3-API column of `rp stock dc`, which has no v2 field and stays
+# on GraphQL.
+#
 # Usage: rp stock <verb> [flags]
 #
-# `gpu`, `cpus`, and the DC *list* use REST API v2 (catalog/gpus, catalog/cpus,
-# catalog/datacenters with per-DC stock); the DC *S3 column* stays GraphQL (v2
-# has no s3apiEnabled field), sourced via lib/validate.sh's `_s3_dcs` with an
-# offline fallback.
 
-# rp stock gpu — GPU types (v2) with availability + optional filters.
-# GET /v2/catalog/gpus (listGpuTypes, include=AVAILABILITY). Filters compose onto
-# the query: --product (POD|CLUSTER|SERVERLESS, csv; default POD,SERVERLESS),
-# --min-count N (count), --cloud SECURE|COMMUNITY, --min-cuda <ver> (minCudaVersion).
 _stock_gpu() {
   local product cloud cuda count q data
   product="$(rp::args_get product "$RP_DEFAULT_PRODUCT")"
@@ -34,10 +33,6 @@ _stock_gpu() {
     ID DISPLAY VRAM_GB SECURE_PRICE STOCK
 }
 
-# rp stock cpus — CPU flavours (v2) with availability.
-# GET /v2/catalog/cpus (listCpuTypes, include=AVAILABILITY&product=POD,SERVERLESS).
-# The ID column is the value `rp pod create --cpu-flavor` takes; VCPU shows the
-# valid vcpuCount range (power-of-two within it).
 _stock_cpus() {
   local data
   data="$(rp::http GET "/catalog/cpus$(rp::query_params include AVAILABILITY product "$RP_DEFAULT_PRODUCT")" | rp::unwrap cpus)"
@@ -46,12 +41,6 @@ _stock_cpus() {
     ID NAME GROUP VCPU RAM_GB_VCPU SECURE_PRICE_VCPU STOCK
 }
 
-# rp stock dc — datacentre list (v2) with per-DC GPU stock + the S3-API column.
-# DC list + per-DC stock: GET /v2/catalog/datacenters (listDataCenters,
-# include=GPU_AVAILABILITY,CPU_AVAILABILITY). The S3-API column has no v2 field
-# (NO-V2-EQUIVALENT): it is sourced from lib/validate.sh's _s3_dcs — the same
-# GraphQL-backed, offline-fallback resolver `rp volume create` guards on — so the
-# column stays live where reachable and still renders when the API is down.
 _stock_dc() {
   local dcs s3set shaped
   dcs="$(rp::http GET '/catalog/datacenters?include=GPU_AVAILABILITY,CPU_AVAILABILITY' | rp::unwrap dataCenters)"
@@ -67,6 +56,87 @@ _stock_dc() {
     }) | sort_by(.DATACENTER)')"
   rp::emit_json_or "$dcs" rp::table "$shaped" DATACENTER NAME REGION GPUS S3_API
 }
+
+###
+### :::: documentation (rp doc stock) :::: ####################################
+###
+
+# doc: gpu
+# List GPU types with price and live availability.
+#
+# Usage: rp stock gpu [--product <p,…>] [--min-count N]
+#                     [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] [--json]
+#
+# Options:
+#   --product <p,…>           POD, CLUSTER or SERVERLESS, comma-separated
+#                             (default: POD,SERVERLESS)
+#   --min-count N             only types with at least N GPUs free on one host
+#                             (minimum 1)
+#   --cloud SECURE|COMMUNITY  hardware tier; omit for both
+#   --min-cuda <ver>          minimum CUDA version, major or major.minor
+#   --json                    print the raw API response
+#
+# Notes:
+#   The ID column is the value `rp pod create --gpu` and
+#   `rp serverless create --gpu` take. Ids are display names containing
+#   spaces, so quote them.
+#   STOCK is availability for the product and cloud you asked about, so one
+#   card can read differently under --product POD and --product SERVERLESS.
+#   SECURE_PRICE is the secure-cloud rate per GPU per hour; community pricing
+#   is not in this table.
+#   --min-count is per host: it asks for N of that GPU in one machine, not N
+#   across the fleet. The floor is 1, so 0 or a negative is a usage error.
+#   --min-cuda takes 12 or 12.1; any other shape is rejected before the call.
+#
+# Examples:
+#   rp stock gpu --cloud SECURE --min-count 2
+#   rp stock gpu --product SERVERLESS --min-cuda 12.4
+#
+# API: GET /v2/catalog/gpus  (include=AVAILABILITY)
+
+# doc: cpus
+# List CPU flavours with price and availability.
+#
+# Usage: rp stock cpus [--json]
+#
+# Options:
+#   --json  print the raw API response
+#
+# Notes:
+#   The ID column is the value `rp pod create --cpu-flavor` takes.
+#   VCPU is the flavour's valid vcpuCount range; --vcpu must be a power of two
+#   inside it.
+#   RAM_GB_VCPU is the RAM allotted per vCPU and SECURE_PRICE_VCPU the
+#   secure-cloud hourly rate per vCPU, so both scale with the vCPU count you
+#   ask for.
+#   This verb takes no filters: the product is fixed at POD,SERVERLESS.
+#
+# API: GET /v2/catalog/cpus  (include=AVAILABILITY, product=POD,SERVERLESS)
+
+# doc: dc
+# List datacentres with GPU stock and S3-API support.
+#
+# Usage: rp stock dc [--json]
+#
+# Options:
+#   --json  print the raw API response
+#
+# Notes:
+#   The DATACENTER column is the id `rp pod create --dc` and
+#   `rp volume create --dc` take.
+#   GPUS counts how many GPU types have any stock there, not how many cards
+#   are free.
+#   S3_API marks the datacentres whose network volumes expose the
+#   S3-compatible API — the ones `rp volume sync` can reach.
+#   That column is NO-V2-EQUIVALENT: v2 carries no S3 field anywhere, so it is
+#   joined in from the GraphQL dataCenters query — the same resolver
+#   `rp volume create` guards on — with an offline snapshot behind it. The
+#   column therefore stays live where GraphQL is reachable and still renders
+#   when it is not.
+#   --json prints the v2 datacentre records alone: S3_API is a CLI-side join
+#   and is absent from that payload.
+#
+# API: GET /v2/catalog/datacenters  (include=GPU_AVAILABILITY,CPU_AVAILABILITY)
 
 rp::cmd_stock() {
   local verb="${1:-help}"

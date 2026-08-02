@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 #
-# `rp registry` — container-registry auth CRUD (REST API v2).
+# Container-registry credentials and ECR access delegations.
+#
+# A registry auth entry lets a pod or endpoint pull a private image without
+# embedding a password in the container. An ECR delegation links an AWS account
+# to RunPod so images can be pulled from a private Elastic Container Registry
+# without a stored credential at all. Both surfaces use REST API v2.
+#
 # Usage: rp registry <verb> [flags]
 #
 
-# rp registry delegations list — ECR access delegations (AWS account ↔ RunPod).
-# GET /v2/registries/delegations (listDelegations). --json emits the unwrapped
-# `delegations` array (the envelope carries no extra metadata).
+# Unwrapped `delegations` array; --json passes it through.
 _registry_delegations_list() {
   local data
   data="$(rp::http GET /registries/delegations | rp::unwrap delegations)"
@@ -15,12 +19,7 @@ _registry_delegations_list() {
     ID NAME REPOSITORY TAG REGION CREATED
 }
 
-# rp registry delegations create --resource <ecr-arn> [--name <n>] — link an ECR
-# repo so private images can be pulled without a stored credential.
-# POST /v2/registries/delegations (createDelegation); 201 returns the full
-# EcrDelegation, whose top-level .id rp::extract_id reads. `name` is optional and
-# omitted from the body when not given (the silent-empty guard below, because
-# rp::json_str "" would otherwise emit "name":"" — see Notes).
+# POST /v2/registries/delegations; `name` is optional and omitted when empty.
 _registry_delegations_create() {
   local resource
   resource="$(rp::args_get resource)"
@@ -37,7 +36,7 @@ _registry_delegations_create() {
   printf '%s\n' "$newid"
 }
 
-# rp registry delegations revoke <id> — remove a delegation. DELETE, 204 on success.
+# DELETE a delegation (204 on success).
 _registry_delegations_revoke() {
   local id
   rp::require_pos id "usage: rp registry delegations revoke <id>"
@@ -62,6 +61,126 @@ _registry_create() {
   body="$(rp::json_obj name "$(rp::json_str "$name")" username "$(rp::json_str "$username")" password "$(rp::json_str "$password")")"
   rp::resource_create registry "" "$body"
 }
+
+###
+### :::: documentation (rp doc registry) :::: #####################################
+###
+
+# doc: delegations
+# Manage ECR access delegations between an AWS account and RunPod.
+#
+# Usage: rp registry delegations <verb> [flags]
+#
+# Notes:
+#   A delegation links an ECR repository so private images can be pulled without
+#   a stored registry credential. Sub-verbs: list, create, revoke.
+#
+# API: GET /v2/registries/delegations
+
+# doc: delegations list
+# List your ECR access delegations.
+#
+# Usage: rp registry delegations list [--json]
+#
+# Options:
+#   --json           print the raw API response
+#
+# Notes:
+#   The table shows each delegation's id, name, repository, tag, AWS region and
+#   creation time.
+#
+# API: GET /v2/registries/delegations
+
+# doc: delegations create
+# Link an ECR repository for credential-free private-image pulls.
+#
+# Usage: rp registry delegations create --resource <ecr-arn> [--name <n>]
+#
+# Options:
+#   --resource <ecr-arn>         the ECR repository ARN to delegate (required)
+#   --name <n>                   label for the delegation (optional; omitted
+#                                from the body when not given)
+#   --json                       print the raw API response
+#
+# Notes:
+#   On success the new delegation id is printed; the name is optional and, when
+#   absent, is not sent in the request body.
+#
+# API: POST /v2/registries/delegations
+
+# doc: delegations revoke
+# Remove an ECR access delegation.
+#
+# Usage: rp registry delegations revoke <id>
+#
+# Arguments:
+#   <id>             delegation id — from `rp registry delegations list`
+#
+# Notes:
+#   Removal is irreversible; images from that repository will then need a stored
+#   credential to be pulled again.
+#
+# API: DELETE /v2/registries/delegations/{id}
+
+# doc: list
+# List your registry credentials: id and name.
+#
+# Usage: rp registry list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
+#
+# Options:
+#   --limit N        return at most N credentials
+#   --cursor <c>     offset to resume from; pairs with --limit
+#   --jq <filter>    jq filter applied to the array
+#   --json           print the raw API response
+#
+# API: GET /v2/registries
+
+# doc: get
+# Show one registry credential's full record.
+#
+# Usage: rp registry get <id> [--jq <filter>] [--json]
+#
+# Arguments:
+#   <id>             credential id — from `rp registry list`
+#
+# Options:
+#   --jq <filter>    jq filter applied to the record
+#   --json           print the raw API response instead of pretty JSON
+#
+# API: GET /v2/registries/{id}
+
+# doc: create
+# Store a container-registry credential for pulling private images.
+#
+# Usage: rp registry create --name <n> --username <u> [--password <p>]
+#
+# Options:
+#   --name <n>                credential name (required)
+#   --username <u>            registry username (required)
+#   --password <p>            registry password; if omitted, prompts interactively
+#   --json                    print the raw API response
+#
+# Notes:
+#   --password is visible in process listings (`ps`) and shell history; prefer
+#   the interactive prompt by omitting it.
+#   The credential is not idempotent by name, so re-running create adds a second
+#   entry rather than updating the first.
+#
+# API: POST /v2/registries
+
+# doc: delete
+# Delete a registry credential.
+#
+# Usage: rp registry delete <id>
+#
+# Arguments:
+#   <id>             credential id — from `rp registry list`
+#
+# Notes:
+#   Deletion is irreversible; pods or endpoints still referencing the credential
+#   will fail to pull.
+#
+# API: DELETE /v2/registries/{id}
 
 rp::cmd_registry() {
   local verb="${1:-help}"

@@ -18,6 +18,7 @@
 - Add filter flags to `rp stock gpu`
 - Add `rp api` escape hatch, list pagination, and file-based auth
 - Add `rp doc` for user-facing command and verb documentation
+- Complete and standardise `rp doc` across every command and ver
 
 ### Changed
 

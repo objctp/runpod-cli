@@ -123,35 +123,62 @@ in `commands/`.
    unwrapped array through `rp::paginate` and honour `--jq` / `--limit` / `--cursor`
    (see `rp::resource_list` for the pattern) so paging and field selection work
    uniformly across every resource.
-6. Document the command for `rp doc` (see below) — its header comment and a
-   `# doc: <verb>` block per verb — so users can read the options without `--help`.
+6. Document the command for `rp doc` (see below): give `commands/<resource>.sh`
+   the strict intro (a ≤62-char summary ending with `.`, then a description and
+   `Usage:`), and add a `# doc: <verb>` block per verb above `rp::cmd_<resource>()`
+   in case order, so users can read the options without `--help`.
 7. Add a `tests/functional/<resource>_test.sh` covering the happy path and the
    argument errors. Run `make check` until green.
 
 ### Documenting a command for `rp doc`
 
-`rp doc` surfaces source comments only — never library internals — so a command
-is self-documenting once its comments are in place. Two sources feed it:
+`rp doc` is the command's man page; `--help` stays a terse cheat sheet. It
+surfaces source comments only — never library internals — so a command is
+self-documenting once its comments are in place. Two sources feed it:
 
 - **Command intro** — the comment block at the top of `commands/<resource>.sh`
   (after the shebang). `rp doc <resource>` prints this as the command overview,
-  and `rp doc` (no filter) shows its first line as the catalogue summary.
-- **Per-verb docs** — a `# doc: <verb>` marker block anywhere in the file, e.g.:
+  and `rp doc` (no filter) shows its first line as the catalogue summary. The
+  first line is a complete sentence, at most 62 characters, ending with a full
+  stop, and carries no `` `rp x` — `` prefix (the catalogue and heading already
+  print the name). It is followed by a blank line, a 2–6 line description, a
+  blank line, then `Usage:`. Command files use this strict intro; `lib/` helpers
+  keep a looser one-line header, since only user-facing commands are documented.
+- **Per-verb docs** — one contiguous section of `# doc: <verb>` blocks directly
+  above `rp::cmd_<resource>()`, preceded by a
+  `### :::: documentation (rp doc <resource>) :::: ###` marker and in the order
+  the verbs appear in the command's `case "$verb" in` block (a group verb
+  dispatched by an `if [[ "$verb" == … ]]` guard, such as `rp registry
+  delegations`, comes first). `rp doc <resource> <verb>` prints the block; as a
+  fallback it also reads the comment above the `_<resource>_<verb>` handler.
+  Keep both in sync; `rp doc` needs no separate doc file.
 
-  ```bash
-  # doc: create
-  # Create a serverless endpoint from a template.
-  # Options:
-  #   --template <id>   template to deploy
-  #   --gpu <type,…>    GPU pool
-  ```
+Each verb block uses this fixed anatomy — `Summary` and `Usage:` are mandatory,
+the rest only when they carry content, and headers never repeat or change order:
 
-  `rp doc <resource> <verb>` prints this block. As a fallback it also reads the
-  comment directly above the `_<resource>_<verb>` handler function. Keep these
-  comments in sync with the code; `rp doc` needs no separate doc file.
+    Summary · Usage: · Arguments: · Options: · Notes: · Examples: · API:
 
-The existing `commands/volume.sh` is the fullest reference — REST, GraphQL, S3,
-idempotent create, and `--json` all appear there.
+Options grammar:
+
+| Spec | Meaning |
+|------|---------|
+| `<id>` | freeform identifier |
+| `N` | bare integer (unit lives in the description) |
+| `a\|b` | pipe-separated enum |
+| `<thing,…>` | comma-separated list (real ellipsis) |
+| `(required)` / `(default: X)` | suffix on a spec |
+| `true\|false` | tri-state boolean; the description must say what omitting does |
+
+Align each description at the longest spec in its block plus two columns; order
+options required → optional → `--json`/`--jq` last (never alphabetical). Only
+document a shared flag (`--json`, `--jq`, `--limit`, `--cursor`, `--force`) where
+the verb genuinely supports it. A deprecation rides the `Summary` prefix
+(`Deprecated: use \`rp serverless\`.`); an alias is a stub — summary, usage,
+notes — never a copy of the target's options.
+
+The canonical reference is `commands/pod.sh` — its
+`### :::: documentation (rp doc pod) :::: ###` section demonstrates the full
+anatomy; render it with `rp doc pod`.
 
 ## Adding a library helper
 
