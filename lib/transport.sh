@@ -42,7 +42,7 @@ _curl_json() {
   local url="$1" method="$2" body="${3:-}" max_time="${4:-$RP_TIMEOUT_REST}"
   local hdr body_tmp tmp status out
   _mktemp hdr
-  printf 'Authorization: Bearer %s\n' "$RUNPOD_API_KEY" >"$hdr"
+  rp::auth_header >"$hdr"
   local -a args=(-sSL --connect-timeout "$RP_TIMEOUT_CONNECT" --max-time "$max_time" -X "$method" -H @"$hdr" -H 'Content-Type: application/json')
   _mktemp tmp
   if [[ -n "$body" ]]; then
@@ -103,7 +103,7 @@ rp::api_stream() {
   base="$(_rp_plane_base "$plane")" || rp::die "unknown transport plane: '$plane'"
   _mktemp hdr
   _mktemp hdrs
-  printf 'Authorization: Bearer %s\n' "$RUNPOD_API_KEY" >"$hdr"
+  rp::auth_header >"$hdr"
   [[ -z "$leid" ]] || printf 'Last-Event-ID: %s\n' "$leid" >>"$hdr"
   curl -s --no-buffer --connect-timeout "$RP_TIMEOUT_CONNECT" \
     -H @"$hdr" -H 'Accept: text/event-stream' -D "$hdrs" -f "$base$path"

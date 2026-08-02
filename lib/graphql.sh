@@ -65,7 +65,7 @@ rp::graphql() {
 # Callers such as the S3 datacentre fallback use this to degrade gracefully.
 rp::graphql_soft() {
   local query="$1" variables="${2:-}"
-  [[ -n "${RUNPOD_API_KEY:-}" && -n "${RP_GRAPHQL_URL:-}" ]] || return 1
+  [[ -n "${RUNPOD_API_KEY:-}" || -n "${RUNPOD_API_KEY_FILE:-}" ]] && [[ -n "${RP_GRAPHQL_URL:-}" ]] || return 1
   command -v curl >/dev/null 2>&1 || return 1
   local payload tmp
   payload="$(_rp_graphql_payload "$query" "$variables")" || return 1

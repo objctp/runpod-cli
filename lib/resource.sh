@@ -52,6 +52,10 @@ rp::resource_list() {
   local res_body res_arr
   res_body="$(rp::http GET "$RP_RES_PATH")"
   res_arr="$(rp::unwrap "$RP_RES_KEY" "$res_body")"
+  rp::paginate res_arr
+  local jqf
+  jqf="$(rp::args_get jq)"
+  [[ -z "$jqf" ]] || res_arr="$(printf '%s' "$res_arr" | jq -c "$jqf")" || rp::die "invalid --jq filter: $jqf"
   rp::emit_json_or "$res_arr" rp::table "$res_arr" "$@"
 }
 
@@ -61,6 +65,9 @@ rp::resource_get() {
   _resource_meta "$res_resource"
   rp::require_pos res_id "usage: rp $res_resource get <id>"
   res_body="$(rp::http GET "$RP_RES_PATH/$res_id")"
+  local jqf
+  jqf="$(rp::args_get jq)"
+  [[ -z "$jqf" ]] || res_body="$(printf '%s' "$res_body" | jq -c "$jqf")" || rp::die "invalid --jq filter: $jqf"
   rp::emit_json_or "$res_body" rp::json_pretty "$res_body"
 }
 

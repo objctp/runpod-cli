@@ -16,6 +16,7 @@
 - Add global-networking, locked, volume-path flags and mount mutex guard
 - Add live SSE log streaming for pods and serverless workers
 - Add filter flags to `rp stock gpu`
+- Add `rp api` escape hatch, list pagination, and file-based auth
 
 ### Changed
 

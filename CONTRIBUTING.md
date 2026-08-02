@@ -9,7 +9,7 @@ S3-compatible API.
 
 ```
 bin/rp            entry point — loads .env, sources lib/, dispatches to commands/
-lib/              shared helpers (common, constants, transport, http, graphql, s3, args, json, validate, resource, hub, _version)
+lib/              shared helpers (common, constants, transport, auth, http, graphql, s3, args, json, validate, resource, paginate, hub, _version) — `transport` is the single curl impl and delegates credential resolution to `auth` (never read `RUNPOD_API_KEY` directly)
 commands/         one file per resource (volume, serverless, pod, template, registry, billing, stock, account, hub, ssh, upgrade)
                    plus endpoint.sh — deprecated alias that delegates to serverless
 tests/unit/       bashunit unit tests for lib helpers
@@ -114,10 +114,15 @@ in `commands/`.
    `rp::args_has`, `rp::args_pos` (see `lib/args.sh`). Booleans are declared in
    `RP_BOOL_FLAGS` inside `lib/args.sh` — add new boolean flags there.
 4. Do CRUD through `rp::http <METHOD> <path> [json]` (REST) and reads-through-stock
-   through `rp::graphql <query> [variables]` (GraphQL). Both die on error; both
-   require `RUNPOD_API_KEY`.
+   through `rp::graphql <query> [variables]` (GraphQL). Both die on error and both
+   require a RunPod API token, resolved by `lib/auth.sh` from `RUNPOD_API_KEY` or
+   `RUNPOD_API_KEY_FILE` — never read `RUNPOD_API_KEY` from a command or the
+   transport; add a credential source in `rp::auth_token` instead.
 5. Format output with `rp::table <json> field1 field2 …` for human lists; honour
-   `--json` to print the raw API response instead.
+   `--json` to print the raw API response instead. For list commands, pipe the
+   unwrapped array through `rp::paginate` and honour `--jq` / `--limit` / `--cursor`
+   (see `rp::resource_list` for the pattern) so paging and field selection work
+   uniformly across every resource.
 6. Add a `tests/functional/<resource>_test.sh` covering the happy path and the
    argument errors. Run `make check` until green.
 

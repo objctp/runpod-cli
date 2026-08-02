@@ -102,7 +102,7 @@ rp::notfound() {
 }
 
 rp::require_api_key() {
-  [[ -n "${RUNPOD_API_KEY:-}" ]] || _auth "RUNPOD_API_KEY unset — add it to .env (console > Settings > API Keys)"
+  [[ -n "${RUNPOD_API_KEY:-}" || -n "${RUNPOD_API_KEY_FILE:-}" ]] || _auth "RUNPOD_API_KEY unset — add it to .env (console > Settings > API Keys), or set RUNPOD_API_KEY_FILE"
 }
 
 rp::require_s3_creds() {

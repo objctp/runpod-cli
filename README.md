@@ -62,6 +62,7 @@ cp .env.example .env
 | Variable | Where to get it | Required for |
 |---|---|---|
 | `RUNPOD_API_KEY` | Console → Settings → **API Keys** | everything |
+| `RUNPOD_API_KEY_FILE` | path to a file holding the key (e.g. a mounted K8s secret) | everything (alternative to `RUNPOD_API_KEY`) |
 | `RUNPOD_S3_ACCESS_KEY` | Console → Settings → **S3 API Keys** (your `user_…` id) | `volume sync` / `ls` |
 | `RUNPOD_S3_SECRET_KEY` | Console → Settings → **S3 API Keys** (an `rps_…` key, shown once) | `volume sync` / `ls` |
 | `HF_TOKEN` | huggingface.co → Access Tokens | `volume sync --models` (gated models) |
@@ -161,8 +162,15 @@ rp pod delete trainer
 billed while `RUNNING`, so `rp pod stop` / `rp pod delete` stops the meter.
 
 
-Run `rp --help` or `rp <resource> --help` for the full flag list. Add `--json`
-to any `list` / `get` command for raw API output.
+Run `rp --help` or `rp <resource> --help` for the full flag list.
+
+Every `list` / `get` command accepts `--json` for raw API output, `--jq <filter>`
+for field selection, and `--limit N` / `--cursor N` for paging large result sets.
+Pagination is client-side today (shaped to match the server cursor RunPod will
+add), so the same flags will forward server-side without a CLI change. For
+anything the resource verbs don't cover, `rp api <METHOD> <path>` is a raw escape
+hatch over the same transport — it supports `--body <json>` (prefix `@` to read
+a file), `--plane rest|api`, `--jq`, `--limit`, and `--cursor`.
 
 | Resource | Verbs |
 |---|---|
@@ -176,6 +184,7 @@ to any `list` / `get` command for raw API output.
 | `hub` | `search <query>` · `get <listing-id>` (GraphQL) |
 | `ssh` | `list-keys` · `add-key <file\|->` · `remove-key <fp\|key>` · `info <pod-id>` (GraphQL) |
 | `stock` | `gpu` · `cpus` (CPU flavours: id, vCPU range, per-vCPU RAM/price) · `dc` (S3-API datacentres flagged) |
+| `api` | `GET\|POST\|PUT\|DELETE <path>` (`<path>` may omit the leading `/`) · `--body <json>` (prefix `@` to read a file) · `--plane rest\|api` · `--jq <filter>` · `--limit N` · `--cursor N` |
 | `upgrade` | `[--version <x.y.z>]` (self-update in place; re-runs the installer) |
 
 `make` exposes a few shortcuts: `make stock` (GPU + DC stock), `make volumes` /
@@ -202,6 +211,14 @@ to tear down).
   still works but prints a deprecation warning; `rp billing endpoints` likewise
   aliases `rp billing serverless` (use `public-endpoints` for the public-endpoint
   product).
+- **`rp api` is a raw escape hatch** — `rp api <METHOD> <path>` calls the same
+  transport as the resource verbs, so it reaches any v2 route the typed commands
+  don't wrap yet (e.g. a brand-new endpoint). It honours `--body`, `--plane`,
+  `--jq`, `--limit`, and `--cursor`.
+- **List paging is client-side** — RunPod's REST v2 has no server-side pagination
+  yet, so `--limit` / `--cursor` slice the already-fetched list locally. The flags
+  mirror the cursor shape RunPod will add, so they forward server-side later
+  without a CLI change.
 - **Stock and prices drift** — re-run the CLI before each booking.
 - **Scriptable exit codes** — `0` success · `1` transport/API/general · `2`
   usage · `3` auth (no key/creds) · `4` not-found. Branch on `$?` rather than
