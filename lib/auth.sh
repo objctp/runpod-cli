@@ -13,6 +13,11 @@ _RP_AUTH=1
 # (exit 3) if neither source is set. The caller must keep it off argv — pipe it
 # to a header file via rp::auth_header, never interpolate it into a command line.
 rp::auth_token() {
+  # Keep the token off `set -x` (bash -x) traces as well as off curl's argv:
+  # save xtrace state, silence it for the duration, and restore it on return.
+  local _rp_xtrace
+  _rp_xtrace="$(rp::_xtrace_save)"
+  set +x
   if [[ -n "${RUNPOD_API_KEY:-}" ]]; then
     printf '%s' "$RUNPOD_API_KEY"
   elif [[ -n "${RUNPOD_API_KEY_FILE:-}" ]]; then
@@ -22,10 +27,16 @@ rp::auth_token() {
   else
     _auth "RUNPOD_API_KEY unset — add it to .env (console > Settings > API Keys), or set RUNPOD_API_KEY_FILE"
   fi
+  rp::_xtrace_restore "$_rp_xtrace"
 }
 
 # Print the full Authorization header line for curl's -H @"file" consumption.
-# The token crosses a pipe (not argv), so it never appears in `ps`.
+# The token crosses a pipe (not argv), so it never appears in `ps`. xtrace is
+# silenced around the build so `set -x` never prints the token in the trace.
 rp::auth_header() {
+  local _rp_xtrace
+  _rp_xtrace="$(rp::_xtrace_save)"
+  set +x
   printf 'Authorization: Bearer %s\n' "$(rp::auth_token)"
+  rp::_xtrace_restore "$_rp_xtrace"
 }

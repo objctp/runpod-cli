@@ -31,17 +31,17 @@ _billing() {
 
   # lastN is mutually exclusive with startTime/endTime (per spec).
   if [[ -n "$lastn" && (-n "$start" || -n "$end") ]]; then
-    rp::usage "--last-n is mutually exclusive with --start/--end"
+    rp::usage "usage: rp billing all --last-n is mutually exclusive with --start/--end"
   fi
   # lastN minimum is 1 (per spec); rp::require_uint only blocks non-numbers, so
   # 0 must be rejected here rather than in the shared helper (workers-min/max
   # legitimately default to 0 elsewhere).
   if [[ -n "$lastn" && "$lastn" -lt "$RP_LAST_N_MIN" ]]; then
-    rp::usage "--last-n must be at least $RP_LAST_N_MIN"
+    rp::usage "usage: rp billing all --last-n must be at least $RP_LAST_N_MIN"
   fi
   case "$bucket" in
   '' | hour | day | week | month | year) ;;
-  *) rp::usage "invalid --bucket-size '$bucket' (expected hour|day|week|month|year)" ;;
+  *) rp::usage "usage: rp billing all --bucket-size must be hour|day|week|month|year (got: '$bucket')" ;;
   esac
 
   [[ -n "$start" ]] && q+=(startTime "$start")

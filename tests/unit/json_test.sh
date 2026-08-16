@@ -54,6 +54,17 @@ function test_should_keep_comma_in_env_value() {
   assert_equals '{"A":"1,B=2"}' "$(rp::env_to_json "A=1,B=2")"
 }
 
+function test_should_error_on_env_with_empty_key() {
+  (rp::env_to_json "=value" >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_error_on_env_with_only_equals() {
+  # shellcheck disable=SC2205 # subshell needed: rp::usage exits the subshell
+  (rp::env_to_json "=" >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
 function test_should_parse_multiple_envs_when_newline_delimited() {
   assert_equals '{"A":"1","B":"2"}' "$(rp::env_to_json "$(printf 'A=1\nB=2')")"
 }

@@ -109,6 +109,14 @@ in `commands/`.
    what `bin/rp` dispatches to.
 2. Handle `--help` / `-h` / `help` first and print usage. Keep usage strings
    identical to the argument-parsing errors so they stay in sync.
+3. One phrasing convention for user-facing messages:
+   - **CLI-usage errors** (bad/missing flag, bad value, mutually-exclusive
+     flags) go through `rp::usage` and begin with `usage: rp <resource>
+     <verb> …` so `--help`, `rp doc`, and the runtime error read identically.
+   - **Operational errors** (not found, API/transport failure, lookup miss)
+     go through `rp::die` / `rp::notfound` with no `usage:` prefix.
+   Never mix the two — a `usage:` prefix on an operational failure misleads the
+   user into thinking their invocation syntax was wrong.
 3. Parse flags with `rp::args_parse` and read them with `rp::args_get`,
    `rp::args_has`, `rp::args_pos` (see `lib/args.sh`). Booleans are declared in
    `RP_BOOL_FLAGS` inside `lib/args.sh` — add new boolean flags there.

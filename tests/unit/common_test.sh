@@ -129,6 +129,44 @@ function test_should_pass_when_core_tools_present() {
   assert_successful_code "$?"
 }
 
+# --- rp::require_id ---
+
+function test_should_accept_well_formed_id() {
+  local out
+  rp::require_id out "e1abc_2-3.4" "endpoint id"
+  assert_equals "e1abc_2-3.4" "$out"
+}
+
+function test_should_accept_purely_numeric_id() {
+  local out
+  rp::require_id out "12345" "volume id"
+  assert_equals "12345" "$out"
+}
+
+function test_should_exit_two_on_id_with_slash() {
+  local out
+  (rp::require_id out "a/b" "endpoint id" >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_exit_two_on_id_with_query_metachar() {
+  local out
+  (rp::require_id out "a?b&c" "endpoint id" >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_exit_two_on_id_with_whitespace() {
+  local out
+  (rp::require_id out "a b" "endpoint id" >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_exit_two_on_empty_id() {
+  local out
+  (rp::require_id out "" "endpoint id" >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
 # --- rp::emit_json_or ---
 
 function test_should_print_raw_json_when_json_flag_set() {

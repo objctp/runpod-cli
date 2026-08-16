@@ -125,3 +125,29 @@ function test_should_exit_130_on_sigint_over_graphql() {
   (rp::graphql 'query { x }' >/dev/null 2>&1)
   assert_exit_code 130
 }
+
+# Q-L1: a GET (no request body) must not pass an empty string to `rm -f`, which
+# the old `"${body_tmp:-}"` form did when body_tmp was unset.
+_RP_RM_LOG=""
+function _rp_rm_record() {
+  local a
+  for a in "$@"; do
+    printf 'ARG[%s]\n' "$a" >>"$_RP_RM_LOG"
+  done
+}
+
+function test_should_not_pass_empty_arg_to_rm_on_get() {
+  _RP_RM_LOG="$(mktemp)"
+  rm() { _rp_rm_record "$@"; }
+  curl() {
+    printf '%s' "${GQL_BODY:-}" >"${3:-/dev/null}"
+    printf '%s' "${GQL_STATUS:-200}"
+  }
+  _curl_json "https://rest.test/v2/pods" GET >/dev/null 2>&1
+  local empty=0
+  while IFS= read -r line; do
+    [[ "$line" == "ARG[]" ]] && empty=1
+  done <"$_RP_RM_LOG"
+  rm -f "$_RP_RM_LOG"
+  assert_equals 0 "$empty"
+}

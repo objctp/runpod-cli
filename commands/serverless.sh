@@ -41,7 +41,7 @@ _resolve_gpus_from_volume() {
 _serverless_gpu_poolcsv() {
   local gpu="$1" poolcsv
   poolcsv="$(rp::gpu_type_to_pool_csv "$gpu")"
-  [[ -n "$poolcsv" ]] || rp::usage "could not map GPU types to serverless pool ids: $gpu"
+  [[ -n "$poolcsv" ]] || rp::die "could not map GPU types to serverless pool ids: $gpu"
   printf '%s' "$poolcsv"
 }
 
@@ -299,6 +299,7 @@ _serverless_create_hub() {
 _serverless_scale() {
   local id
   rp::require_pos id "usage: rp serverless scale <id> --min N --max N [--idle S]"
+  rp::require_id id "$id" "endpoint id"
   local obj='{}' wmin wmax idle
   wmin="$(rp::args_get_uint min)"
   wmax="$(rp::args_get_uint max)"
@@ -316,6 +317,7 @@ _serverless_scale() {
 _serverless_update() {
   local id
   rp::require_pos id "usage: rp serverless update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>] [--registry <id>]"
+  rp::require_id id "$id" "endpoint id"
   _resource_meta serverless
   local obj='{}' gpu
   local wmin wmax idle
@@ -363,6 +365,7 @@ _serverless_run_human() {
 _serverless_run() {
   local id
   rp::require_pos id "usage: rp serverless run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]"
+  rp::require_id id "$id" "endpoint id"
   rp::args_has sync && rp::args_has async && rp::usage "--sync and --async are mutually exclusive"
   local input file
   input="$(rp::args_get input)"
@@ -391,6 +394,7 @@ _serverless_run() {
 _serverless_workers() {
   local id
   rp::require_pos id "usage: rp serverless workers <id>"
+  rp::require_id id "$id" "endpoint id"
   local body
   body="$(rp::http GET "/serverless/$id/workers")"
   if ! rp::args_has json; then
@@ -409,6 +413,7 @@ _serverless_workers() {
 _serverless_releases() {
   local id
   rp::require_pos id "usage: rp serverless releases <id>"
+  rp::require_id id "$id" "endpoint id"
   local body
   body="$(rp::http GET "/serverless/$id/releases")"
   if ! rp::args_has json; then
@@ -429,8 +434,10 @@ _serverless_releases() {
 _serverless_logs() {
   local id worker src tail since leid q
   rp::require_pos id "usage: rp serverless logs <id> --worker <workerId> [--source container|system] [--tail N] [--since <rfc3339>] [--last-event-id <ts>]"
+  rp::require_id id "$id" "endpoint id"
   worker="$(rp::args_get worker)"
   [[ -n "$worker" ]] || rp::usage "rp serverless logs requires --worker <workerId> (list them with: rp serverless workers $id)"
+  rp::require_id worker "$worker" "worker id"
   src="$(rp::args_get source)"
   case "$src" in '' | container | system) ;; *) rp::usage "invalid --source '$src' (expected container|system)" ;; esac
   tail="$(rp::args_get_uint tail)"

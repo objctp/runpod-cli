@@ -73,6 +73,9 @@ rp::env_to_json() {
     [[ -z "$pair" ]] && continue
     k="${pair%%=*}"
     v="${pair#*=}"
+    # A `--env =value` pair yields an empty key; reject it rather than emitting
+    # a `{"": "value"}` object that the API would reject cryptically.
+    [[ -n "$k" ]] || rp::usage "usage: invalid --env pair (missing key): '$pair'"
     obj="$(_json_merge "$obj" "$(rp::json_obj "$k" "$(rp::json_str "$v")")")"
   done <<<"$1"
   printf '%s' "$obj"

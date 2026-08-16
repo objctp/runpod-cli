@@ -45,6 +45,9 @@ with the API's error message.
   --body     request body (JSON string); prefix with @ to read a file
   --plane    rest (control plane, default) | api (serverless data plane)
   --jq       jq filter applied to the response (implies JSON output)
+              note: jq's `env` exposes the shell environment, including your
+              RUNPOD_API_KEY — never run `rp api … --jq 'env'` on a shared
+              terminal or in logs you don't control.
   --limit    cap the number of (top-level-array) items returned
   --cursor   opaque offset for the next page (pairs with --limit)
 

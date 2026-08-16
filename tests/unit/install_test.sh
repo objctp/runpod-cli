@@ -90,3 +90,43 @@ function test_should_exit_one_when_dir_not_in_search() {
   rp_inst_on_path /nope "/usr/bin:/bin"
   assert_exit_code 1
 }
+
+# --- rp_inst_member_is_unsafe (L5 tar member guard) ---
+
+function test_should_flag_absolute_tar_member_as_unsafe() {
+  rp_inst_member_is_unsafe "/etc/passwd"
+  assert_successful_code "$?"
+}
+
+function test_should_flag_traversal_tar_member_as_unsafe() {
+  rp_inst_member_is_unsafe "bin/../evil"
+  assert_successful_code "$?"
+  rp_inst_member_is_unsafe "../escape"
+  assert_successful_code "$?"
+  rp_inst_member_is_unsafe ".."
+  assert_successful_code "$?"
+}
+
+function test_should_accept_relative_tar_member_as_safe() {
+  rp_inst_member_is_unsafe "bin/rp"
+  assert_exit_code 1
+  rp_inst_member_is_unsafe "lib/common.sh"
+  assert_exit_code 1
+}
+
+# --- rp_inst_ensure_path (Q-L4 whitespace guard) ---
+
+function test_should_return_zero_when_dir_already_on_path() {
+  rp_inst_ensure_path "/usr/local/bin" "/usr/local/bin:/bin"
+  assert_successful_code "$?"
+}
+
+function test_should_skip_path_entry_when_dir_has_whitespace() {
+  local home_dir rc
+  home_dir="$(mktemp -d)"
+  HOME="$home_dir"
+  rc="$(rp_inst_ensure_path "/tmp/dir with space" 2>/dev/null || true)"
+  assert_empty "$rc"
+  [[ ! -f "$home_dir/.bashrc" ]]
+  rm -rf "$home_dir"
+}

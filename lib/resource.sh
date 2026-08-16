@@ -64,6 +64,7 @@ rp::resource_get() {
   local res_resource="$1" res_id res_body
   _resource_meta "$res_resource"
   rp::require_pos res_id "usage: rp $res_resource get <id>"
+  rp::require_id res_id "$res_id" "$RP_RES_LABEL id"
   res_body="$(rp::http GET "$RP_RES_PATH/$res_id")"
   local jqf
   jqf="$(rp::args_get jq)"
@@ -75,6 +76,7 @@ rp::resource_delete() {
   local res_resource="$1" res_id
   _resource_meta "$res_resource"
   rp::require_pos res_id "usage: rp $res_resource delete <id>"
+  rp::require_id res_id "$res_id" "$RP_RES_LABEL id"
   rp::http DELETE "$RP_RES_PATH/$res_id" >/dev/null
   rp::ok "deleted $RP_RES_LABEL $res_id"
 }

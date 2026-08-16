@@ -121,7 +121,7 @@ _ssh_remove_key() {
   # Refuse to bulk-remove: a short substring can match several keys, so require
   # exactly one hit and ask for a more specific fingerprint/key otherwise.
   ((matches)) || rp::notfound "no matching key found for '$target'"
-  ((matches == 1)) || rp::usage "ambiguous: '$target' matches $matches keys; use a longer fingerprint or key substring"
+  ((matches == 1)) || rp::usage "usage: rp ssh remove-key '$target' is ambiguous ($matches keys match); use a longer fingerprint or key substring"
   _ssh_write_pubkey "$kept"
   rp::ok "removed key"
 }

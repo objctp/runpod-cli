@@ -108,6 +108,14 @@ rp_inst_validate_checksum() {
   esac
 }
 
+# Return 0 (unsafe) for a tar member name that is absolute or escapes the
+# extraction root via `..` — `tar -xzf` would otherwise write outside $stage.
+# The checksum gate already anchors integrity; this is defense-in-depth for the
+# one place untrusted bytes are unpacked.
+rp_inst_member_is_unsafe() {
+  [[ "$1" == /* ]] || [[ "$1" == *"/../"* ]] || [[ "$1" == "../"* ]] || [[ "$1" == ".." ]]
+}
+
 # Echo the SHA-256 verifying command as a string ("sha256sum" or "shasum -a 256"),
 # or return 1 if neither tool exists. RP_CHECKSUM overrides for tests (validated
 # by rp_inst_validate_checksum before this runs).
@@ -150,6 +158,14 @@ rp_inst_on_path() {
 # PATH already, so this rarely fires — it exists for unusual setups.
 rp_inst_ensure_path() {
   local dir="$1" rc line shell
+  # A bindir with whitespace would break the quoted export line below and any
+  # later PATH split; the value is user-controllable (RP_BINDIR), so refuse it
+  # rather than emit a malformed rc entry.
+  [[ -z "$dir" ]] && return 1
+  [[ "$dir" == *[[:space:]]* ]] && {
+    rp_inst_warn "not adding '$dir' to PATH: it contains whitespace; add it to your shell rc manually"
+    return 1
+  }
   rp_inst_on_path "$dir" && return 0
   shell="$(basename "${SHELL:-bash}")"
   case "$shell" in
@@ -228,6 +244,10 @@ rp_inst_run() {
   # stage/ lives under _rp_inst_tmp so the EXIT trap cleans everything in one place.
   trap 'rm -rf "$_rp_inst_tmp"' EXIT
 
+  # Create the install tree under a restrictive umask so ~/.rp and its contents
+  # never inherit a loose umask (e.g. 000) from the caller's environment.
+  umask 022
+
   curl -fsSL -o "$tarball" "$(rp_inst_download_url "$version")" ||
     rp_inst_die "download failed: $(rp_inst_download_url "$version")"
   curl -fsSL -o "$sums_file" "$(rp_inst_checksum_url "$version")" ||
@@ -245,6 +265,16 @@ rp_inst_run() {
   # tree first so a failure rolls back instead of leaving a half-installed CLI).
   local stage="$_rp_inst_tmp/stage"
   mkdir -p "$stage"
+  # Refuse a tarball whose members are absolute or escape via `..` before
+  # extracting — defense-in-depth on top of the checksum gate. A `tar -tzf`
+  # failure (corrupt/empty artefact) also aborts rather than silently no-op.
+  local _members _m
+  _members="$(tar -tzf "$tarball" 2>/dev/null)" ||
+    rp_inst_die "could not read tarball contents; refusing to extract"
+  while IFS= read -r _m; do
+    rp_inst_member_is_unsafe "$_m" &&
+      rp_inst_die "tarball contains an unsafe path; refusing to extract"
+  done <<<"$_members"
   # --no-same-owner: don't try to reproduce the tarball's ownership (which may
   # not exist locally); extract as the invoking user. Prevents permission errors
   # and any adversary-controlled ownership in a compromised release artefact.
@@ -281,10 +311,10 @@ rp_inst_run() {
   local target="$RP_INSTALL_DIR/bin/rp"
   [[ -x "$target" ]] || rp_inst_die "installed rp binary not executable: $target"
   if [[ -w "$RP_BINDIR" ]]; then
-    ln -sf "$target" "$RP_BINDIR/rp"
+    ln -sfn "$target" "$RP_BINDIR/rp"
   elif command -v sudo >/dev/null 2>&1; then
     rp_inst_warn "$RP_BINDIR is not writable — creating the symlink with sudo"
-    sudo ln -sf "$target" "$RP_BINDIR/rp"
+    sudo ln -sfn "$target" "$RP_BINDIR/rp"
   else
     rp_inst_warn "cannot write $RP_BINDIR and sudo is unavailable; create the link yourself:"
     rp_inst_warn "  sudo ln -sf $target $RP_BINDIR/rp"

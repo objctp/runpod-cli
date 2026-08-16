@@ -30,7 +30,7 @@ _volume_create() {
   vtype="$(rp::args_get type)"
   case "${vtype^^}" in
   '' | STANDARD | HIGH_PERFORMANCE) vtype="${vtype^^}" ;;
-  *) rp::usage "--type must be STANDARD or HIGH_PERFORMANCE (got: '$vtype')" ;;
+  *) rp::usage "usage: rp volume create --type must be STANDARD or HIGH_PERFORMANCE (got: '$vtype')" ;;
   esac
   rp::warn_unless_s3_dc "$dc"
   local body='{}'
@@ -86,7 +86,7 @@ _volume_sync() {
   mapfile -t ms < <(rp::split_csv "$models")
   local m repo
   for m in "${ms[@]}"; do
-    repo="$(_model_repo "$m")" || rp::usage "invalid model repo: $m (expected owner/repo, e.g. meta-llama/Llama-3-8B)"
+    repo="$(_model_repo "$m")" || rp::usage "usage: rp volume sync --models expects owner/repo (got: '$m', e.g. meta-llama/Llama-3-8B)"
     rp::info "fetching $m ($repo) -> $cache/$m"
     huggingface-cli download "$repo" --local-dir "$cache/$m"
     rp::info "uploading -> s3://$id/$prefix/$m"

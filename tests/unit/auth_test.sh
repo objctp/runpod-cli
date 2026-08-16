@@ -53,3 +53,25 @@ function test_no_source_dies_with_auth_exit() {
   assert_contains "RUNPOD_API_KEY unset" "$out"
   assert_equals "3" "$rc"
 }
+
+# L2: with `set -x` (bash -x), the token must not appear in the trace. Capture
+# stderr (the trace) only — stdout (the token) is discarded.
+function test_should_not_leak_token_in_xtrace_via_auth_token() {
+  local err
+  export RUNPOD_API_KEY="sk-secret-xyz"
+  err="$( (
+    set -x
+    rp::auth_token
+  ) 2>&1 >/dev/null)"
+  assert_not_contains "sk-secret-xyz" "$err"
+}
+
+function test_should_not_leak_token_in_xtrace_via_auth_header() {
+  local err
+  export RUNPOD_API_KEY="sk-secret-xyz"
+  err="$( (
+    set -x
+    rp::auth_header
+  ) 2>&1 >/dev/null)"
+  assert_not_contains "sk-secret-xyz" "$err"
+}

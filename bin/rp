@@ -31,10 +31,14 @@ trap 'exit 130' INT
 # .env entry override a variable already exported to the environment (so an
 # explicit RUNPOD_API_KEY / RUNPOD_API_KEY_FILE on the command line wins).
 _rp_env_load() {
-  local f="$1" perm _ln _k
+  local f="$1" perm _ln _k _rp_xtrace
+  # Silence xtrace across the load: the loop reads RUNPOD_API_KEY and exports it,
+  # so a `bash -x rp` trace would otherwise print the live token.
+  _rp_xtrace="$(rp::_xtrace_save)"
+  set +x
   # Refuse group/world-writable .env (mode has any of the group/other write
   # bits set). A writable .env is a clear compromise risk. (Fix #4)
-  if stat -f '%Lp' /dev/null >/dev/null 2>&1; then
+  if stat -f '/dev/null' >/dev/null 2>&1; then
     perm="$(stat -f '%Lp' "$f")"
   else
     perm="$(stat -c '%a' "$f")"
@@ -54,7 +58,8 @@ _rp_env_load() {
     [[ -n "${!_k:-}" ]] && continue
     # shellcheck disable=SC2163 # dynamic var name parsed from a trusted .env line
     export "$_ln"
-  done < "$f"
+  done <"$f"
+  rp::_xtrace_restore "$_rp_xtrace"
 }
 
 [[ -f "$RP_ROOT/.env" ]] && _rp_env_load "$RP_ROOT/.env"
@@ -145,6 +150,11 @@ rp::main() {
     ;;
   esac
   shift
+  # Reject anything that isn't a plain command-module name before we build a path
+  # from it — a crafted `$resource` (e.g. `../../tmp/x`) would otherwise be
+  # sourced as code. The allowlist also rejects absolute paths and glob chars.
+  [[ "$resource" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    rp::usage "usage: unknown resource: '$resource' (try: rp --help)"
   local cmd="$RP_ROOT/commands/$resource.sh"
   [[ -f "$cmd" ]] || rp::usage "unknown resource: '$resource' (try: rp --help)"
   . "$cmd"

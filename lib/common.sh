@@ -110,7 +110,13 @@ rp::notfound() {
 }
 
 rp::require_api_key() {
+  # Silence xtrace around the presence check so the token value never lands in
+  # a `bash -x` trace (same class of exposure as the auth-header printf).
+  local _rp_xtrace
+  _rp_xtrace="$(rp::_xtrace_save)"
+  set +x
   [[ -n "${RUNPOD_API_KEY:-}" || -n "${RUNPOD_API_KEY_FILE:-}" ]] || _auth "RUNPOD_API_KEY unset — add it to .env (console > Settings > API Keys), or set RUNPOD_API_KEY_FILE"
+  rp::_xtrace_restore "$_rp_xtrace"
 }
 
 rp::require_s3_creds() {
@@ -120,6 +126,26 @@ rp::require_s3_creds() {
 
 rp::require_cmd() {
   command -v "$1" >/dev/null 2>&1 || rp::usage "required command not found: $1"
+}
+
+# Save/restore the current xtrace state so a secret can be handled without it
+# leaking into a `bash -x` trace. Centralised here so the suppress-xtrace idiom
+# isn't copy-pasted (and drifted) across every token-touching function.
+rp::_xtrace_save() { shopt -po xtrace 2>/dev/null || true; }
+rp::_xtrace_restore() { eval "$1" 2>/dev/null || true; }
+
+# Die unless $2 is a well-formed resource/object id before it is interpolated
+# into a REST path. Opaque API ids are alphanumeric, but the guard also admits
+# `.` and `-` and rejects path/query metacharacters (`/`, `?`, `&`) and
+# whitespace, so a crafted id can neither split the path nor inject a query
+# string. $3 is the noun for the error message (e.g. "endpoint id").
+rp::require_id() {
+  local -n require_id_out="$1"
+  local val="$2" label="$3"
+  [[ "$val" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] ||
+    rp::usage "usage: invalid $label '$val' (ids are letters, digits, . and - only)"
+  # shellcheck disable=SC2034 # nameref assignment lands in the caller's variable
+  require_id_out="$val"
 }
 
 # Extract the `id` field from a create/list response body, or die with a clear error.

@@ -67,7 +67,7 @@ _curl_json() {
   args+=("$url")
   status="$(curl "${args[@]}" -o "$tmp" -w '%{http_code}')" || {
     rc=$?
-    rm -f -- "$hdr" "$tmp" "${body_tmp:-}"
+    _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}"
     # curl exit 130 == killed by SIGINT: surface as "interrupted" (exit 130),
     # never a bogus transport error. The emit helpers (_rp_http_emit /
     # _rp_graphql_emit) check _RP_CURL_STATUS and bail quietly; the stream path
@@ -80,10 +80,21 @@ _curl_json() {
     return "$rc"
   }
   out="$(<"$tmp")"
-  rm -f -- "$hdr" "$tmp" "${body_tmp:-}"
+  _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}"
   _RP_CURL_STATUS="$status"
   printf '%s' "$out"
   return 0
+}
+
+# Remove the temp files a single curl call created. The request-body temp is
+# only created when there is a body, so it may be empty (GET requests); passing
+# an empty string to `rm -f` is harmless but sloppy, so we collect only the paths
+# that were actually created into an array and remove those. Pure (no exit).
+_rp_cleanup_tmp() {
+  local hdr="$1" tmp="$2" body="${3:-}"
+  local -a c=("$hdr" "$tmp")
+  [[ -n "$body" ]] && c+=("$body")
+  rm -f -- "${c[@]}"
 }
 
 # Classify the outcome of a streamed GET so rp::api_stream can apply its

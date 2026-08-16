@@ -6,6 +6,7 @@
 
 - Source lib/paginate.sh in resource_test setup
 - Resolve Linux CI failures in unit suite
+- Low-severity security and quality findings
 
 ## [0.4.0] - 2026-08-02
 

@@ -175,6 +175,13 @@ function test_should_fetch_record_when_get_given_id() {
   rm -f "$tmp"
 }
 
+function test_should_exit_two_when_get_id_is_malformed() {
+  rp::args_parse "a/b"
+  (rp::resource_get volume >/dev/null 2>&1)
+  assert_exit_code 2
+  assert_not_contains "GET" "$(<"$RES_CAP")"
+}
+
 # --- resource_create ---
 
 function test_should_post_and_print_id_when_create_given_body() {
@@ -278,4 +285,11 @@ function test_should_delete_and_use_label_when_delete_given_id() {
   assert_contains "DELETE /registries/reg1" "$(<"$RES_CAP")"
   assert_contains "deleted registry auth reg1" "$(<"$msg")"
   rm -f "$msg"
+}
+
+function test_should_exit_two_when_delete_id_is_malformed() {
+  rp::args_parse "a?b"
+  (rp::resource_delete registry >/dev/null 2>&1)
+  assert_exit_code 2
+  assert_not_contains "DELETE" "$(<"$RES_CAP")"
 }

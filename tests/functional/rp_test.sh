@@ -49,6 +49,18 @@ function test_should_exit_two_when_resource_unknown() {
   assert_exit_code 2
 }
 
+# L1: a crafted resource name (path traversal) must be rejected before any file
+# is sourced — it must never reach `. "$cmd"`.
+function test_should_reject_traversal_resource_name() {
+  (rp::main '../../../tmp/evil' >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_reject_glob_resource_name() {
+  (rp::main 'pod;' >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
 function test_should_dispatch_to_command_when_resource_known() {
   rp::main stock --help >"$OUT" 2>/dev/null
   assert_contains "Usage: rp stock" "$(<"$OUT")"
