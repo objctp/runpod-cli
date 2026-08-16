@@ -17,9 +17,49 @@ RP_GRAPHQL_URL="${RP_GRAPHQL_URL:-https://api.runpod.io/graphql}"
 
 # Distinct exit codes so `rp` is scriptable without parsing stderr:
 #   1 general/transport/API error · 2 usage · 3 auth · 4 not-found
+# HTTP status -> exit code (see rp::http_exit_code):
+#   401/403 rejected API key -> 3 · 404 unknown resource/id -> 4 · other >=400 -> 1
 RP_EXIT_USAGE=2
 RP_EXIT_AUTH=3
 RP_EXIT_NOTFOUND=4
+
+# Map an HTTP status to this CLI's exit code per the documented contract, so a
+# script can branch on the code without parsing stderr:
+#   401/403 rejected API key -> RP_EXIT_AUTH (3)
+#   404 unknown resource / id -> RP_EXIT_NOTFOUND (4)
+#   any other >= 400          -> 1 (general API error)
+#   < 400                     -> 0 (success; handled by the caller)
+# Pure (no exit) so it is unit-testable in isolation.
+rp::http_exit_code() {
+  local status="$1"
+  if ((status == 401 || status == 403)); then
+    printf '%s' "$RP_EXIT_AUTH"
+  elif ((status == 404)); then
+    printf '%s' "$RP_EXIT_NOTFOUND"
+  elif ((status >= 400)); then
+    printf '%s' 1
+  else
+    printf '%s' 0
+  fi
+}
+
+# Apply the exit-code contract to an HTTP error: 404 -> not-found (4),
+# 401/403 rejected key -> auth (3), any other >= 400 -> general error (1).
+# Exit policy only — the caller builds the human-facing $2 message. Centralised
+# so the buffered REST/data-plane, GraphQL, and streaming emit sites don't each
+# re-derive the status -> exit-code -> exiter mapping.
+_rp_exit_for_status() {
+  local status="$1" err="$2"
+  local code
+  code="$(rp::http_exit_code "$status")"
+  if ((code == RP_EXIT_NOTFOUND)); then
+    rp::notfound "$err"
+  elif ((code == RP_EXIT_AUTH)); then
+    _auth "$err"
+  else
+    rp::die "$err"
+  fi
+}
 
 if [[ -t 2 ]]; then
   RP_C_RED=$'\033[31m'

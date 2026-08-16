@@ -6,6 +6,7 @@ function set_up_before_script() {
   _opts=$(shopt -po errexit nounset pipefail 2>/dev/null || true)
   unset _RP_TRANSPORT _RP_GRAPHQL _RP_HTTP
   source "$RP_ROOT/lib/common.sh"
+  source "$RP_ROOT/lib/auth.sh"
   source "$RP_ROOT/lib/transport.sh"
   source "$RP_ROOT/lib/http.sh"
   source "$RP_ROOT/lib/graphql.sh"
@@ -124,6 +125,38 @@ function test_should_exit_130_on_sigint_over_graphql() {
   curl() { return 130; }
   (rp::graphql 'query { x }' >/dev/null 2>&1)
   assert_exit_code 130
+}
+
+# Streaming path must honour the same exit-code contract as the buffered one:
+# 404 -> not-found (4) and 401/403 rejected key -> auth (3). The curl double
+# writes a header dump (the -D file) and returns 22 (curl's >=400 "error").
+function _stream_curl() {
+  local hdrs=""
+  while (($#)); do
+    case "$1" in
+    -D)
+      hdrs="$2"
+      shift 2
+      ;;
+    *) shift ;;
+    esac
+  done
+  printf 'HTTP/1.1 %s %s\r\n\r\n' "${_STREAM_STATUS:-404}" "${_STREAM_REASON:-Not Found}" >"$hdrs"
+  return "${_STREAM_RC:-22}"
+}
+
+function test_should_exit_four_when_stream_404() {
+  _STREAM_STATUS=404 _STREAM_REASON="Not Found" _STREAM_RC=22
+  curl() { _stream_curl "$@"; }
+  (rp::api_stream rest /pods/x >/dev/null 2>&1)
+  assert_exit_code 4
+}
+
+function test_should_exit_three_when_stream_401_rejected_key() {
+  _STREAM_STATUS=401 _STREAM_REASON="Unauthorized" _STREAM_RC=22
+  curl() { _stream_curl "$@"; }
+  (rp::api_stream rest /pods >/dev/null 2>&1)
+  assert_exit_code 3
 }
 
 # Q-L1: a GET (no request body) must not pass an empty string to `rm -f`, which

@@ -64,6 +64,32 @@ function test_should_exit_four_when_notfound_called() {
   assert_exit_code 4
 }
 
+# --- rp::http_exit_code (exit-code contract) ---
+
+function test_should_map_401_to_auth_exit() {
+  assert_equals "$RP_EXIT_AUTH" "$(rp::http_exit_code 401)"
+}
+
+function test_should_map_403_to_auth_exit() {
+  assert_equals "$RP_EXIT_AUTH" "$(rp::http_exit_code 403)"
+}
+
+function test_should_map_404_to_notfound_exit() {
+  assert_equals "$RP_EXIT_NOTFOUND" "$(rp::http_exit_code 404)"
+}
+
+function test_should_map_5xx_to_general_exit() {
+  assert_equals 1 "$(rp::http_exit_code 500)"
+}
+
+function test_should_map_400_to_general_exit() {
+  assert_equals 1 "$(rp::http_exit_code 400)"
+}
+
+function test_should_map_2xx_to_zero() {
+  assert_equals 0 "$(rp::http_exit_code 200)"
+}
+
 # --- require_* guards ---
 
 function test_should_pass_when_api_key_set() {

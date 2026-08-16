@@ -32,7 +32,7 @@ _rp_graphql_emit() {
   fi
   if ((status >= 400)); then
     rm -f -- "$tmp"
-    rp::die "$label HTTP $status: $(<"$tmp")"
+    _rp_exit_for_status "$status" "$label HTTP $status: $(<"$tmp")"
   fi
   local errs
   errs="$(jq -c '.errors // empty' "$tmp" 2>/dev/null || true)"

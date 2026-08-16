@@ -8,6 +8,7 @@ function set_up_before_script() {
   # overridden rp::http; drop the guard so the real function is (re)defined here.
   unset _RP_HTTP _RP_TRANSPORT
   source "$RP_ROOT/lib/common.sh"
+  source "$RP_ROOT/lib/auth.sh"
   source "$RP_ROOT/lib/transport.sh"
   source "$RP_ROOT/lib/http.sh"
   eval "$_opts"
@@ -83,10 +84,10 @@ function test_should_send_body_when_json_given() {
   rm -f "$body_capture"
 }
 
-function test_should_exit_one_when_http_status_is_error() {
-  HTTP_BODY='{"error":"not found"}'
-  HTTP_STATUS=404
-  (rp::http GET /pods/x >/dev/null 2>&1)
+function test_should_exit_one_when_http_status_is_5xx_error() {
+  HTTP_BODY='{"error":"boom"}'
+  HTTP_STATUS=500
+  (rp::http GET /pods >/dev/null 2>&1)
   assert_exit_code 1
 }
 
@@ -97,6 +98,27 @@ function test_should_include_status_and_message_when_http_error() {
   err="$(rp::http GET /pods/x 2>&1 >/dev/null)"
   assert_contains "HTTP 404" "$err"
   assert_contains "not found" "$err"
+}
+
+function test_should_exit_four_when_http_status_is_404() {
+  HTTP_BODY='{"error":"not found"}'
+  HTTP_STATUS=404
+  (rp::http GET /pods/x >/dev/null 2>&1)
+  assert_exit_code 4
+}
+
+function test_should_exit_three_when_http_401_rejected_key() {
+  HTTP_BODY='{"error":"unauthorized"}'
+  HTTP_STATUS=401
+  (rp::http GET /pods >/dev/null 2>&1)
+  assert_exit_code 3
+}
+
+function test_should_exit_three_when_http_403_rejected_key() {
+  HTTP_BODY='{"error":"forbidden"}'
+  HTTP_STATUS=403
+  (rp::http GET /pods >/dev/null 2>&1)
+  assert_exit_code 3
 }
 
 function test_should_exit_one_when_curl_transport_fails() {

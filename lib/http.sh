@@ -7,8 +7,10 @@
 _RP_HTTP=1
 
 # Emit the captured response: die on a curl transport failure or HTTP >= 400
-# (with the API's error message when present), otherwise print the body. $1 is the
-# temp file holding the response body; $2/$3 the method/path for messages.
+# (with the API's error message when present), otherwise print the body. The
+# exit code honours the contract: 404 -> not-found (4), 401/403 rejected key ->
+# auth (3), any other >= 400 -> general error (1). $1 is the temp file holding
+# the response body; $2/$3 the method/path for messages.
 _rp_http_emit() {
   local tmp="$1" method="$2" path="$3"
   local status="$_RP_CURL_STATUS"
@@ -23,10 +25,11 @@ _rp_http_emit() {
     rp::die "curl transport error: $method $path"
   fi
   if ((status >= 400)); then
-    local msg
+    local msg err
     msg="$(jq -rc '.error // .message // .title // empty' "$tmp" 2>/dev/null || true)"
     rm -f -- "$tmp"
-    rp::die "RunPod $method $path -> HTTP $status${msg:+: $msg}"
+    err="RunPod $method $path -> HTTP $status${msg:+: $msg}"
+    _rp_exit_for_status "$status" "$err"
   fi
   cat "$tmp"
   rm -f -- "$tmp"

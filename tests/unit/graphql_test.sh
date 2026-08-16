@@ -8,6 +8,7 @@ function set_up_before_script() {
   # overridden rp::graphql; drop the guard so the real function is (re)defined.
   unset _RP_GRAPHQL _RP_TRANSPORT
   source "$RP_ROOT/lib/common.sh"
+  source "$RP_ROOT/lib/auth.sh"
   source "$RP_ROOT/lib/transport.sh"
   source "$RP_ROOT/lib/graphql.sh"
   eval "$_opts"
@@ -77,6 +78,20 @@ function test_should_exit_one_when_http_status_is_error() {
   GQL_STATUS=400
   (rp::graphql 'query { x }' >/dev/null 2>&1)
   assert_exit_code 1
+}
+
+function test_should_exit_four_when_http_status_is_404() {
+  GQL_BODY='{"error":"not found"}'
+  GQL_STATUS=404
+  (rp::graphql 'query { x }' >/dev/null 2>&1)
+  assert_exit_code 4
+}
+
+function test_should_exit_three_when_http_401_rejected_key() {
+  GQL_BODY='{"error":"unauthorized"}'
+  GQL_STATUS=401
+  (rp::graphql 'query { x }' >/dev/null 2>&1)
+  assert_exit_code 3
 }
 
 function test_should_exit_one_when_graphql_returns_errors() {

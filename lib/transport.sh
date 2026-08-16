@@ -150,7 +150,11 @@ rp::api_stream() {
   verdict="$(_rp_stream_classify "$rc" "$first")"
   case "$verdict" in
   ok | interrupted | ended) return "$rc" ;; # rc is 0 for ok; pass curl's code otherwise
-  http\ *) rp::die "RunPod GET $path -> HTTP ${verdict#http }" ;;
+  http\ *)
+    local status
+    status="${verdict#http }"
+    _rp_exit_for_status "$status" "RunPod GET $path -> HTTP $status"
+    ;;
   transport) rp::die "curl transport error: GET $path" ;;
   esac
 }

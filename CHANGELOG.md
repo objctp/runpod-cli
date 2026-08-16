@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Exit-code contract — map 404->4 and rejected key (401/403)->3
+
 ### Fixed
 
 - Source lib/paginate.sh in resource_test setup
