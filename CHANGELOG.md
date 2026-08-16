@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Security audit of auth handling and the installer (#8)
+
 ### Fixed
 
 - Source lib/paginate.sh in resource_test setup
