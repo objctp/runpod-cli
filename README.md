@@ -18,8 +18,6 @@ it can do, from volumes and pods to serverless endpoints and billing.
 - `aws` CLI — only for `rp volume sync` / `rp volume ls` (S3 fill and list)
 - `huggingface-cli` — optional, only for `rp volume sync --models`
 
-macOS ships Bash 3.2; install Bash 5 first (`brew install bash`).
-
 ## Install
 
 macOS or Linux (extracts into `~/.rp` and symlinks `/usr/local/bin/rp`, asking
@@ -36,7 +34,7 @@ The installer verifies a SHA-256 checksum before extracting. Update later with
 > macOS ships Bash 3.2, but `rp` needs Bash 5+. The installer detects this and
 > refuses with the fix (`brew install bash`, then restart your shell).
 
-For development (clone + symlink, no download):
+For development (clone + symlink, no download required):
 
 ```bash
 make install        # symlinks bin/rp onto /usr/local/bin/rp (may need sudo)
@@ -164,8 +162,9 @@ billed while `RUNNING`, so `rp pod stop` / `rp pod delete` stops the meter.
 
 Run `rp --help` or `rp <resource> --help` for the full flag list.
 
-Every `list` / `get` command accepts `--json` for raw API output, `--jq <filter>`
-for field selection, and `--limit N` / `--cursor N` for paging large result sets.
+Every `list` and `get` command accepts `--json` for raw API output and `--jq <filter>`
+for field selection. `list` commands also accept `--limit N` / `--cursor N` for paging
+large result sets.
 Pagination is client-side today (shaped to match the server cursor RunPod will
 add), so the same flags will forward server-side without a CLI change. For
 anything the resource verbs don't cover, `rp api <METHOD> <path>` is a raw escape
@@ -175,10 +174,10 @@ a file), `--plane rest|api`, `--jq`, `--limit`, and `--cursor`.
 | Resource | Verbs |
 |---|---|
 | `volume` | `create --name --size --dc` · `list` · `get <id>` · `update <id>` · `delete <id>` · `sync <name> [--source <dir> \| --models a,b,c] [--prefix models]` · `ls <name>` · `gpus <name> [--gpu id,id]` |
-| `serverless` | `create --template <id> --gpu <type,..> \| --gpus-from-volume <name> [...] [--execution-timeout <s>] [--network-volume <name> \| --network-volume-id <id> \| --network-volume-ids id,id] [--type QUEUE\|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot] [--env K=V]… [--scaler-type T] [--scaler-value V] [--hub-id <listing-id>] [--force] [--registry <id>]` · `list` · `get <id>` · `update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>] [--gpu-count N] [--registry <id>]` · `scale <id> --min N --max N [--idle S]` · `delete <id>` · `run <id> --input '<json>' \| --input-file <path\|-> [--sync\|--async] [--timeout <s>]` (`--hub-id` deploys from a Hub listing — the listing is fetched via GraphQL, the endpoint created via REST v2; `--env` overlays the template's env, the user's value winning per key; `run` submits a job on the data plane — `api.runpod.ai/v2` — waiting via `/runsync` by default, or queuing via `/run` with `--async`) |
-| `pod` | `create --image <img> [--gpu <id>] [--cpu-flavor <id> --vcpu <n>] [--registry <id>] [...]` · `update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>] [--ports a/b] [--env K=V] [--start-cmd a,b] [--registry <id>]` · `list` · `get <id>` · `start \| stop \| restart <id>` (`reset` is an alias for `restart`; v2 dropped it) · `delete <id>` |
+| `serverless` | `create --template <id> --gpu <type,..> \| --gpus-from-volume <name> [...] [--execution-timeout <s>] [--network-volume <name> \| --network-volume-id <id> \| --network-volume-ids id,id] [--type QUEUE\|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot] [--env K=V]… [--scaler-type T] [--scaler-value V] [--hub-id <listing-id>] [--force] [--registry <id>]` · `list` · `get <id>` · `update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>] [--gpu-count N] [--registry <id>]` · `scale <id> --min N --max N [--idle S]` · `delete <id>` · `workers <id>` · `releases <id>` · `logs <id> --worker <workerId>` · `run <id> --input '<json>' \| --input-file <path\|-> [--sync\|--async] [--timeout <s>]` (`--hub-id` deploys from a Hub listing — the listing is fetched via GraphQL, the endpoint created via REST v2; `--env` overlays the template's env, the user's value winning per key; `run` submits a job on the data plane — `api.runpod.ai/v2` — waiting via `/runsync` by default, or queuing via `/run` with `--async`) |
+| `pod` | `create --image <img> [--gpu <id>] [--cpu-flavor <id> --vcpu <n>] [--registry <id>] [...]` · `update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>] [--ports a/b] [--env K=V] [--start-cmd a,b] [--registry <id>]` · `list` · `get <id>` · `start \| stop \| restart <id>` (`reset` is an alias for `restart`; v2 dropped it) · `delete <id>` · `logs <id> [--source container|system] [--tail N]` |
 | `template` | `create --name --image [--serverless] [--docker-cmd a,b] [--env K=V]… [--ports a/b] [--volume-gb N] [--container-disk-gb N] [--category <c>] [--public true\|false] [--registry <id>] [--force]` · `update <id> [--name <n>] [--image <img>] [--public true\|false] [--registry <id>] [--docker-cmd a,b] [--env K=V]… [--ports a/b] [--container-disk-gb N] [--volume-gb N] [--category <c>] [--serverless]` · `list` · `get <id>` · `search <name-substring>` · `delete <id>` (templates are private unless `--public true`; `update` PATCHes by id and needs at least one field) |
-| `registry` | `create --name --username [--password <p>]` · `list` · `get <id>` · `delete <id>` |
+| `registry` | `create --name --username [--password <p>]` · `list` · `get <id>` · `delete <id>` · `delegations <list\|create\|revoke>` |
 | `billing` | `pods` · `serverless [id]` · `public-endpoints` · `clusters` · `volumes` · `all` |
 | `account` | `[info]` (balance + spend; GraphQL) |
 | `hub` | `search <query>` · `get <listing-id>` (GraphQL) |
@@ -208,10 +207,6 @@ to tear down).
 - **Idempotent creates** — `volume`, `template`, and `serverless` `create` return the
   existing resource when the name matches; pass `--force` to duplicate. `pod` and
   `registry` `create` always POST and may duplicate on re-run.
-- **`endpoint` was renamed `serverless`** (REST API v2). The old resource name
-  still works but prints a deprecation warning; `rp billing endpoints` likewise
-  aliases `rp billing serverless` (use `public-endpoints` for the public-endpoint
-  product).
 - **`rp api` is a raw escape hatch** — `rp api <METHOD> <path>` calls the same
   transport as the resource verbs, so it reaches any v2 route the typed commands
   don't wrap yet (e.g. a brand-new endpoint). It honours `--body`, `--plane`,

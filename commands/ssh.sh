@@ -25,6 +25,36 @@ _ssh_write_pubkey() {
   rp::graphql "$q" "$vars" >/dev/null
 }
 
+# Serialise concurrent read-modify-write of `myself.pubKey` so two `rp ssh
+# add-key` / `remove-key` from the same host cannot clobber each other (lost
+# update): each fetches the whole set, mutates it, and writes it back, so a pair
+# racing leaves one edit lost. A mkdir(1)-based lock is created atomically, so
+# only one process holds it; others spin briefly then proceed. No flock needed,
+# so it works on Bash 3.2 / macOS / Linux. $1 is the callback to run while
+# holding the lock; the rest are its args. A stale lock left by a crashed/killed
+# holder is reclaimed by checking the recorded PID.
+_ssh_locked() {
+  local fn="$1"
+  shift
+  local lock_dir="${TMPDIR:-/tmp}/.rp-ssh-pubkey.lock"
+  local tries=0 pid
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    pid="$(cat "$lock_dir/pid" 2>/dev/null)"
+    if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+      rm -rf "$lock_dir" 2>/dev/null
+    fi
+    tries=$((tries + 1))
+    ((tries > 50)) && rp::die "could not acquire the ssh key lock (another rp ssh add-key/remove-key is running)"
+    sleep 0.1
+  done
+  printf '%s' "$$" >"$lock_dir/pid" 2>/dev/null
+  "$fn" "$@"
+  local rc=$?
+  rm -f "$lock_dir/pid" 2>/dev/null
+  rmdir "$lock_dir" 2>/dev/null
+  return "$rc"
+}
+
 # stdin: one authorized-key line -> its SHA256 fingerprint (empty if ssh-keygen missing)
 _ssh_fp() {
   command -v ssh-keygen >/dev/null 2>&1 || return 0
@@ -100,11 +130,11 @@ _ssh_info_human() {
   printf '%s' "$1" | jq -r '
     . as $p
     | ($p.runtime.ports // []) as $ports
-    | ($ports | map(select(.label == "ssh" or (.portType // .type // "") == "tcp"))) as $ssh
+    | ($ports | map(select((.type // "") == "tcp" or (.type // "") == "ssh"))) as $ssh
     | if ($ssh | length) > 0
-      then "ssh root@\($ssh[0].ip) -p \($ssh[0].publicPort)"
+      then "ssh root@\($ssh[0].ip) -p \($ssh[0].public)"
       elif $p.runtime == null then "pod has no runtime (stopped?)"
-      else "no ssh port labelled; runtime ports: \($ports | map({ip, publicPort, label}))"
+      else "no ssh port labelled; runtime ports: \($ports | map({ip, public, type}))"
       end'
 }
 
@@ -219,8 +249,8 @@ rp::cmd_ssh() {
   rp::args_has help && verb=help
   case "$verb" in
   list-keys) _ssh_list_keys ;;
-  add-key) _ssh_add_key ;;
-  remove-key) _ssh_remove_key ;;
+  add-key) _ssh_locked _ssh_add_key ;;
+  remove-key) _ssh_locked _ssh_remove_key ;;
   info) _ssh_info ;;
   -h | --help | help)
     cat <<'EOF'

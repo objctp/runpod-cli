@@ -51,6 +51,19 @@ rp::obj_set() {
   dest="$(_json_merge "$dest" "$(rp::json_obj "$key" "$val")")"
 }
 
+# Like rp::obj_set, but the value is read from the FILE at $3 (its raw bytes
+# become the JSON string value) so a SECRET never reaches jq's command line.
+# jq's argv is visible in `ps` for the process lifetime, so passing a registry
+# password via --argjson would leak it; --rawfile reads the file by path instead
+# (only the path, not the secret, lands on argv). $1 nameref dest, $2 key,
+# $3 path to a temp file holding the secret. The file's contents are not echoed
+# onto argv by this function.
+rp::obj_set_secret() {
+  local -n dest="$1"
+  local key="$2" file="$3"
+  dest="$(printf '%s' "$dest" | jq -c --arg k "$key" --rawfile v "$file" '. + {($k): $v}')"
+}
+
 # Parse newline-delimited K=V pairs (one per --env) into a JSON object. Each
 # pair splits on the FIRST '=' only, so a value may itself contain '=' or ','
 # (e.g. --env LIST=a,b -> {"LIST":"a,b"}). Blank lines are skipped.

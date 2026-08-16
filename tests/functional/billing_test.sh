@@ -60,7 +60,7 @@ function test_should_route_serverless_and_volumes_verbs() {
   rp::cmd_billing clusters >/dev/null 2>&1
   assert_equals "GET /billing/clusters" "$(<"$cap")"
   rp::cmd_billing volumes >/dev/null 2>&1
-  assert_equals "GET /billing/networkvolumes" "$(<"$cap")"
+  assert_equals "GET /billing/network-volumes" "$(<"$cap")"
   rp::cmd_billing all >/dev/null 2>&1
   assert_equals "GET /billing" "$(<"$cap")"
   rm -f "$cap"
@@ -74,35 +74,6 @@ function test_should_filter_serverless_billing_when_id_given() {
     printf '{}'
   }
   rp::cmd_billing serverless e1 >/dev/null 2>&1
-  assert_equals "GET /billing/serverless?serverlessId=e1" "$(<"$cap")"
-  rm -f "$cap"
-}
-
-# Pre-rename behaviour: `billing endpoints` meant serverless spend. The alias
-# keeps old scripts working, with a pointer at the two replacement verbs.
-function test_should_route_deprecated_endpoints_verb_with_warning() {
-  local cap err
-  cap="$(mktemp)"
-  rp::http() {
-    printf '%s %s\n' "$1" "$2" >"$cap"
-    printf '{}'
-  }
-  err="$(rp::cmd_billing endpoints 2>&1 >/dev/null)"
-  assert_equals "GET /billing/serverless" "$(<"$cap")"
-  assert_contains "deprecated" "$err"
-  rm -f "$cap"
-}
-
-# The deprecated `endpoints` alias now threads the positional as serverlessId
-# (and accepts the time flags) via the shared _billing helper.
-function test_should_thread_id_on_deprecated_endpoints_alias() {
-  local cap
-  cap="$(mktemp)"
-  rp::http() {
-    printf '%s %s\n' "$1" "$2" >"$cap"
-    printf '{}'
-  }
-  rp::cmd_billing endpoints e1 >/dev/null 2>&1
   assert_equals "GET /billing/serverless?serverlessId=e1" "$(<"$cap")"
   rm -f "$cap"
 }
@@ -129,7 +100,7 @@ function test_should_scope_clusters_and_volumes_billing_by_id() {
   rp::cmd_billing clusters c1 >/dev/null 2>&1
   assert_equals "GET /billing/clusters?clusterId=c1" "$(<"$cap")"
   rp::cmd_billing volumes v1 >/dev/null 2>&1
-  assert_equals "GET /billing/networkvolumes?networkVolumeId=v1" "$(<"$cap")"
+  assert_equals "GET /billing/network-volumes?networkVolumeId=v1" "$(<"$cap")"
   rm -f "$cap"
 }
 

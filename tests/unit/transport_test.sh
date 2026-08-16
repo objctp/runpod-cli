@@ -107,3 +107,21 @@ function test_should_classify_ended_2xx_as_ended() {
 function test_should_classify_curl_failure_without_status_as_transport() {
   assert_equals "transport" "$(_rp_stream_classify 7 "")"
 }
+
+function test_should_set_status_130_on_sigint() {
+  curl() { return 130; }
+  _curl_json "https://rest.test/v2/pods" GET >/dev/null 2>&1
+  assert_equals 130 "$_RP_CURL_STATUS"
+}
+
+function test_should_exit_130_on_sigint_over_http() {
+  curl() { return 130; }
+  (rp::http GET /pods >/dev/null 2>&1)
+  assert_exit_code 130
+}
+
+function test_should_exit_130_on_sigint_over_graphql() {
+  curl() { return 130; }
+  (rp::graphql 'query { x }' >/dev/null 2>&1)
+  assert_exit_code 130
+}

@@ -494,18 +494,17 @@ function test_should_route_each_serverless_verb() {
   rm -f "$cap"
 }
 
-# The deprecated `endpoint` resource name still routes through the renamed
-# command module, warning on stderr.
-function test_should_route_deprecated_endpoint_resource_with_warning() {
-  local cap err
+# The renamed `serverless` command module is the canonical target; the old
+# `endpoint` resource name is gone (full removal, no deprecation shim).
+function test_should_route_serverless_list_through_renamed_module() {
+  local cap
   cap="$(mktemp)"
   rp::http() {
     printf '%s %s\n' "$1" "$2" >"$cap"
     printf '[]'
   }
-  . "$RP_ROOT/commands/endpoint.sh"
-  err="$(rp::cmd_endpoint list 2>&1 >/dev/null)"
-  assert_contains "deprecated" "$err"
+  . "$RP_ROOT/commands/serverless.sh"
+  rp::cmd_serverless list >/dev/null 2>&1
   assert_contains "GET /serverless" "$(<"$cap")"
   rp::http() { :; }
   rm -f "$cap"

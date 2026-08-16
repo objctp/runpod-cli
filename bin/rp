@@ -19,14 +19,45 @@ export RP_ROOT
 unset _rp_src _rp_dir
 
 . "$RP_ROOT/lib/common.sh"
-trap _tmp_cleanup EXIT INT TERM HUP
+# EXIT/HUP/TERM clean up temp files and continue; INT (Ctrl-C) exits quietly as
+# 130 ("interrupted") — without it a SIGINT inside curl would otherwise surface
+# as a bogus "curl transport error" from the emit helpers. The EXIT trap still
+# runs to remove temp files on the way out.
+trap _tmp_cleanup EXIT HUP TERM
+trap 'exit 130' INT
 
-[[ -f "$RP_ROOT/.env" ]] && {
-  _warn_if_world_readable "$RP_ROOT/.env"
-  set -a
-  . "$RP_ROOT/.env"
-  set +a
+# Load $RP_ROOT/.env, but never source a group/world-writable file (an attacker
+# who can write it could inject RUNPOD_API_KEY or startup code), and never let a
+# .env entry override a variable already exported to the environment (so an
+# explicit RUNPOD_API_KEY / RUNPOD_API_KEY_FILE on the command line wins).
+_rp_env_load() {
+  local f="$1" perm _ln _k
+  # Refuse group/world-writable .env (mode has any of the group/other write
+  # bits set). A writable .env is a clear compromise risk. (Fix #4)
+  if stat -f '%Lp' /dev/null >/dev/null 2>&1; then
+    perm="$(stat -f '%Lp' "$f")"
+  else
+    perm="$(stat -c '%a' "$f")"
+  fi
+  if [[ "$perm" =~ ^[0-7]+$ ]] && ((8#$perm & 022)); then
+    rp::die "$f is group/world-writable (mode $perm); refusing to load it — run 'chmod go-w $f'"
+  fi
+  # Keep the readability warning for the private-but-leaked case (mode allows
+  # others to read, but not write). (Fix #4 — warn, not die, here.)
+  _warn_if_world_readable "$f"
+  # Load only variables NOT already set in the environment, so an exported value
+  # wins over a stale .env entry. (Fix #5)
+  while IFS= read -r _ln || [[ -n "$_ln" ]]; do
+    [[ -z "$_ln" || "$_ln" == \#* || "$_ln" =~ ^[[:space:]]*$ ]] && continue
+    [[ "$_ln" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
+    _k="${_ln%%=*}"
+    [[ -n "${!_k:-}" ]] && continue
+    # shellcheck disable=SC2163 # dynamic var name parsed from a trusted .env line
+    export "$_ln"
+  done < "$f"
 }
+
+[[ -f "$RP_ROOT/.env" ]] && _rp_env_load "$RP_ROOT/.env"
 
 for _RP_LIB_FILE in "$RP_ROOT"/lib/*.sh; do
   case "$_RP_LIB_FILE" in

@@ -15,7 +15,7 @@ function set_up() {
 
 # Verbless commands carry their whole block in the file-header intro, so they
 # are allowed to have no per-verb `# doc:` blocks.
-VERBLESS=" api upgrade endpoint doc "
+VERBLESS=" api upgrade doc "
 
 function _cmd_names() {
   local f

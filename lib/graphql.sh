@@ -20,6 +20,12 @@ _rp_graphql_payload() {
 _rp_graphql_emit() {
   local tmp="$1" label="${2:-GraphQL}"
   local status="$_RP_CURL_STATUS"
+  # SIGINT (curl 130) mid-request: exit quietly as "interrupted" (130) rather
+  # than a bogus transport error; the EXIT trap (_tmp_cleanup) removes temp files.
+  if ((status == 130)); then
+    rm -f -- "$tmp"
+    exit 130
+  fi
   if ((status == 0)); then
     rm -f -- "$tmp"
     rp::die "curl transport error: $label"

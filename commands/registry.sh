@@ -57,8 +57,14 @@ _registry_create() {
   else
     rp::warn "note: --password is visible in process listings and shell history; prefer the interactive prompt"
   fi
-  local body
-  body="$(rp::json_obj name "$(rp::json_str "$name")" username "$(rp::json_str "$username")" password "$(rp::json_str "$password")")"
+  # The password is written to a 0600 temp file and merged via rp::obj_set_secret
+  # so it never reaches jq's argv (visible in `ps`); only name/username — which
+  # are not secrets — travel on the command line.
+  local body secret_tmp
+  _mktemp secret_tmp
+  printf '%s' "$password" >"$secret_tmp"
+  body="$(rp::json_obj name "$(rp::json_str "$name")" username "$(rp::json_str "$username")")"
+  rp::obj_set_secret body password "$secret_tmp"
   rp::resource_create registry "" "$body"
 }
 
@@ -158,7 +164,6 @@ _registry_create() {
 #   --name <n>                credential name (required)
 #   --username <u>            registry username (required)
 #   --password <p>            registry password; if omitted, prompts interactively
-#   --json                    print the raw API response
 #
 # Notes:
 #   --password is visible in process listings (`ps`) and shell history; prefer

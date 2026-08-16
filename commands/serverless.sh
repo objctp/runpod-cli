@@ -480,7 +480,6 @@ _serverless_logs() {
 #   --force                       skip the name idempotency check
 #   --min-cuda-version <ver>      accepted but ignored: v2 keeps it only as a
 #                                 /catalog/gpus filter
-#   --json                        print the raw API response
 #
 # Notes:
 #   --name is required by the live v2 spec on both the --template and --hub-id

@@ -11,7 +11,6 @@ S3-compatible API.
 bin/rp            entry point — loads .env, sources lib/, dispatches to commands/
 lib/              shared helpers (common, constants, transport, auth, http, graphql, s3, args, json, validate, resource, paginate, hub, _version) — `transport` is the single curl impl and delegates credential resolution to `auth` (never read `RUNPOD_API_KEY` directly)
 commands/         one file per resource (volume, serverless, pod, template, registry, billing, stock, account, hub, ssh, upgrade)
-                   plus endpoint.sh — deprecated alias that delegates to serverless
 tests/unit/       bashunit unit tests for lib helpers
 tests/functional/ bashunit functional tests for commands
 Makefile          fmt / lint / test / check + listing shortcuts

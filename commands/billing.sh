@@ -216,7 +216,7 @@ _billing() {
 # Examples:
 #   rp billing volumes --last-n 12 --bucket-size month
 #
-# API: GET /v2/billing/networkvolumes
+# API: GET /v2/billing/network-volumes
 
 # doc: all
 # Report aggregated spend across every product.
@@ -246,21 +246,6 @@ _billing() {
 #
 # API: GET /v2/billing
 
-# doc: endpoints
-# Deprecated: use `rp billing serverless` instead.
-#
-# Usage: rp billing endpoints
-#
-# Notes:
-#   The verb predates the endpoint-to-serverless rename and now maps to
-#   serverless spend: it warns, then does exactly what `rp billing serverless`
-#   does, positional id and window flags included.
-#   Should you have wanted the *public endpoint* product rather than your own
-#   endpoints' spend, that is `rp billing public-endpoints` — the name is a
-#   trap, which is why this alias warns rather than guessing.
-#
-# API: GET /v2/billing/serverless
-
 rp::cmd_billing() {
   local verb="${1:-help}"
   shift || true
@@ -271,12 +256,8 @@ rp::cmd_billing() {
   serverless) _billing /billing/serverless serverlessId ;;
   public-endpoints) _billing /billing/endpoints ;;
   clusters) _billing /billing/clusters clusterId ;;
-  volumes) _billing /billing/networkvolumes networkVolumeId ;;
+  volumes) _billing /billing/network-volumes networkVolumeId ;;
   all) _billing /billing ;;
-  endpoints)
-    rp::warn "'rp billing endpoints' is deprecated — use 'rp billing serverless' (serverless spend) or 'rp billing public-endpoints' (public-endpoint product)"
-    _billing /billing/serverless serverlessId
-    ;;
   -h | --help | help)
     echo "Usage: rp billing <pods [id] | serverless [id] | public-endpoints | clusters [id] | volumes [id] | all>"
     echo "                  [--start <rfc3339>] [--end <rfc3339>] [--bucket-size hour|day|week|month|year] [--last-n N]"

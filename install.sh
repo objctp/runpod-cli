@@ -65,24 +65,52 @@ rp_inst_bash_ok() {
   [[ "$major" -ge 5 ]]
 }
 
+# Reject a version/Tag that does not look like a release. A crafted or
+# typo'd value would otherwise be interpolated into the GitHub release URL and,
+# after curl's path-normalisation, could redirect the download to an
+# attacker-controlled repo. Only x.y.z (with an optional leading v) is accepted.
+rp_inst_validate_version() {
+  [[ "$1" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+    rp_inst_die "invalid version '$1' — expected x.y.z or vX.Y.Z (e.g. 1.2.3)"
+}
+
 # Echo the release tag to install. RP_LATEST_TAG short-circuits the network
 # lookup for tests; otherwise GitHub's /releases/latest 302-redirects to
 # /releases/tag/<tag>, and following it to the final URL needs no jq and dodges
-# the rate-limited REST API.
+# the rate-limited REST API. The resolved tag is validated before use so a
+# hostile/malformed redirect cannot steer the install elsewhere.
 rp_inst_resolve_version() {
+  local tag
   if [[ -n "${RP_LATEST_TAG:-}" ]]; then
-    printf '%s\n' "$RP_LATEST_TAG"
-    return
+    tag="$RP_LATEST_TAG"
+  else
+    local url
+    url="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+      "https://github.com/$RP_REPO/releases/latest")" ||
+      rp_inst_die "could not reach github.com/$RP_REPO (network down, or no releases published yet)"
+    tag="${url##*/}"
   fi
-  local url
-  url="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
-    "https://github.com/$RP_REPO/releases/latest")" ||
-    rp_inst_die "could not reach github.com/$RP_REPO (network down, or no releases published yet)"
-  printf '%s\n' "${url##*/}"
+  rp_inst_validate_version "$tag"
+  printf '%s\n' "$tag"
+}
+
+# Constrain the RP_CHECKSUM override to an allowlist. The value is later
+# word-split into argv and executed, so accepting an arbitrary string would let
+# anyone who can set the env var inject commands (e.g. "shasum -a 256; rm -rf ~").
+# Only the two known-safe checkers are permitted; anything else is rejected.
+rp_inst_validate_checksum() {
+  [[ -z "${RP_CHECKSUM:-}" ]] && return 0
+  case "$RP_CHECKSUM" in
+  sha256sum | "shasum -a 256") return 0 ;;
+  *)
+    rp_inst_die "RP_CHECKSUM must be exactly 'sha256sum' or 'shasum -a 256' (got: '$RP_CHECKSUM')"
+    ;;
+  esac
 }
 
 # Echo the SHA-256 verifying command as a string ("sha256sum" or "shasum -a 256"),
-# or return 1 if neither tool exists. RP_CHECKSUM overrides for tests.
+# or return 1 if neither tool exists. RP_CHECKSUM overrides for tests (validated
+# by rp_inst_validate_checksum before this runs).
 rp_inst_checksum_cmd() {
   if [[ -n "${RP_CHECKSUM:-}" ]]; then
     printf '%s\n' "$RP_CHECKSUM"
@@ -173,6 +201,14 @@ rp_inst_run() {
   command -v curl >/dev/null 2>&1 || rp_inst_die "curl is required to install rp"
   command -v tar >/dev/null 2>&1 || rp_inst_die "tar is required to install rp"
 
+  # An explicit --version is validated up front; a resolved-latest tag is
+  # validated inside rp_inst_resolve_version. Either way we never reach the
+  # download with an unvalidated version.
+  [[ -n "$version" ]] && rp_inst_validate_version "$version"
+
+  # Constrain the checksum override before it is word-split into argv.
+  rp_inst_validate_checksum
+
   local os
   os="$(rp_inst_os)" ||
     rp_inst_die "unsupported OS: $(uname -s) (rp supports macOS and Linux)"
@@ -180,7 +216,7 @@ rp_inst_run() {
   if [[ "$os" == "darwin" ]] && ! rp_inst_bash_ok; then
     rp_inst_die "rp needs Bash 5+; this macOS has $(printf '%s.%s' \
       "${BASH_VERSINFO[0]:-?}" "${BASH_VERSINFO[1]:-?}"). Fix: brew install bash, \
-then restart your shell and re-run the installer."
+ then restart your shell and re-run the installer."
   fi
 
   [[ -n "$version" ]] || version="$(rp_inst_resolve_version)"
@@ -209,10 +245,24 @@ then restart your shell and re-run the installer."
   # tree first so a failure rolls back instead of leaving a half-installed CLI).
   local stage="$_rp_inst_tmp/stage"
   mkdir -p "$stage"
-  tar -xzf "$tarball" -C "$stage" || rp_inst_die "extraction failed"
+  # --no-same-owner: don't try to reproduce the tarball's ownership (which may
+  # not exist locally); extract as the invoking user. Prevents permission errors
+  # and any adversary-controlled ownership in a compromised release artefact.
+  tar -xzf "$tarball" -C "$stage" --no-same-owner || rp_inst_die "extraction failed"
 
+  # Guard against wiping an unrelated directory. RP_INSTALL_DIR defaults to
+  # ~/.rp, but if a user points it at e.g. $HOME we must not `mv` the whole tree
+  # away. Only proceed when it does not exist, is empty, or is a recognised rp
+  # install (contains bin/rp). Otherwise refuse rather than move/overwrite it.
   local backup=""
   if [[ -e "$RP_INSTALL_DIR" ]]; then
+    if [[ -n "$(find "$RP_INSTALL_DIR" -maxdepth 0 -type d -empty 2>/dev/null)" ]]; then
+      : # empty directory — safe to back up and replace
+    elif [[ -e "$RP_INSTALL_DIR/bin/rp" ]]; then
+      : # existing rp install — safe to upgrade in place
+    else
+      rp_inst_die "$RP_INSTALL_DIR exists, is non-empty, and is not an rp install (no bin/rp); refusing to overwrite it"
+    fi
     backup="$RP_INSTALL_DIR.old.$$"
     mv "$RP_INSTALL_DIR" "$backup"
   fi

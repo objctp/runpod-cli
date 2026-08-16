@@ -12,6 +12,12 @@ _RP_HTTP=1
 _rp_http_emit() {
   local tmp="$1" method="$2" path="$3"
   local status="$_RP_CURL_STATUS"
+  # SIGINT (curl 130) mid-request: exit quietly as "interrupted" (130) rather
+  # than a bogus transport error; the EXIT trap (_tmp_cleanup) removes temp files.
+  if ((status == 130)); then
+    rm -f -- "$tmp"
+    exit 130
+  fi
   if ((status == 0)); then
     rm -f -- "$tmp"
     rp::die "curl transport error: $method $path"

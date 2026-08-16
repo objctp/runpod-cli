@@ -12,13 +12,27 @@ declare -g _RP_CURL_STATUS=200
 
 # Base URL for a transport plane. Resolved at call time so env overrides of
 # RP_REST_BASE / RP_API_BASE / RP_GRAPHQL_URL (set in lib/common.sh) take effect.
+# Every client (REST, data plane, GraphQL) routes through here, so the
+# insecure-transport guard below covers all of them.
 _rp_plane_base() {
+  local base
   case "$1" in
-  rest) printf '%s' "${RP_REST_BASE:-https://api.runpod.io/v2}" ;;
-  api) printf '%s' "${RP_API_BASE:-https://api.runpod.ai/v2}" ;;
-  graphql) printf '%s' "${RP_GRAPHQL_URL:-https://api.runpod.io/graphql}" ;;
+  rest) base="${RP_REST_BASE:-https://api.runpod.io/v2}" ;;
+  api) base="${RP_API_BASE:-https://api.runpod.ai/v2}" ;;
+  graphql) base="${RP_GRAPHQL_URL:-https://api.runpod.io/graphql}" ;;
   *) return 1 ;;
   esac
+  # Refuse plaintext transport: the Bearer token and (for registry create) the
+  # password would cross the wire in cleartext. RP_ALLOW_INSECURE_HTTP=1 opts out
+  # for local/test setups only.
+  case "$base" in
+  https://*) ;;
+  *)
+    [[ -n "${RP_ALLOW_INSECURE_HTTP:-}" ]] ||
+      rp::die "refusing insecure HTTP transport for the '$1' plane ($base); set RP_ALLOW_INSECURE_HTTP=1 to override"
+    ;;
+  esac
+  printf '%s' "$base"
 }
 
 # Default --max-time (seconds) per plane. The data plane blocks on job
@@ -52,9 +66,18 @@ _curl_json() {
   fi
   args+=("$url")
   status="$(curl "${args[@]}" -o "$tmp" -w '%{http_code}')" || {
+    rc=$?
     rm -f -- "$hdr" "$tmp" "${body_tmp:-}"
-    _RP_CURL_STATUS=000
-    return 1
+    # curl exit 130 == killed by SIGINT: surface as "interrupted" (exit 130),
+    # never a bogus transport error. The emit helpers (_rp_http_emit /
+    # _rp_graphql_emit) check _RP_CURL_STATUS and bail quietly; the stream path
+    # (_rp_stream_classify) already classifies 130 as "interrupted".
+    if ((rc == 130)); then
+      _RP_CURL_STATUS=130
+    else
+      _RP_CURL_STATUS=000
+    fi
+    return "$rc"
   }
   out="$(<"$tmp")"
   rm -f -- "$hdr" "$tmp" "${body_tmp:-}"
