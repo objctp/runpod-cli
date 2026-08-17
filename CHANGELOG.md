@@ -1,11 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Fixed
-
-- Pin Homebrew/actions/setup-homebrew to a valid ref
-
 ## [1.0.0] - 2026-08-17
 
 ### Added
@@ -19,6 +13,7 @@
 - Resolve Linux CI failures in unit suite
 - Low-severity security and quality findings
 - Address code-review on v1.0 publish
+- Pin Homebrew/actions/setup-homebrew to a valid ref
 
 ## [0.4.0] - 2026-08-02
 
