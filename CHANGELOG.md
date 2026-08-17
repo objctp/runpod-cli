@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Make npm publish idempotent in release workflow
+
 ## [1.0.0] - 2026-08-17
 
 ### Added

@@ -85,7 +85,12 @@ jobs:
         # attestation minted from the id-token:write permission above.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+        run: |
+          if npm view "@objctp/rp@${GITHUB_REF_NAME}" version >/dev/null 2>&1; then
+            echo "npm: @objctp/rp@${GITHUB_REF_NAME} already published, skipping"
+          else
+            npm publish --access public --provenance
+          fi
 
       # ── Homebrew channel (objctp/homebrew-tap) ────────────
       - name: Setup Homebrew
