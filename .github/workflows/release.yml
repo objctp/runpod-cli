@@ -76,7 +76,9 @@ jobs:
         run: node scripts/build.mjs
 
       - name: npm publish (dry-run gate)
-        run: npm publish --dry-run --access public --provenance
+        # No --provenance here: an attestation can't be minted without a real
+        # publish, and attempting it makes the dry-run fail and block the step below.
+        run: npm publish --dry-run --access public
 
       - name: npm publish @objctp/rp
         # NODE_AUTH_TOKEN carries a publish token; --provenance attaches an OIDC
@@ -86,6 +88,11 @@ jobs:
         run: npm publish --access public --provenance
 
       # ── Homebrew channel (objctp/homebrew-tap) ────────────
+      - name: Setup Homebrew
+        # ubuntu-latest has no brew, so install it; otherwise the audit/style/test
+        # gate below would silently no-op and ship an unverified formula.
+        uses: Homebrew/actions/setup-homebrew@v1
+
       - name: Bump Homebrew formula
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -124,13 +131,9 @@ jobs:
           end
           RB
 
-          if command -v brew >/dev/null 2>&1; then
-            brew audit --formula Formula/rp.rb
-            brew style --formula Formula/rp.rb
-            brew test --formula Formula/rp.rb
-          else
-            echo "brew not installed in this runner; skipping audit/style/test gate"
-          fi
+          brew audit --formula Formula/rp.rb
+          brew style --formula Formula/rp.rb
+          brew test --formula Formula/rp.rb
 
           git add Formula/rp.rb
           git commit -m "rp ${VERSION}"

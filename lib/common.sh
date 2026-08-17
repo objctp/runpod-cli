@@ -213,6 +213,18 @@ rp::require_uint() {
   [[ -z "$val" || "$val" =~ ^[0-9]+$ ]] || rp::usage "--$name must be a positive integer (got '$val')"
 }
 
+# Scan the named commands; if any are absent, die via rp::usage (exit 2) naming
+# them. Shared by the runtime and core preflights so the missing-command detect
+# loop lives in one place. Returns 0 when all are present.
+_rp_require_commands() {
+  local missing=() c
+  for c in "$@"; do
+    command -v "$c" >/dev/null 2>&1 || missing+=("$c")
+  done
+  ((${#missing[@]})) || return 0
+  rp::usage "missing required commands: ${missing[*]} (install via your package manager)"
+}
+
 # Hard runtime preflight — runs before any work. rp itself needs Bash 5+
 # (namerefs, assoc arrays, mapfile); every code path depends on jq (JSON) and
 # curl (transport). Die with a message naming the missing piece rather than
@@ -222,23 +234,13 @@ rp::check_runtime() {
   if ((BASH_VERSINFO[0] < 5)); then
     rp::die "rp needs Bash 5+ (this is Bash ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]:-?}); upgrade Bash and retry"
   fi
-  local missing=() c
-  for c in jq curl; do
-    command -v "$c" >/dev/null 2>&1 || missing+=("$c")
-  done
-  ((${#missing[@]})) || return 0
-  rp::usage "missing required commands: ${missing[*]} (install via your package manager)"
+  _rp_require_commands jq curl
 }
 
 # Fail fast if a core tool the CLI depends on is missing. Feature-gated tools
 # (aws, huggingface-cli, ssh-keygen) are still checked at their own call sites.
 rp::check_core() {
-  local missing=() c
-  for c in jq curl awk head paste; do
-    command -v "$c" >/dev/null 2>&1 || missing+=("$c")
-  done
-  ((${#missing[@]})) || return 0
-  rp::usage "missing required commands: ${missing[*]} (install via your package manager)"
+  _rp_require_commands jq curl awk head paste
 }
 
 # Verb output policy: with --json print $1 verbatim (raw API JSON); otherwise

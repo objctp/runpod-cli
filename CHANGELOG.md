@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Address code-review on v1.0 publish
+
 ## [1.0.0] - 2026-08-17
 
 ### Added

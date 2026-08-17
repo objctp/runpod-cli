@@ -158,28 +158,32 @@ function test_should_pass_when_core_tools_present() {
 # --- rp::check_runtime (bash>=5 / jq / curl preflight) ---
 
 function test_should_pass_when_runtime_ready() {
-  # The test harness runs under Bash 5+ with jq/curl on PATH, so the preflight
-  # is expected to pass here. Guards the function exists and the happy path is clean.
+  # The harness runs under Bash 5+ with jq/curl on PATH, so the preflight passes.
   rp::check_runtime
   assert_successful_code "$?"
 }
 
 function test_should_exit_one_when_bash_too_old() {
-  # BASH_VERSINFO is readonly, so drive the real Bash 3.2 that ships on macOS to
-  # exercise the unsupported-version branch (rp::die -> exit 1).
+  # BASH_VERSINFO is readonly, so drive the real /bin/bash to exercise the
+  # unsupported-version branch. /bin/bash is 3.2 on macOS (expect exit 1) but 5+
+  # on Linux CI (expect exit 0), so adapt the expected code to what it actually is.
+  local expected=0
+  case "$(/bin/bash -c 'echo "${BASH_VERSINFO[0]}"')" in
+  0 | 1 | 2 | 3 | 4) expected=1 ;;
+  esac
   /bin/bash -c 'RP_ROOT="'"$RP_ROOT"'"; . "$RP_ROOT/lib/common.sh"; rp::check_runtime' >/dev/null 2>&1
-  assert_exit_code 1
+  assert_exit_code "$expected"
 }
 
-function test_should_exit_two_when_jq_missing() {
-  (
-    # Simulate a missing jq by stubbing the preflight so it reports jq absent,
-    # exercising the rp::usage exit (2) branch without touching the real PATH.
-    rp::check_runtime() {
-      rp::usage "missing required commands: jq"
-    }
-    rp::check_runtime >/dev/null 2>&1
-  )
+function test_should_pass_when_required_commands_present() {
+  _rp_require_commands jq curl
+  assert_successful_code "$?"
+}
+
+function test_should_exit_two_when_a_command_missing() {
+  # Exercise the real missing-command detect path with a name no system provides,
+  # so the test is portable (no PATH surgery that differs across runners).
+  (_rp_require_commands __rp_definitely_missing__ >/dev/null 2>&1)
   assert_exit_code 2
 }
 
