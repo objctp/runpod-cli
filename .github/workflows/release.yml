@@ -1,17 +1,25 @@
 name: release
 
 # Publishes a GitHub Release whenever scripts/changelog.sh release pushes a bare
-# semver tag (0.1.0, no "v" prefix — matches cliff.toml's tag_pattern). Builds a
-# single universal tarball (rp is bash, so there is no per-OS/arch matrix),
-# stamps the version into lib/_version.sh, and attaches a SHA256SUMS the
-# installer verifies before extracting.
+# semver tag (1.0.0, no "v" prefix — matches cliff.toml's tag_pattern). The
+# pipeline, in order:
+#   1. build the universal tarball (rp is bash, so no per-OS/arch matrix) and its
+#      SHA256SUMS, stamping the version into lib/_version.sh;
+#   2. publish the GitHub Release (tarball + SHA256SUMS + changelog notes);
+#   3. publish the npm package @objctp/rp with OIDC provenance (dry-run gated);
+#   4. bump the Homebrew formula in objctp/homebrew-tap (brew audit/style/test
+#      gated; committed via a PAT/deploy key).
 on:
   push:
     tags:
       - "[0-9].*"
 
+# id-token:write lets `npm publish --provenance` mint an OIDC provenance
+# attestation; contents:write lets the Release be created and the tap be bumped
+# through the GITHUB_TOKEN where possible.
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -56,3 +64,74 @@ jobs:
             rp-${{ github.ref_name }}.tar.gz
             SHA256SUMS
           body: ${{ steps.notes.outputs.notes }}
+
+      # ── npm channel (@objctp/rp) ──────────────────────────
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Stamp and validate the npm package
+        run: node scripts/build.mjs
+
+      - name: npm publish (dry-run gate)
+        run: npm publish --dry-run --access public --provenance
+
+      - name: npm publish @objctp/rp
+        # NODE_AUTH_TOKEN carries a publish token; --provenance attaches an OIDC
+        # attestation minted from the id-token:write permission above.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance
+
+      # ── Homebrew channel (objctp/homebrew-tap) ────────────
+      - name: Bump Homebrew formula
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          : "${TAP_TOKEN:?HOMEBREW_TAP_TOKEN secret is required to push the formula}"
+          SHA256="$(awk '{print $1}' SHA256SUMS)"
+          TAP_DIR="$(mktemp -d)"
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/objctp/homebrew-tap.git" "$TAP_DIR"
+          cd "$TAP_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Generate Formula/rp.rb. The shebang is rewritten to the brewed Bash
+          # 5+ (macOS ships 3.2), and there is no man page.
+          cat > Formula/rp.rb <<RB
+          class Rp < Formula
+            desc "CLI for managing RunPod infrastructure (volumes, serverless, pods, billing)"
+            homepage "https://github.com/objctp/runpod-cli"
+            version "${VERSION}"
+            url "https://github.com/objctp/runpod-cli/releases/download/${VERSION}/rp-${VERSION}.tar.gz"
+            sha256 "${SHA256}"
+            license "MIT"
+
+            depends_on "bash"
+
+            def install
+              inreplace "bin/rp", %r{^#!/usr/bin/env bash}, "#!#{Formula["bash"].opt_bin}/bash"
+              prefix.install Dir["bin", "lib", "commands", "LICENSE"]
+            end
+
+            test do
+              assert_match version.to_s, shell_output("\#{bin}/rp version")
+            end
+          end
+          RB
+
+          if command -v brew >/dev/null 2>&1; then
+            brew audit --formula Formula/rp.rb
+            brew style --formula Formula/rp.rb
+            brew test --formula Formula/rp.rb
+          else
+            echo "brew not installed in this runner; skipping audit/style/test gate"
+          fi
+
+          git add Formula/rp.rb
+          git commit -m "rp ${VERSION}"
+          git push

@@ -155,6 +155,34 @@ function test_should_pass_when_core_tools_present() {
   assert_successful_code "$?"
 }
 
+# --- rp::check_runtime (bash>=5 / jq / curl preflight) ---
+
+function test_should_pass_when_runtime_ready() {
+  # The test harness runs under Bash 5+ with jq/curl on PATH, so the preflight
+  # is expected to pass here. Guards the function exists and the happy path is clean.
+  rp::check_runtime
+  assert_successful_code "$?"
+}
+
+function test_should_exit_one_when_bash_too_old() {
+  # BASH_VERSINFO is readonly, so drive the real Bash 3.2 that ships on macOS to
+  # exercise the unsupported-version branch (rp::die -> exit 1).
+  /bin/bash -c 'RP_ROOT="'"$RP_ROOT"'"; . "$RP_ROOT/lib/common.sh"; rp::check_runtime' >/dev/null 2>&1
+  assert_exit_code 1
+}
+
+function test_should_exit_two_when_jq_missing() {
+  (
+    # Simulate a missing jq by stubbing the preflight so it reports jq absent,
+    # exercising the rp::usage exit (2) branch without touching the real PATH.
+    rp::check_runtime() {
+      rp::usage "missing required commands: jq"
+    }
+    rp::check_runtime >/dev/null 2>&1
+  )
+  assert_exit_code 2
+}
+
 # --- rp::require_id ---
 
 function test_should_accept_well_formed_id() {

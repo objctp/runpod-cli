@@ -1,5 +1,5 @@
 {
-  "name": "runpod-cli",
+  "name": "@objctp/rp",
   "version": "0.4.0",
   "description": "A simple CLI for managing RunPod infrastructure.",
   "author": {
@@ -19,6 +19,12 @@
   "bin": {
     "rp": "./bin/rp"
   },
+  "files": [
+    "bin",
+    "lib",
+    "commands",
+    "LICENSE"
+  ],
   "keywords": [
     "runpod",
     "runpod-rest",
@@ -29,6 +35,7 @@
   "scripts": {
     "changelog": "scripts/changelog.sh unreleased",
     "changelog:preview": "scripts/changelog.sh preview",
-    "release": "scripts/changelog.sh release"
+    "release": "scripts/changelog.sh release",
+    "build": "scripts/build.mjs"
   }
 }

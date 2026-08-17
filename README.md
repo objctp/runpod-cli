@@ -42,6 +42,20 @@ make install        # symlinks bin/rp onto /usr/local/bin/rp (may need sudo)
 export PATH="$PWD/bin:$PATH"
 ```
 
+### Alternative installs
+
+The one-line installer above is the primary, recommended path. If you already
+live in a package manager, `rp` is also published to Homebrew and npm:
+
+```bash
+brew install objctp/tap/rp          # macOS / Linux (Homebrew)
+npm install -g @objctp/rp           # Node 22+ (wraps the same bash CLI)
+```
+
+Both pull the same universal tarball and pin to the released `rp-VERSION.tar.gz`
+checksum; `brew` rewrites the shebang to a Bash 5+ and `npm` runs a startup
+preflight asserting Bash 5+/jq/curl.
+
 Confirm it works:
 
 ```bash

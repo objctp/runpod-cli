@@ -213,6 +213,23 @@ rp::require_uint() {
   [[ -z "$val" || "$val" =~ ^[0-9]+$ ]] || rp::usage "--$name must be a positive integer (got '$val')"
 }
 
+# Hard runtime preflight — runs before any work. rp itself needs Bash 5+
+# (namerefs, assoc arrays, mapfile); every code path depends on jq (JSON) and
+# curl (transport). Die with a message naming the missing piece rather than
+# failing later with an opaque "command not found". Feature-gated tools (aws,
+# huggingface-cli, ssh-keygen) are checked at their own call sites, not here.
+rp::check_runtime() {
+  if ((BASH_VERSINFO[0] < 5)); then
+    rp::die "rp needs Bash 5+ (this is Bash ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]:-?}); upgrade Bash and retry"
+  fi
+  local missing=() c
+  for c in jq curl; do
+    command -v "$c" >/dev/null 2>&1 || missing+=("$c")
+  done
+  ((${#missing[@]})) || return 0
+  rp::usage "missing required commands: ${missing[*]} (install via your package manager)"
+}
+
 # Fail fast if a core tool the CLI depends on is missing. Feature-gated tools
 # (aws, huggingface-cli, ssh-keygen) are still checked at their own call sites.
 rp::check_core() {

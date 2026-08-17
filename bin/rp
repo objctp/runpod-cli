@@ -19,6 +19,10 @@ export RP_ROOT
 unset _rp_src _rp_dir
 
 . "$RP_ROOT/lib/common.sh"
+# Hard runtime preflight (Bash 5+ / jq / curl) must run *before* the lib loop
+# below: lib/args.sh and friends use Bash 5 syntax (`declare -g`), so a too-old
+# Bash must be caught here with a clear message rather than a syntax error.
+rp::check_runtime
 # EXIT/HUP/TERM clean up temp files and continue; INT (Ctrl-C) exits quietly as
 # 130 ("interrupted") — without it a SIGINT inside curl would otherwise surface
 # as a bogus "curl transport error" from the emit helpers. The EXIT trap still
