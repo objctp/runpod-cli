@@ -2,21 +2,19 @@
 
 ## Unreleased
 
-### Added
-
-- Adopt v2 cluster, catalog, ssh-key surfaces and templateId
-
 ## [1.0.0] - 2026-08-17
 
 ### Added
 
 - Exit-code contract — map 404->4 and rejected key (401/403)->3
+- Adopt v2 cluster, catalog, ssh-key surfaces and templateId
 
 ### Fixed
 
 - Source lib/paginate.sh in resource_test setup
 - Resolve Linux CI failures in unit suite
 - Low-severity security and quality findings
+- Address code-review on v1.0 publish
 
 ## [0.4.0] - 2026-08-02
 
