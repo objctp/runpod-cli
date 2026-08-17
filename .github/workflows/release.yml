@@ -91,7 +91,7 @@ jobs:
       - name: Setup Homebrew
         # ubuntu-latest has no brew, so install it; otherwise the audit/style/test
         # gate below would silently no-op and ship an unverified formula.
-        uses: Homebrew/actions/setup-homebrew@v1
+        uses: Homebrew/actions/setup-homebrew@2026.08.14.1
 
       - name: Bump Homebrew formula
         env:

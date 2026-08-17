@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Pin Homebrew/actions/setup-homebrew to a valid ref
+
 ## [1.0.0] - 2026-08-17
 
 ### Added
