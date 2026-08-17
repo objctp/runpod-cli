@@ -97,6 +97,41 @@ function test_should_post_when_endpoint_name_is_new() {
   rm -f "$marker"
 }
 
+function test_create_accepts_template_id_and_passes_native_field() {
+  local marker body
+  marker="$(mktemp)"
+  body="$(mktemp)"
+  _mock_create_http "$marker" "$body"
+  rp::args_parse --name e1 --template-id tpl_nat --gpu "NVIDIA L4"
+  _serverless_create >/dev/null 2>&1
+  assert_equals "tpl_nat" "$(jq -r '.templateId' "$body")"
+  rp::http() { :; }
+  rm -f "$marker" "$body"
+}
+
+function test_create_requires_template_or_template_id() {
+  rp::http() { :; }
+  rp::args_parse --name e1 --gpu "NVIDIA L4"
+  (_serverless_create >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+}
+
+function test_create_template_id_wins_over_template_spread() {
+  local marker body
+  marker="$(mktemp)"
+  body="$(mktemp)"
+  _mock_create_http "$marker" "$body"
+  # Both given: --template-id must win, so the body carries templateId and the
+  # template is NOT spread (no .image from the template fetch).
+  rp::args_parse --name e1 --template t --template-id tpl_nat --gpu "NVIDIA L4"
+  _serverless_create >/dev/null 2>&1
+  assert_equals "tpl_nat" "$(jq -r '.templateId' "$body")"
+  assert_equals "false" "$(jq -r 'has("image")' "$body")"
+  rp::http() { :; }
+  rm -f "$marker" "$body"
+}
+
 function test_should_spread_template_and_map_gpu_pool_on_create() {
   local marker body
   marker="$(mktemp)"

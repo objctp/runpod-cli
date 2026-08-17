@@ -67,9 +67,12 @@ _pod_update() {
 }
 
 _pod_create() {
-  local image name_val
+  local image name_val template_id
   image="$(rp::args_get image)"
-  [[ -n "$image" ]] || rp::usage "usage: rp pod create --image <img> (see: rp pod --help)"
+  template_id="$(rp::args_get template-id)"
+  # image is required unless a template supplies the container config (v2 only
+  # makes image optional when templateId is set).
+  [[ -n "$image" || -n "$template_id" ]] || rp::usage "usage: rp pod create --image <img> (or --template-id <id>) (see: rp pod --help)"
   name_val="$(rp::args_get name)"
   [[ -n "$name_val" ]] || rp::usage "usage: rp pod create --name <n> (see: rp pod --help)"
 
@@ -77,7 +80,8 @@ _pod_create() {
   if [[ -n "$name_val" ]]; then
     rp::obj_set obj name "$(rp::json_str "$name_val")"
   fi
-  rp::obj_set obj image "$(rp::json_str "$image")"
+  [[ -z "$image" ]] || rp::obj_set obj image "$(rp::json_str "$image")"
+  [[ -z "$template_id" ]] || rp::obj_set obj templateId "$(rp::json_str "$template_id")"
   rp::obj_set obj cloud "$(rp::json_str "$(rp::args_get cloud "$RP_DEFAULT_CLOUD")")"
 
   local disk vol_gb
@@ -199,7 +203,10 @@ _pod_logs() {
 #                      (--gpu <type> | --cpu-flavor <id> --vcpu N) [flags]
 #
 # Options:
-#   --image <ref>                  Docker image reference (required)
+#   --image <ref>                  Docker image reference (required unless
+#                                  --template-id is given)
+#   --template-id <id>             seed the container config from a template id;
+#                                  makes --image optional
 #   --name <n>                     pod name (required)
 #   --gpu <type>                   GPU type id — see `rp stock gpu`
 #   --gpu-count N                  GPUs to attach (default: 1)
@@ -228,7 +235,9 @@ _pod_logs() {
 #   --name is required by the API and checked by the CLI up front, so a missing
 #   --name fails locally before any request.
 #   --image is required even with --template, and always wins over the
-#   template's own image.
+#   template's own image. --template-id is the v2-native equivalent: pass the
+#   template id directly and the API applies its container config, which lets you
+#   omit --image entirely.
 #   Storage is one kind or the other: --volume-gb is host-local, pinned to the
 #   machine and lost if that host fails, whilst --network-volume-id is durable
 #   and must already live in the pod's datacentre. CPU pods reject --volume-gb.
@@ -466,7 +475,7 @@ Usage: rp pod <verb> [flags]
           [--cpu-flavor <id>] [--vcpu <n>]   (CPU-only pod; excludes --gpu and --volume-gb)
           [--cloud SECURE|COMMUNITY] [--network-volume-id <id>] [--volume-gb N] [--container-disk-gb N]
           [--volume-path <p>] [--global-networking true|false] [--ports <a/b,...>] [--env K=V]…
-          [--start-cmd <a,b,...>] [--template <id>] [--registry <id>]
+            [--start-cmd <a,b,...>] [--template <id>] [--template-id <id>] [--registry <id>]
   update <id> [--container-disk-gb N] [--volume-gb N] [--volume-path <p>] [--name <n>] [--image <img>]
           [--global-networking true|false] [--locked true|false]
           [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>] [--registry <id>]   (PATCH; resets a running pod)

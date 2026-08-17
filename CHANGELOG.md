@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-### Fixed
+### Added
 
-- Address code-review on v1.0 publish
+- Adopt v2 cluster, catalog, ssh-key surfaces and templateId
 
 ## [1.0.0] - 2026-08-17
 

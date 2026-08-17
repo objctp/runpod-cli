@@ -91,6 +91,9 @@ Resources:
   pod        on-demand pods (create, start/stop, update, CRUD)
   template   pod/serverless templates (search by name)
   registry   container-registry auths
+  cluster    multi-node clusters (create, rename, CRUD; member pods)
+  catalog    public catalog templates (list)
+  ssh-key    registered SSH keys over the v2 REST plane (alongside rp ssh)
   billing    pod / serverless / public-endpoint / cluster / network-volume billing
   account    balance + spend (GraphQL)
   hub        Hub marketplace search / get (GraphQL)

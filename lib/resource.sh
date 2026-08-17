@@ -39,6 +39,16 @@ _resource_meta() {
     RP_RES_KEY=registries
     RP_RES_LABEL="registry auth"
     ;;
+  cluster)
+    RP_RES_PATH=/clusters
+    RP_RES_KEY=clusters
+    RP_RES_LABEL=cluster
+    ;;
+  catalog)
+    RP_RES_PATH=/catalog/templates
+    RP_RES_KEY=templates
+    RP_RES_LABEL="catalog template"
+    ;;
   *) rp::usage "unknown resource: '$1'" ;;
   esac
 }

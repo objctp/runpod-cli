@@ -109,22 +109,30 @@ _serverless_create() {
     return $?
   fi
 
-  local template
+  local template templateid
   template="$(rp::args_get template)"
-  [[ -n "$template" ]] || rp::usage "usage: rp serverless create --template <id> [--name <n>] [--gpu <type,..>] [--force] … (see: rp serverless --help; idempotent by name)"
-  [[ -n "$name" ]] || rp::usage "usage: rp serverless create --template <id> --name <n> [--gpu <type,..>] … (see: rp serverless --help; idempotent by name)"
+  templateid="$(rp::args_get template-id)"
+  [[ -n "$template" || -n "$templateid" ]] || rp::usage "usage: rp serverless create --template <id>|--template-id <id> [--name <n>] [--gpu <type,..>] [--force] … (see: rp serverless --help; idempotent by name)"
+  [[ -n "$name" ]] || rp::usage "usage: rp serverless create --template <id>|--template-id <id> --name <n> [--gpu <type,..>] … (see: rp serverless --help; idempotent by name)"
 
-  # Idempotency gate after the --template requirement but before GPU resolution:
+  # Idempotency gate after the template requirement but before GPU resolution:
   # the v2 --gpu check (and its catalogue lookups) would otherwise exit before
   # rp::resource_create's own gate could run on a re-run.
   if rp::resource_existing serverless "$name"; then
     return 0
   fi
 
-  # v2 has no templateId param: spread the template's container config, then add
-  # the endpoint-specific fields that the template does not carry (gpu, scaling…).
+  # Two ways to seed from a template. --template-id is the v2-native field: the
+  # API applies the template's container config itself, so we just pass the id.
+  # --template (legacy) spreads the container config client-side so explicit
+  # flags can override it. --template-id wins when both are given.
   local obj
-  obj="$(rp::template_spread "$template")"
+  if [[ -n "$templateid" ]]; then
+    obj='{}'
+    rp::obj_set obj templateId "$(rp::json_str "$templateid")"
+  else
+    obj="$(rp::template_spread "$template")"
+  fi
 
   if [[ -n "$name" ]]; then
     rp::obj_set obj name "$(rp::json_str "$name")"
@@ -455,13 +463,19 @@ _serverless_logs() {
 # doc: create
 # Create a serverless endpoint from a template or a Hub listing.
 #
-# Usage: rp serverless create --template <id> --name <n> [--gpu <type,..>]
+# Usage: rp serverless create --template <id>|--template-id <id> --name <n>
+#                             [--gpu <type,..>]
 #                             [--network-volume <name> | --network-volume-id <id>
 #                              | --network-volume-ids <id,id>]
 #                             [--type QUEUE|LOAD_BALANCER] [flags]
 #
 # Options:
-#   --template <id>               template id to deploy (required unless --hub-id)
+#   --template <id>               template id to deploy (required unless --hub-id
+#                                 or --template-id); spread client-side so flags
+#                                 can override the template's container config
+#   --template-id <id>            v2-native template id (alternative to
+#                                 --template); the API applies the template's
+#                                 container config, so flags cannot override it
 #   --hub-id <listing-id>         deploy from a Hub listing (requires --name;
 #                                 mutually exclusive with --template)
 #   --name <n>                    endpoint name (required); idempotent by name
@@ -705,7 +719,7 @@ rp::cmd_serverless() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp serverless <verb> [flags]
-  create --template <id> [--name <n>] [--gpu <type,..> | --gpus-from-volume <name>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids <id,id>]
+  create --template <id>|--template-id <id> [--name <n>] [--gpu <type,..> | --gpus-from-volume <name>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids <id,id>]
           [--type QUEUE|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot] [--env K=V]…
           [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] [--execution-timeout <s>] [--hub-id <listing-id>] [--force] [--registry <id>]
           (idempotent by --name; --hub-id deploys from a Hub listing; --type defaults to QUEUE;
