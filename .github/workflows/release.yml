@@ -113,7 +113,6 @@ jobs:
           class Rp < Formula
             desc "CLI for managing RunPod infrastructure (volumes, serverless, pods, billing)"
             homepage "https://github.com/objctp/runpod-cli"
-            version "${VERSION}"
             url "https://github.com/objctp/runpod-cli/releases/download/${VERSION}/rp-${VERSION}.tar.gz"
             sha256 "${SHA256}"
             license "MIT"
@@ -121,7 +120,7 @@ jobs:
             depends_on "bash"
 
             def install
-              inreplace "bin/rp", %r{^#!/usr/bin/env bash}, "#!#{Formula["bash"].opt_bin}/bash"
+              inreplace "bin/rp", %r{^#!/usr/bin/env bash}, "#!#{formula_opt_bin("bash")}/bash"
               prefix.install Dir["bin", "lib", "commands", "LICENSE"]
             end
 
@@ -131,9 +130,12 @@ jobs:
           end
           RB
 
-          brew audit --formula Formula/rp.rb
-          brew style --formula Formula/rp.rb
-          brew test --formula Formula/rp.rb
+          brew tap objctp/tap "$TAP_DIR"
+          brew trust objctp/tap
+          brew audit objctp/tap/rp
+          brew style objctp/tap/rp
+          brew install objctp/tap/rp
+          brew test objctp/tap/rp
 
           git add Formula/rp.rb
           git commit -m "rp ${VERSION}"
