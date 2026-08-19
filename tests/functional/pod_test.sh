@@ -498,3 +498,32 @@ function test_create_requires_image_or_template_id() {
   (_pod_create >/dev/null 2>&1)
   assert_exit_code 2
 }
+
+function test_should_set_startSsh_true_when_create_flag_given() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --ssh
+  _pod_create >/dev/null 2>&1
+  assert_equals "true" "$(jq -r '.startSsh' "$body")"
+  assert_equals "boolean" "$(jq -r '.startSsh|type' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_omit_startSsh_when_create_flag_absent() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090"
+  _pod_create >/dev/null 2>&1
+  assert_equals "false" "$(jq -r 'has("startSsh")' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}

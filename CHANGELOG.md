@@ -6,6 +6,7 @@
 
 - Post-parse flag-alias layer (RP_FLAG_ALIASES)
 - Serverless data-plane verbs status and health
+- Add --ssh flag to rp pod create (startSsh:true)
 
 ### Fixed
 

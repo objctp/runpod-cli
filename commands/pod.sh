@@ -154,6 +154,10 @@ _pod_create() {
   fi
   rp::obj_set obj globalNetworking "$gn"
 
+  if rp::args_has ssh; then
+    rp::obj_set obj startSsh "true"
+  fi
+
   local nv
   nv="$(rp::args_get network-volume-id)"
   if [[ -n "$nv" ]]; then
@@ -227,6 +231,8 @@ _pod_logs() {
 #   --start-cmd <a,b,…>            arguments passed to the container entrypoint
 #   --template <id>                template whose container config seeds the pod
 #   --registry <id>                registry credential for a private image
+#   --ssh                          start the pod with runpodctl-style SSH
+#                                  access enabled (requires registered SSH keys)
 #
 # Notes:
 #   A pod is either a GPU pod or a CPU pod: pass --gpu or --cpu-flavor, never
@@ -475,7 +481,7 @@ Usage: rp pod <verb> [flags]
           [--cpu-flavor <id>] [--vcpu <n>]   (CPU-only pod; excludes --gpu and --volume-gb)
           [--cloud SECURE|COMMUNITY] [--network-volume-id <id>] [--volume-gb N] [--container-disk-gb N]
           [--volume-path <p>] [--global-networking true|false] [--ports <a/b,...>] [--env K=V]…
-            [--start-cmd <a,b,...>] [--template <id>] [--template-id <id>] [--registry <id>]
+            [--start-cmd <a,b,...>] [--template <id>] [--template-id <id>] [--registry <id>] [--ssh]
   update <id> [--container-disk-gb N] [--volume-gb N] [--volume-path <p>] [--name <n>] [--image <img>]
           [--global-networking true|false] [--locked true|false]
           [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>] [--registry <id>]   (PATCH; resets a running pod)
