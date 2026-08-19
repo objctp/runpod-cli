@@ -4,6 +4,10 @@
 _RP_ARGS=1
 
 declare -gA RP_ARGS=()
+# All positional arguments in order (RP_ARGS[pos] is a backward-compat alias for
+# the first). A handful of verbs (e.g. `rp serverless status <id> <jobId>`) take
+# more than one positional; read the rest via rp::args_pos_at / rp::require_pos_at.
+declare -ga RP_POSITIONALS=()
 RP_BOOL_FLAGS=(async json flashboot force help interruptible serverless sync)
 # Value flags that may be repeated; occurrences accumulate newline-joined, so
 # `--env A=1 --env B=2` becomes "A=1\nB=2". Newline (not comma) is the separator
@@ -51,8 +55,10 @@ rp::args_parse() {
       fi
       ;;
     *)
-      # Keep only the first positional; every rp command takes at most one, so
-      # ignoring extras avoids "rp pod get a b" -> id "a b" -> a malformed URL.
+      # Collect every positional in order; RP_ARGS[pos] stays the first for the
+      # many verbs that take exactly one id (e.g. `rp pod get <id>`). Verbs that
+      # need more read the rest via rp::args_pos_at / rp::require_pos_at.
+      RP_POSITIONALS+=("$1")
       [[ -n "${RP_ARGS[pos]:-}" ]] || RP_ARGS[pos]="$1"
       shift
       ;;
@@ -66,6 +72,14 @@ rp::args_get() { printf '%s' "${RP_ARGS[$1]:-${2:-}}"; }
 rp::args_has() { [[ -n "${RP_ARGS[$1]:-}" ]]; }
 
 rp::args_pos() { printf '%s' "${RP_ARGS[pos]:-}"; }
+
+# Print the positional at index $1 (0-based). Defaults to the first when $1 is
+# empty. Used by verbs with more than one positional (e.g.
+# `rp serverless status <id> <jobId>`).
+rp::args_pos_at() {
+  local idx="${1:-0}"
+  printf '%s' "${RP_POSITIONALS[$idx]:-}"
+}
 
 # Assign the positional to the variable named in $1.
 # Arguments:
@@ -81,6 +95,21 @@ rp::require_pos() {
   [[ -n "${RP_ARGS[pos]:-}" ]] || rp::usage "$2"
   # shellcheck disable=SC2034 # nameref assignment lands in the caller's variable
   require_pos_out="${RP_ARGS[pos]}"
+}
+
+# Like rp::require_pos but for the positional at index $1 (0-based). Lets a verb
+# demand a specific positional beyond the first (e.g. the job id in
+# `rp serverless status <id> <jobId>`).
+# Arguments:
+#   $1 - index: 0-based positional index
+#   $2 - out: caller's variable name (nameref) to receive the positional
+#   $3 - usage: message shown when the positional is missing
+rp::require_pos_at() {
+  local idx="${1:-0}"
+  local -n require_pos_at_out="$2"
+  [[ -n "${RP_POSITIONALS[$idx]:-}" ]] || rp::usage "$3"
+  # shellcheck disable=SC2034 # nameref assignment lands in the caller's variable
+  require_pos_at_out="${RP_POSITIONALS[$idx]}"
 }
 
 # rp::args_get that rp::die's unless the value is a non-negative integer (or unset).

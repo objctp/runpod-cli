@@ -398,6 +398,74 @@ _serverless_run() {
   rp::emit_json_or "$body" _serverless_run_human "$id" "$body"
 }
 
+# Exit code for a serverless job status: COMPLETED is success (0); the terminal
+# failure states FAILED / CANCELLED / TIMED_OUT are 1; any non-terminal state
+# (IN_QUEUE / IN_PROGRESS) is 0. Pure (no side effects) so it is unit testable,
+# and is the single source of the status→exit mapping on the serverless surface.
+_serverless_status_exit() {
+  case "$1" in
+  COMPLETED) return 0 ;;
+  FAILED | CANCELLED | TIMED_OUT) return 1 ;;
+  *) return 0 ;;
+  esac
+}
+
+# Fetch a job's status from the data plane (GET /{id}/status/{jobId}) and render
+# it (pretty in human mode, raw with --json), exiting with the job's
+# terminal-status code. The only transport it uses is rp::http_api (the
+# data-plane seam) — no transport of its own. Mirrors runpodctl's
+# `serverless status <id> <job-id>`: stdout is the job payload, exit 0 on
+# COMPLETED, 1 on FAILED / CANCELLED / TIMED_OUT (the payload still prints so a
+# FAILED job's error is visible), 0 while IN_QUEUE / IN_PROGRESS. The status→exit
+# mapping itself lives in the shared _serverless_status_exit helper.
+_serverless_status() {
+  local id jobid body status
+  rp::require_pos_at 0 id "usage: rp serverless status <id> <jobId>"
+  rp::require_id id "$id" "endpoint id"
+  rp::require_pos_at 1 jobid "usage: rp serverless status <id> <jobId>"
+  rp::require_id jobid "$jobid" "job id"
+  body="$(rp::http_api GET "/$id/status/$jobid")"
+  status="$(printf '%s' "$body" | jq -r '.status // empty')"
+  rp::emit_json_or "$body" rp::json_pretty "$body"
+  _serverless_status_exit "$status"
+}
+
+# Worker/job histogram from the data-plane GET /{id}/health. Prints the workers
+# and jobs count sections (runpodctl's "worker and job counts"); with --json the
+# raw envelope passes through. Mirrors the `workers` verb's histogram style.
+_serverless_health_human() {
+  local body="$1"
+  printf '%s' "$body" | jq -r '
+    "workers: " + ([
+      "total=\(.workers.total // 0)",
+      "ready=\(.workers.ready // 0)",
+      "running=\(.workers.running // 0)",
+      "idle=\(.workers.idle // 0)",
+      "initializing=\(.workers.initializing // 0)",
+      "throttled=\(.workers.throttled // 0)",
+      "unhealthy=\(.workers.unhealthy // 0)"
+    ] | join("  ")),
+    "jobs: " + ([
+      "total=\(.jobs.total // 0)",
+      "completed=\(.jobs.completed // 0)",
+      "failed=\(.jobs.failed // 0)",
+      "inProgress=\(.jobs.inProgress // 0)",
+      "inQueue=\(.jobs.inQueue // 0)",
+      "retried=\(.jobs.retried // 0)"
+    ] | join("  "))'
+}
+
+# Fetch an endpoint's health (data plane GET /{id}/health) and print the
+# worker/job histogram (raw envelope with --json).
+_serverless_health() {
+  local id
+  rp::require_pos_at 0 id "usage: rp serverless health <id>"
+  rp::require_id id "$id" "endpoint id"
+  local body
+  body="$(rp::http_api GET "/$id/health")"
+  rp::emit_json_or "$body" _serverless_health_human "$body"
+}
+
 # Histogram to stderr; --json passes the raw envelope through.
 _serverless_workers() {
   local id
@@ -700,6 +768,50 @@ _serverless_logs() {
 #
 # API: POST /v2/{id}/runsync  (or /run with --async)
 
+# doc: status
+# Check the status of a job submitted earlier on a deployed endpoint.
+#
+# Usage: rp serverless status <id> <jobId> [--json]
+#
+# Arguments:
+#   <id>             endpoint id — from `rp serverless list`
+#   <jobId>          job id returned by `rp serverless run --async`
+#
+# Options:
+#   --json           print the raw job-status envelope
+#
+# Notes:
+#   The call rides the data plane (api.runpod.ai/v2), distinct from the
+#   control-plane REST. stdout is the job payload (pretty in human mode), so a
+#   FAILED job's `error` is still visible. Exit code mirrors runpodctl:
+#   0 when the job is COMPLETED (and while it is IN_QUEUE / IN_PROGRESS),
+#   1 when the job ends FAILED / CANCELLED / TIMED_OUT.
+#
+# Examples:
+#   rp serverless status end_abc job-60902e6c-0a1
+#
+# API: GET /{id}/status/{jobId}
+
+# doc: health
+# Show a deployed endpoint's operational health: worker and job counts.
+#
+# Usage: rp serverless health <id> [--json]
+#
+# Arguments:
+#   <id>             endpoint id — from `rp serverless list`
+#
+# Options:
+#   --json           print the raw health envelope (workers + jobs)
+#
+# Notes:
+#   The call rides the data plane (api.runpod.ai/v2), distinct from the
+#   control-plane REST. Human mode prints a worker/job histogram to stdout.
+#
+# Examples:
+#   rp serverless health end_abc
+#
+# API: GET /{id}/health
+
 rp::cmd_serverless() {
   local verb="${1:-help}"
   shift || true
@@ -716,6 +828,8 @@ rp::cmd_serverless() {
   releases) _serverless_releases ;;
   logs) _serverless_logs ;;
   run) _serverless_run ;;
+  status) _serverless_status ;;
+  health) _serverless_health ;;
   -h | --help | help)
     cat <<'EOF'
 Usage: rp serverless <verb> [flags]
@@ -730,6 +844,8 @@ Usage: rp serverless <verb> [flags]
   workers <id>        live worker ids/states/placement (+ status histogram, --json for full envelope)
   releases <id>       release history newest-first (+ rollout summary; per-release diff column)
   logs <id> --worker <id>   live worker log stream (--worker id from `workers`; same source/tail/since/last-event-id flags)
+  status <id> <jobId>     data-plane job status: GET /{id}/status/{jobId} (exit 0 COMPLETED, 1 FAILED|CANCELLED|TIMED_OUT)
+  health <id>          data-plane health: GET /{id}/health (worker + job counts; --json for full envelope)
 EOF
     ;;
   *) rp::usage "unknown serverless verb: '$verb'" ;;

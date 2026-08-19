@@ -25,6 +25,32 @@ function test_should_keep_only_first_positional_when_multiple_given() {
   assert_equals "create" "$(rp::args_pos)"
 }
 
+function test_should_collect_all_positionals_in_order() {
+  rp::args_parse ep_1 job_2 tail
+  assert_equals "ep_1" "$(rp::args_pos_at 0)"
+  assert_equals "job_2" "$(rp::args_pos_at 1)"
+  assert_equals "tail" "$(rp::args_pos_at 2)"
+  assert_equals "" "$(rp::args_pos_at 3)"
+}
+
+function test_should_require_positional_at_index() {
+  local id job
+  rp::args_parse ep_1 job_2
+  rp::require_pos_at 0 id "usage: rp serverless status <id> <jobId>"
+  rp::require_pos_at 1 job "usage: rp serverless status <id> <jobId>"
+  assert_equals "ep_1" "$id"
+  assert_equals "job_2" "$job"
+}
+
+function test_should_exit_two_when_require_pos_at_missing() {
+  rp::args_parse ep_1
+  (
+    local job
+    rp::require_pos_at 1 job "usage: rp serverless status <id> <jobId>" >/dev/null 2>&1
+  )
+  assert_exit_code 2
+}
+
 function test_should_set_bool_when_known_bool_flag_given() {
   rp::args_parse --json
   assert_equals "1" "$(rp::args_get json)"
