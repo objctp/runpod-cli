@@ -6,6 +6,7 @@
 
 - Fix 401 from quoted .env values
 - Add post-parse flag-alias layer (RP_FLAG_ALIASES)
+- Add serverless data-plane verbs: status and health
 
 ### Fixed
 

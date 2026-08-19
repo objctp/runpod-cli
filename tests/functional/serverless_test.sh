@@ -645,3 +645,131 @@ function test_should_route_workers_and_releases_verbs() {
   rp::http() { :; }
   rm -f "$cap"
 }
+
+# rp serverless status e1 job-1 — data-plane GET /e1/status/job-1, exit 0 on COMPLETED.
+function test_should_get_status_on_data_plane_when_status_given() {
+  local cap rc
+  cap="$(mktemp)"
+  rp::http_api() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    printf '{"id":"job-1","status":"COMPLETED","output":{"ok":true}}'
+  }
+  rp::cmd_serverless status e1 job-1 >/dev/null 2>&1
+  rc=$?
+  assert_equals "GET /e1/status/job-1" "$(<"$cap")"
+  assert_equals 0 "$rc"
+  rp::http_api() { :; }
+  rm -f "$cap"
+}
+
+# status reuses the shared _serverless_status_exit mapping (COMPLETED handled
+# above); the terminal-failure states map to exit 1, non-terminal to 0.
+function test_should_map_terminal_status_to_exit_code() {
+  local s rc
+  for s in FAILED CANCELLED TIMED_OUT; do
+    rp::http_api() { printf '{"id":"j","status":"%s"}' "$s"; }
+    rp::cmd_serverless status e1 j >/dev/null 2>&1
+    rc=$?
+    assert_equals 1 "$rc" "status $s should exit 1"
+  done
+  for s in IN_QUEUE IN_PROGRESS ''; do
+    rp::http_api() { printf '{"id":"j","status":"%s"}' "$s"; }
+    rp::cmd_serverless status e1 j >/dev/null 2>&1
+    rc=$?
+    assert_equals 0 "$rc" "status '$s' should exit 0"
+  done
+  rp::http_api() { :; }
+}
+
+# The status→exit mapping lives in one shared helper, not reimplemented per
+# verb: assert _serverless_status_exit directly.
+function test_should_centralise_status_exit_mapping_in_helper() {
+  _serverless_status_exit COMPLETED
+  assert_equals 0 $?
+  _serverless_status_exit FAILED
+  assert_equals 1 $?
+  _serverless_status_exit CANCELLED
+  assert_equals 1 $?
+  _serverless_status_exit TIMED_OUT
+  assert_equals 1 $?
+  _serverless_status_exit IN_QUEUE
+  assert_equals 0 $?
+  _serverless_status_exit IN_PROGRESS
+  assert_equals 0 $?
+}
+
+# status --json still emits the raw envelope and keeps the exit mapping.
+function test_should_emit_raw_envelope_on_status_json() {
+  local cap
+  cap="$(mktemp)"
+  rp::http_api() {
+    printf '%s' "$1 $2" >"$cap"
+    printf '{"id":"job-1","status":"FAILED","error":"boom"}'
+  }
+  local out rc
+  out="$(rp::cmd_serverless status e1 job-1 --json 2>/dev/null)"
+  rc=$?
+  assert_equals '{"id":"job-1","status":"FAILED","error":"boom"}' "$out"
+  assert_equals 1 "$rc"
+  rp::http_api() { :; }
+  rm -f "$cap"
+}
+
+# status requires both the endpoint id and the job id.
+function test_should_exit_usage_when_status_missing_job_id() {
+  rp::http_api() { :; }
+  (rp::cmd_serverless status e1 >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+# rp serverless health e1 — data-plane GET /e1/health, worker + job histogram.
+function test_should_get_health_on_data_plane_and_print_counts() {
+  local cap out
+  cap="$(mktemp)"
+  rp::http_api() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    printf '{"jobs":{"completed":1,"failed":5,"inProgress":0,"inQueue":2,"retried":0},"workers":{"idle":0,"running":0}}'
+  }
+  out="$(rp::cmd_serverless health e1 2>/dev/null)"
+  assert_equals "GET /e1/health" "$(<"$cap")"
+  assert_contains "workers:" "$out"
+  assert_contains "jobs:" "$out"
+  assert_contains "completed=1" "$out"
+  assert_contains "failed=5" "$out"
+  assert_contains "inQueue=2" "$out"
+  rp::http_api() { :; }
+  rm -f "$cap"
+}
+
+# health --json passes the raw envelope through.
+function test_should_emit_raw_envelope_on_health_json() {
+  local envelope='{"jobs":{"completed":1,"failed":5,"inProgress":0,"inQueue":2,"retried":0},"workers":{"idle":0,"running":0}}'
+  rp::http_api() { printf '%s' "$envelope"; }
+  local out
+  out="$(rp::cmd_serverless health e1 --json 2>/dev/null)"
+  assert_equals "$envelope" "$out"
+  rp::http_api() { :; }
+}
+
+# health requires an endpoint id.
+function test_should_exit_usage_when_health_missing_id() {
+  rp::http_api() { :; }
+  (rp::cmd_serverless health >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+# status and health route through the public dispatcher to the data plane.
+function test_should_route_status_and_health_verbs() {
+  local cap
+  cap="$(mktemp)"
+  rp::http_api() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    printf '{"jobs":{},"workers":{}}'
+  }
+  rp::cmd_serverless status e1 job-1 >/dev/null 2>&1
+  assert_contains "GET /e1/status/job-1" "$(<"$cap")"
+  rp::cmd_serverless health e1 >/dev/null 2>&1
+  assert_contains "GET /e1/health" "$(<"$cap")"
+  rp::http_api() { :; }
+  rm -f "$cap"
+}
