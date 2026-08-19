@@ -257,6 +257,107 @@ function test_should_set_registry_on_update() {
   rm -f "$body"
 }
 
+# --template-id on update swaps the endpoint's template: PATCH body carries
+# templateId, and nothing else is forced in when only the template changes.
+function test_should_emit_template_id_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"e1"}'
+  }
+  rp::args_parse e1 --template-id tpl_new
+  _serverless_update >/dev/null 2>&1
+  assert_equals 'tpl_new' "$(jq -r '.templateId' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+# --name on update renames the endpoint: PATCH body carries name.
+function test_should_emit_name_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"e1"}'
+  }
+  rp::args_parse e1 --name renamed-ep
+  _serverless_update >/dev/null 2>&1
+  assert_equals 'renamed-ep' "$(jq -r '.name' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+# --scale-by delay coerces to scaling.type QUEUE_DELAY, and --scale-threshold N
+# lands in scaling.queueDelay. These are the runpodctl aliases for rp's own
+# --scaler-type/--scaler-value, handled in-command.
+function test_should_coerce_scale_by_delay_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"e1"}'
+  }
+  rp::args_parse e1 --scale-by delay --scale-threshold 30
+  _serverless_update >/dev/null 2>&1
+  assert_equals 'QUEUE_DELAY' "$(jq -r '.scaling.type' "$body")"
+  assert_equals '30' "$(jq -r '.scaling.queueDelay' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+# --scale-by requests coerces to scaling.type REQUEST_COUNT, and --scale-threshold
+# N lands in scaling.requestCount.
+function test_should_coerce_scale_by_requests_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"e1"}'
+  }
+  rp::args_parse e1 --scale-by requests --scale-threshold 30
+  _serverless_update >/dev/null 2>&1
+  assert_equals 'REQUEST_COUNT' "$(jq -r '.scaling.type' "$body")"
+  assert_equals '30' "$(jq -r '.scaling.requestCount' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+# rp's own --scaler-type/--scaler-value must keep working on update, untouched
+# by the new coercion aliases (acceptance: existing flags unaffected).
+function test_should_keep_scaler_type_value_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"e1"}'
+  }
+  rp::args_parse e1 --scaler-type REQUEST_COUNT --scaler-value 5
+  _serverless_update >/dev/null 2>&1
+  assert_equals 'REQUEST_COUNT' "$(jq -r '.scaling.type' "$body")"
+  assert_equals '5' "$(jq -r '.scaling.requestCount' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+# rp's native --scaler-type must win when given alongside the --scale-by alias
+# (per D1's collision policy: rp's meaning always wins). --scale-by is ignored
+# rather than silently flipping the type.
+function test_should_let_native_scaler_type_win_over_scale_by() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"e1"}'
+  }
+  rp::args_parse e1 --scaler-type REQUEST_COUNT --scale-by delay
+  _serverless_update >/dev/null 2>&1
+  assert_equals 'REQUEST_COUNT' "$(jq -r '.scaling.type' "$body")"
+  assert_equals '1' "$(jq -r '.scaling.requestCount' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
 function test_should_exit_usage_when_create_has_no_gpu() {
   rp::http() {
     case "$1 $2" in
