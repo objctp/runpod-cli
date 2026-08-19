@@ -117,7 +117,11 @@ _pod_create() {
     rp::obj_set obj registry "$(rp::json_str "$registry")"
   fi
 
-  local gpu first_gpu gcount
+  local gpu first_gpu gcount gpu_obj min_cuda
+  min_cuda="$(rp::args_get min-cuda-version)"
+  if [[ -n "$min_cuda" ]]; then
+    [[ "$min_cuda" =~ ^[0-9]+\.[0-9]+$ ]] || rp::usage "usage: rp pod create --min-cuda-version must be a version like 12.1 (got '$min_cuda')"
+  fi
   gpu="$(rp::args_get gpu)"
   if [[ -n "$gpu" ]]; then
     first_gpu="$(rp::split_csv "$gpu" | head -n1)"
@@ -125,7 +129,11 @@ _pod_create() {
       rp::warn "v2 supports one GPU type per pod; using the first ($first_gpu)"
     fi
     gcount="$(rp::args_get_uint gpu-count "$RP_DEFAULT_GPU_COUNT")"
-    obj="$(_json_merge "$obj" "$(rp::json_obj gpu "$(rp::json_gpu_pod "$first_gpu" "$gcount")")")"
+    gpu_obj="$(rp::json_gpu_pod "$first_gpu" "$gcount")"
+    if [[ -n "$min_cuda" ]]; then
+      gpu_obj="$(_json_merge "$gpu_obj" "$(rp::json_obj minCudaVersion "$(rp::json_str "$min_cuda")")")"
+    fi
+    obj="$(_json_merge "$obj" "$(rp::json_obj gpu "$gpu_obj")")"
   fi
 
   # CPU-only pod: exactly one of gpu/cpu, vcpuCount a power of two >= 2, and no
@@ -233,6 +241,8 @@ _pod_logs() {
 #   --registry <id>                registry credential for a private image
 #   --ssh                          start the pod with runpodctl-style SSH
 #                                  access enabled (requires registered SSH keys)
+#   --min-cuda-version <x.y>       require a GPU driver with at least this CUDA
+#                                  version (e.g. 12.1); GPU pods only
 #
 # Notes:
 #   A pod is either a GPU pod or a CPU pod: pass --gpu or --cpu-flavor, never
@@ -255,6 +265,11 @@ _pod_logs() {
 #   v2 has no templateId parameter. --template fetches the template and spreads
 #   its container config as defaults, which any explicit flag then overrides.
 #   --interruptible is accepted and ignored: v2 has no interruptible pod tier.
+#   --min-cuda-version is a GPU-only field: a value not matching X.Y (e.g. 12.1)
+#   is rejected up front, and a valid value is applied only to GPU pods — on a
+#   CPU pod it is silently ignored (there is no gpu block to carry it). It is
+#   mutually exclusive with any allowed-CUDA-versions selection, which rp does
+#   not expose.
 #   --force is accepted and ignored. Unlike `rp volume create` and
 #   `rp template create`, pod creation is not idempotent by name, so re-running
 #   this command creates a second pod.
@@ -482,6 +497,7 @@ Usage: rp pod <verb> [flags]
           [--cloud SECURE|COMMUNITY] [--network-volume-id <id>] [--volume-gb N] [--container-disk-gb N]
           [--volume-path <p>] [--global-networking true|false] [--ports <a/b,...>] [--env K=V]…
             [--start-cmd <a,b,...>] [--template <id>] [--template-id <id>] [--registry <id>] [--ssh]
+            [--min-cuda-version <x.y>]
   update <id> [--container-disk-gb N] [--volume-gb N] [--volume-path <p>] [--name <n>] [--image <img>]
           [--global-networking true|false] [--locked true|false]
           [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>] [--registry <id>]   (PATCH; resets a running pod)

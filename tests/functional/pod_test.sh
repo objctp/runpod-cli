@@ -527,3 +527,53 @@ function test_should_omit_startSsh_when_create_flag_absent() {
   rp::http() { :; }
   rm -f "$body"
 }
+
+function test_should_set_min_cuda_version_when_create_flag_given() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --min-cuda-version 12.1
+  _pod_create >/dev/null 2>&1
+  assert_equals "12.1" "$(jq -r '.gpu.minCudaVersion' "$body")"
+  assert_equals "string" "$(jq -r '.gpu.minCudaVersion|type' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_omit_min_cuda_version_when_create_flag_absent() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090"
+  _pod_create >/dev/null 2>&1
+  assert_equals "false" "$(jq -r '.gpu | has("minCudaVersion")' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_die_on_invalid_min_cuda_version_integer() {
+  rp::http() { :; }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --min-cuda-version 12
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_on_invalid_min_cuda_version_text() {
+  rp::http() { :; }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --min-cuda-version abc
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_on_invalid_min_cuda_version_for_cpu_pod() {
+  rp::http() { :; }
+  rp::args_parse --image img --name foo --cpu-flavor cpu5c --vcpu 4 --min-cuda-version abc
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
