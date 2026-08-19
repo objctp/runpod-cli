@@ -173,7 +173,17 @@ function test_should_not_pass_empty_arg_to_rm_on_get() {
   _RP_RM_LOG="$(mktemp)"
   rm() { _rp_rm_record "$@"; }
   curl() {
-    printf '%s' "${GQL_BODY:-}" >"${3:-/dev/null}"
+    local out=""
+    while (($#)); do
+      case "$1" in
+      -o)
+        out="$2"
+        shift 2
+        ;;
+      *) shift ;;
+      esac
+    done
+    [[ -n "$out" ]] && printf '%s' "${GQL_BODY:-}" >"$out"
     printf '%s' "${GQL_STATUS:-200}"
   }
   _curl_json "https://rest.test/v2/pods" GET >/dev/null 2>&1

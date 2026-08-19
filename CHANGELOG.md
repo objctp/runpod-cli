@@ -2,15 +2,16 @@
 
 ## Unreleased
 
-### Changed
+### Added
 
-- Fix 401 from quoted .env values
-- Add post-parse flag-alias layer (RP_FLAG_ALIASES)
-- Add serverless data-plane verbs: status and health
+- Post-parse flag-alias layer (RP_FLAG_ALIASES)
+- Serverless data-plane verbs status and health
 
 ### Fixed
 
 - Make npm publish idempotent in release workflow
+- 401 from quoted .env values
+- Test polluting cwd with a stray '15' file
 
 ## [1.0.0] - 2026-08-17
 
