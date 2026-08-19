@@ -76,6 +76,26 @@ _pod_create() {
   name_val="$(rp::args_get name)"
   [[ -n "$name_val" ]] || rp::usage "usage: rp pod create --name <n> (see: rp pod --help)"
 
+  # --compute-type is a runpodctl coercion alias (not a data field), handled
+  # here after the alias layer: it never mints new fields, only requires the
+  # matching rp flags be present so the existing gpu/cpu path is selected.
+  local compute_type
+  compute_type="$(rp::args_get compute-type)"
+  if [[ -n "$compute_type" ]]; then
+    case "$compute_type" in
+    GPU)
+      rp::args_has gpu || rp::usage "usage: rp pod create --compute-type GPU requires --gpu <type> (see: rp pod --help)"
+      ;;
+    CPU)
+      rp::args_has cpu-flavor || rp::usage "usage: rp pod create --compute-type CPU requires --cpu-flavor <id> (see: rp pod --help)"
+      rp::args_has vcpu || rp::usage "usage: rp pod create --compute-type CPU requires --vcpu <n> (see: rp pod --help)"
+      ;;
+    *)
+      rp::usage "invalid --compute-type '$compute_type' (expected GPU|CPU)"
+      ;;
+    esac
+  fi
+
   local obj='{}'
   if [[ -n "$name_val" ]]; then
     rp::obj_set obj name "$(rp::json_str "$name_val")"
@@ -224,6 +244,9 @@ _pod_logs() {
 #   --gpu-count N                  GPUs to attach (default: 1)
 #   --cpu-flavor <id>              CPU flavour id — see `rp stock cpus`
 #   --vcpu N                       vCPUs; a power of two, minimum 2
+#   --compute-type GPU|CPU         runpodctl alias: routes to --gpu or to
+#                                  --cpu-flavor/--vcpu (requires the matching
+#                                  flags); adds no data of its own
 #   --cloud SECURE|COMMUNITY       hardware tier (default: SECURE)
 #   --dc <id,…>                    preferred datacentres; omit to let the
 #                                  scheduler place the pod
@@ -258,6 +281,10 @@ _pod_logs() {
 #   machine and lost if that host fails, whilst --network-volume-id is durable
 #   and must already live in the pod's datacentre. CPU pods reject --volume-gb.
 #   The mount kind is fixed at create — `rp pod update` cannot switch it.
+#   --compute-type is runpodctl's spelling for the same choice: `--compute-type
+#   GPU --gpu <t>` and `--compute-type CPU --cpu-flavor <id> --vcpu <n>` are
+#   equivalent to the canonical rp invocations; it carries no data and dies if
+#   the matching flags are absent.
 #   --gpu takes a single type in v2. A comma-separated list is still accepted,
 #   but only the first entry is used and a warning is printed.
 #   --global-networking needs an NVIDIA GPU and a datacentre that supports it,
@@ -492,8 +519,8 @@ rp::cmd_pod() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp pod <verb> [flags]
-  create --image <img> [--name <n>] [--gpu <id>] [--gpu-count N] [--dc <id,id>]
-          [--cpu-flavor <id>] [--vcpu <n>]   (CPU-only pod; excludes --gpu and --volume-gb)
+  create --image <img> [--name <n>] [--gpu <id>] [--gpu-count N] [--compute-type GPU|CPU]
+          [--dc <id,id>] [--cpu-flavor <id>] [--vcpu <n>]   (CPU-only pod: --cpu-flavor excludes --gpu and --volume-gb)
           [--cloud SECURE|COMMUNITY] [--network-volume-id <id>] [--volume-gb N] [--container-disk-gb N]
           [--volume-path <p>] [--global-networking true|false] [--ports <a/b,...>] [--env K=V]…
             [--start-cmd <a,b,...>] [--template <id>] [--template-id <id>] [--registry <id>] [--ssh]
