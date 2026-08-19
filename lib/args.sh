@@ -58,6 +58,7 @@ rp::args_parse() {
       ;;
     esac
   done
+  rp::args_apply_aliases
 }
 
 rp::args_get() { printf '%s' "${RP_ARGS[$1]:-${2:-}}"; }
@@ -111,4 +112,42 @@ rp::split_csv() {
   local -a arr
   IFS=, read -ra arr <<<"$1"
   printf '%s\n' "${arr[@]}"
+}
+
+# Post-parse flag aliases: runpodctl spelling -> rp canonical (key-copy only).
+# Never overloads an rp flag, and never overwrites an explicitly-set canonical
+# value. --env is deliberately NOT aliased: rp uses repeatable K=V
+# (RP_REPEAT_FLAGS), runpodctl a single JSON object — divergent shapes.
+RP_FLAG_ALIASES=(
+  "gpu-id:gpu"
+  "data-center-ids:dc"
+  "container-disk-in-gb:container-disk-gb"
+  "volume-in-gb:volume-gb"
+  "volume-mount-path:volume-path"
+  "registry-auth-id:registry"
+  "cloud-type:cloud"
+  "docker-args:start-cmd"
+  "docker-start-cmd:docker-cmd"
+)
+
+# An alias whose name already means something in rp (a known bool/repeat flag)
+# is skipped — rp's meaning always wins, never overloaded.
+# Returns 0 (free) when $1 is not a known bool/repeat flag, 1 otherwise.
+rp::args_alias_is_free() {
+  [[ " ${RP_BOOL_FLAGS[*]} ${RP_REPEAT_FLAGS[*]} " != *" $1 "* ]]
+}
+
+# Apply RP_FLAG_ALIASES once after parsing: copy each alias into its canonical
+# when the canonical is absent. Called from rp::args_parse; the tokenizer above
+# is untouched.
+rp::args_apply_aliases() {
+  local entry alias canonical
+  for entry in "${RP_FLAG_ALIASES[@]}"; do
+    alias="${entry%%:*}"
+    canonical="${entry##*:}"
+    rp::args_alias_is_free "$alias" || continue
+    if [[ -z "${RP_ARGS[$canonical]:-}" && -n "${RP_ARGS[$alias]:-}" ]]; then
+      RP_ARGS["$canonical"]="${RP_ARGS[$alias]}"
+    fi
+  done
 }

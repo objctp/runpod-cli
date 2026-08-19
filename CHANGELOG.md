@@ -5,6 +5,7 @@
 ### Changed
 
 - Fix 401 from quoted .env values
+- Add post-parse flag-alias layer (RP_FLAG_ALIASES)
 
 ### Fixed
 
