@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Fix 401 from quoted .env values
+
 ### Fixed
 
 - Make npm publish idempotent in release workflow

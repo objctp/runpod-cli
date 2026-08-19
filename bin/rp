@@ -59,9 +59,17 @@ _rp_env_load() {
     [[ -z "$_ln" || "$_ln" == \#* || "$_ln" =~ ^[[:space:]]*$ ]] && continue
     [[ "$_ln" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
     _k="${_ln%%=*}"
+    _v="${_ln#*=}"
+    # Strip a single layer of surrounding single/double quotes: `export "$_ln"`
+    # keeps literal quotes inside the value, so RUNPOD_API_KEY="…" would send a
+    # Bearer token wrapped in quotes and the API answers HTTP 401. (Fix #N)
+    case "$_v" in
+    \"*\") _v="${_v#\"}"; _v="${_v%\"}" ;;
+    \'*\') _v="${_v#\'}"; _v="${_v%\'}" ;;
+    esac
     [[ -n "${!_k:-}" ]] && continue
     # shellcheck disable=SC2163 # dynamic var name parsed from a trusted .env line
-    export "$_ln"
+    export "$_k=$_v"
   done <"$f"
   rp::_xtrace_restore "$_rp_xtrace"
 }
