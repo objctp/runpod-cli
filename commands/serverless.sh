@@ -324,7 +324,7 @@ _serverless_scale() {
 
 _serverless_update() {
   local id
-  rp::require_pos id "usage: rp serverless update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>] [--registry <id>]"
+  rp::require_pos id "usage: rp serverless update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>] [--registry <id>] [--template-id <id>] [--name <n>] [--scale-by delay|requests] [--scale-threshold N]"
   rp::require_id id "$id" "endpoint id"
   _resource_meta serverless
   local obj='{}' gpu
@@ -347,6 +347,51 @@ _serverless_update() {
   if [[ -n "$registry" ]]; then
     rp::obj_set obj registry "$(rp::json_str "$registry")"
   fi
+
+  # New field: --template-id swaps the endpoint's template (v2 PATCH field
+  # templateId). Distinct from create's --template spread — here only the id is
+  # sent, the API applies the template's container config.
+  local templateid
+  templateid="$(rp::args_get template-id)"
+  if [[ -n "$templateid" ]]; then
+    rp::obj_set obj templateId "$(rp::json_str "$templateid")"
+  fi
+
+  # New field: --name renames the endpoint (PATCH body `name`).
+  local name
+  name="$(rp::args_get name)"
+  if [[ -n "$name" ]]; then
+    rp::obj_set obj name "$(rp::json_str "$name")"
+  fi
+
+  # Coercion aliases for runpodctl's --scale-by / --scale-threshold. These feed
+  # rp's own --scaler-type / --scaler-value (same PATCH `scaling` object), but the
+  # value must be translated first, so they are handled in-command rather than in
+  # the generic RP_FLAG_ALIASES map. Per D1's collision policy, rp's native flag
+  # always wins: the alias only applies when the canonical flag is unset, so
+  # `--scaler-type X --scale-by delay` keeps X rather than silently flipping to
+  # QUEUE_DELAY.
+  local scale_by scale_thr scaler_type scaler_val
+  scale_by="$(rp::args_get scale-by)"
+  scale_thr="$(rp::args_get scale-threshold)"
+  scaler_type="$(rp::args_get scaler-type)"
+  scaler_val="$(rp::args_get scaler-value)"
+  if [[ -z "$scaler_type" && -n "$scale_by" ]]; then
+    case "$scale_by" in
+    delay) scaler_type=QUEUE_DELAY ;;
+    requests) scaler_type=REQUEST_COUNT ;;
+    *) rp::usage "invalid --scale-by '$scale_by' (expected delay|requests)" ;;
+    esac
+  fi
+  if [[ -z "$scaler_val" && -n "$scale_thr" ]]; then
+    scaler_val="$scale_thr"
+  fi
+  if [[ -n "$scaler_type" || -n "$scaler_val" ]]; then
+    [[ -n "$scaler_type" ]] || scaler_type=QUEUE_DELAY
+    _serverless_scaling_obj "" "$scaler_type" "$scaler_val"
+    rp::obj_set obj scaling "$_RP_SCALING_JSON"
+  fi
+
   [[ "$obj" != '{}' ]] || rp::usage "nothing to update"
   local res
   res="$(rp::http PATCH "$RP_RES_PATH/$id" "$obj")"
@@ -622,11 +667,14 @@ _serverless_logs() {
 # API: GET /v2/serverless/{id}
 
 # doc: update
-# Change an endpoint's workers, GPU pool, or registry credential.
+# Change an endpoint's workers, GPU pool, registry, template, name, or scaling.
 #
 # Usage: rp serverless update <id> [--workers-min N] [--workers-max N]
 #                            [--idle S] [--gpu <types>] [--gpu-count N]
-#                            [--registry <id>]
+#                            [--registry <id>] [--template-id <id>]
+#                            [--name <n>] [--scale-by delay|requests]
+#                            [--scale-threshold N] [--scaler-type QUEUE_DELAY|REQUEST_COUNT]
+#                            [--scaler-value V]
 #
 # Arguments:
 #   <id>             endpoint id — from `rp serverless list`
@@ -638,12 +686,23 @@ _serverless_logs() {
 #   --gpu <types>    GPU type ids for the worker pool
 #   --gpu-count N    GPUs per worker (default: 1)
 #   --registry <id>  registry credential for a private image
+#   --template-id <id>   swap the endpoint's template (PATCH field templateId;
+#                        the API applies the template's container config)
+#   --name <n>           rename the endpoint (PATCH field name)
+#   --scale-by delay|requests   runpodctl alias for --scaler-type: delay maps to
+#                               QUEUE_DELAY, requests to REQUEST_COUNT
+#   --scale-threshold N  runpodctl alias for --scaler-value: the scaling
+#                        threshold (queueDelay seconds, or requestCount)
+#   --scaler-type QUEUE_DELAY|REQUEST_COUNT   scaling policy (rp native flag)
+#   --scaler-value V      scaling threshold (rp native flag)
 #   --json           print the raw API response
 #
 # Notes:
 #   At least one flag is required; with none, the command exits with a usage
 #   error rather than sending an empty PATCH.
 #   A --gpu change re-resolves pool ids from the type names.
+#   --scale-by / --scale-threshold are coercion aliases (runpodctl spelling)
+#   that feed the same scaling object as rp's --scaler-type / --scaler-value.
 #
 # API: PATCH /v2/serverless/{id}
 
@@ -839,7 +898,7 @@ Usage: rp serverless <verb> [flags]
           (idempotent by --name; --hub-id deploys from a Hub listing; --type defaults to QUEUE;
            --scaler-type defaults to QUEUE_DELAY with queueDelay 4; --idle sets workers.idleTimeout;
            --env overlays the template's env, user value winning per key)
-  list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types>] [--gpu-count N] [--registry <id>] | scale <id> --min N --max N [--idle S] | delete <id>
+  list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types>] [--gpu-count N] [--registry <id>] [--template-id <id>] [--name <n>] [--scale-by delay|requests] [--scale-threshold N] [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] | scale <id> --min N --max N [--idle S] | delete <id>
   run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]
   workers <id>        live worker ids/states/placement (+ status histogram, --json for full envelope)
   releases <id>       release history newest-first (+ rollout summary; per-release diff column)
