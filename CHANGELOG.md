@@ -8,6 +8,11 @@
 - Serverless data-plane verbs status and health
 - Add --ssh flag to rp pod create (startSsh:true)
 - Add --min-cuda-version flag to rp pod create (gpu.minCudaVersion)
+- Add --compute-type GPU|CPU coercion alias to rp pod create
+
+### Changed
+
+- Merge feat/pod-min-cuda-version: add --min-cuda-version flag to rp pod create
 
 ### Fixed
 

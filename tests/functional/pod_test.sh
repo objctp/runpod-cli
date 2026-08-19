@@ -577,3 +577,62 @@ function test_should_die_on_invalid_min_cuda_version_for_cpu_pod() {
   (_pod_create >/dev/null 2>&1)
   assert_exit_code 2
 }
+
+function test_should_die_when_compute_type_gpu_without_gpu() {
+  rp::http() { :; }
+  rp::args_parse --image img --name foo --compute-type GPU
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_when_compute_type_cpu_without_cpu_flavor() {
+  rp::http() { :; }
+  rp::args_parse --image img --name foo --compute-type CPU --vcpu 4
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_when_compute_type_cpu_without_vcpu() {
+  rp::http() { :; }
+  rp::args_parse --image img --name foo --compute-type CPU --cpu-flavor cpu5c
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_on_invalid_compute_type_value() {
+  rp::http() { :; }
+  rp::args_parse --image img --name foo --compute-type TPU --gpu "RTX 4090"
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_send_gpu_block_when_compute_type_gpu_with_gpu() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --name foo --compute-type GPU --gpu "RTX 4090"
+  _pod_create >/dev/null 2>&1
+  assert_equals "RTX 4090" "$(jq -r '.gpu.id' "$body")"
+  assert_equals "false" "$(jq -r 'has("cpu")' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_send_cpu_block_when_compute_type_cpu_with_cpu_flags() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --name foo --compute-type CPU --cpu-flavor cpu5c --vcpu 8
+  _pod_create >/dev/null 2>&1
+  assert_equals "cpu5c" "$(jq -r '.cpu.id' "$body")"
+  assert_equals "8" "$(jq -r '.cpu.vcpuCount' "$body")"
+  assert_equals "false" "$(jq -r 'has("gpu")' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
