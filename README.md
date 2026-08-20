@@ -208,6 +208,45 @@ a file), `--plane rest|api`, `--jq`, `--limit`, and `--cursor`.
 `serverless` / `pods` (list each), `make destroy` (lists everything you may want
 to tear down).
 
+## runpodctl compatibility
+
+`rp` covers the same ground as `runpodctl` for the commands it wraps, and where
+the two tools share a command but spell a flag differently, `rp` accepts
+**both** names — `runpodctl`'s spelling as an additional alias alongside `rp`'s
+own (never replacing it). An alias only copies its value into `rp`'s canonical
+flag when that flag is unset, so an explicit `rp` flag always wins.
+
+| `rp` flag (canonical) | `runpodctl` alias |
+| --- | --- |
+| `--gpu` | `--gpu-id` |
+| `--dc` | `--data-center-ids` |
+| `--container-disk-gb` | `--container-disk-in-gb` |
+| `--volume-gb` | `--volume-in-gb` |
+| `--volume-path` | `--volume-mount-path` |
+| `--registry` | `--registry-auth-id` |
+| `--cloud` | `--cloud-type` |
+| `--start-cmd` | `--docker-args` |
+| `--docker-cmd` | `--docker-start-cmd` |
+
+Two flags are **coercions** rather than plain aliases — `rp` adopted
+`runpodctl`'s spelling and maps it onto its own fields:
+
+- `--compute-type GPU|CPU` (pod) selects the GPU path (`--gpu`) or the
+  CPU path (`--cpu-flavor` + `--vcpu`); it carries no data of its own and
+  errors if the matching `rp` flags are absent.
+- `--scale-by delay|requests` and `--scale-threshold N` (serverless) map to
+  `--scaler-type` and `--scaler-value`.
+
+One deliberate divergence: **`--env` is not aliased.** `rp`'s `--env` is
+repeatable `K=V` (e.g. `--env A=1 --env B=2`), whereas `runpodctl`'s `--env` is
+a single JSON object — the shapes are incompatible, so `rp` keeps only its own
+form. Each alias above is listed in the relevant command's `--help` and
+`rp doc <command> <verb>` output.
+
+This release also closes the `rp`/`runpodctl` coverage gap with new flags that
+have no `runpodctl` equivalent: `pod --ssh`, `pod --min-cuda-version`,
+`serverless update --template-id`/`--name`, and `template --volume-mount-path`.
+
 ## Things worth knowing
 
 - **S3 fill needs an S3-API-supported datacentre** — `rp stock dc` reads the

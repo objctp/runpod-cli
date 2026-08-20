@@ -14,6 +14,10 @@
 - Add rp hub list (GraphQL listings, client-side --type filter)
 - Extend `rp account` with email and notify toggles
 
+### Changed
+
+- Annotate runpodctl-compatible flag aliases in --help and rp doc
+
 ### Fixed
 
 - Make npm publish idempotent in release workflow

@@ -176,14 +176,16 @@ _template_update() {
 #   --public true|false       publish the template; omit for the API default
 #                             (false)
 #   --docker-cmd <a,b,…>      arguments passed to the container entrypoint
-#   --env K=V                 environment variable; repeatable
+#                             (alias: --docker-start-cmd)
+#   --env K=V                 environment variable; repeatable; NOT aliased to runpodctl's --env (a single JSON object) — the repeatable K=V shapes differ
 #   --ports <a/b,…>           exposed ports, each as port/protocol
-#   --container-disk-gb N     ephemeral container disk, GB
-#   --volume-gb N             persistent volume size, GB
-#   --volume-mount-path <path> mount path for the persistent volume (requires
-#                             --volume-gb; alias: --volume-path); defaults to
-#                             /workspace
+#   --container-disk-gb N     ephemeral container disk, GB (alias: --container-disk-in-gb)
+#   --volume-gb N             persistent volume size, GB (alias: --volume-in-gb)
+#   --volume-path <path>      mount path for the persistent volume (requires
+#                             --volume-gb; alias: --volume-mount-path); defaults
+#                             to /workspace
 #   --registry <id>           registry credential for a private image
+#                             (alias: --registry-auth-id)
 #   --force                   create even when a template of this name exists
 #
 # Notes:
@@ -193,7 +195,7 @@ _template_update() {
 #   this name is not recreated — its id is printed and no POST is sent.
 #   --serverless is a bare flag, so it can only turn the serverless kind on.
 #   --volume-gb is ignored with a warning when --serverless is set: serverless
-#   templates reject a volume mount. --volume-mount-path (alias --volume-path)
+#   templates reject a volume mount. --volume-path (alias --volume-mount-path)
 #   sets the volume's mount path and is only meaningful alongside --volume-gb;
 #   given without --volume-gb it errors, and omitted it defaults to /workspace.
 #   --public is tri-state: omitting it leaves the key out of the body, so the
@@ -227,14 +229,16 @@ _template_update() {
 #   --category CPU|NVIDIA|AMD hardware family the template targets
 #   --public true|false       publish or unpublish; omit to leave it unchanged
 #   --docker-cmd <a,b,…>      arguments passed to the container entrypoint
-#   --env K=V                 environment variable; repeatable
+#                             (alias: --docker-start-cmd)
+#   --env K=V                 environment variable; repeatable; NOT aliased to runpodctl's --env (a single JSON object) — the repeatable K=V shapes differ
 #   --ports <a/b,…>           exposed ports, each as port/protocol
-#   --container-disk-gb N     ephemeral container disk, GB
-#   --volume-gb N             persistent volume size, GB
-#   --volume-mount-path <path> mount path for the persistent volume (requires
-#                             --volume-gb; alias: --volume-path); defaults to
-#                             /workspace
+#   --container-disk-gb N     ephemeral container disk, GB (alias: --container-disk-in-gb)
+#   --volume-gb N             persistent volume size, GB (alias: --volume-in-gb)
+#   --volume-path <path>      mount path for the persistent volume (requires
+#                             --volume-gb; alias: --volume-mount-path); defaults
+#                             to /workspace
 #   --registry <id>           registry credential for a private image
+#                             (alias: --registry-auth-id)
 #   --json                    print the raw API response
 #
 # Notes:
@@ -315,9 +319,9 @@ rp::cmd_template() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp template <verb> [flags]
-  create --name <n> --image <img> [--serverless] [--docker-cmd <a,b>] [--env K=V]… [--ports <a/b>] [--volume-gb N] [--volume-mount-path <path>] [--container-disk-gb N] [--category <c>] [--public true|false] [--registry <id>] [--force]
+  create --name <n> --image <img> [--serverless] [--docker-cmd <a,b> (alias: --docker-start-cmd)] [--env K=V]… (--env NOT aliased to runpodctl's JSON --env) [--ports <a/b>] [--volume-gb N (alias: --volume-in-gb)] [--volume-path <path> (alias: --volume-mount-path)] [--container-disk-gb N (alias: --container-disk-in-gb)] [--category <c>] [--public true|false] [--registry <id> (alias: --registry-auth-id)] [--force]
          (idempotent by --name; --env repeatable; --category defaults to NVIDIA; templates are private unless --public true)
-  update <id> [--name <n>] [--image <img>] [--public true|false] [--registry <id>] [--docker-cmd <a,b>] [--env K=V]… [--ports <a/b>] [--container-disk-gb N] [--volume-gb N] [--volume-mount-path <path>] [--category <c>] [--serverless]
+  update <id> [--name <n>] [--image <img>] [--public true|false] [--registry <id> (alias: --registry-auth-id)] [--docker-cmd <a,b> (alias: --docker-start-cmd)] [--env K=V]… (--env NOT aliased to runpodctl's JSON --env) [--ports <a/b>] [--container-disk-gb N (alias: --container-disk-in-gb)] [--volume-gb N (alias: --volume-in-gb)] [--volume-path <path> (alias: --volume-mount-path)] [--category <c>] [--serverless]
          (PATCH; every field optional, at least one required)
   list | get <id> | search <name-substring> | delete <id>
 EOF

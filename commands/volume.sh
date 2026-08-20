@@ -176,7 +176,7 @@ _volume_gpus() {
 #   --name <n>                        volume name (required)
 #   --size <gb>                       capacity in GB, 10–4096 (required)
 #   --dc <id>                         datacentre id (required) — see
-#                                     `rp stock dc`
+#                                     `rp stock dc` (alias: --data-center-ids)
 #   --type STANDARD|HIGH_PERFORMANCE  storage tier (default: STANDARD)
 #   --force                           create even when the name is taken
 #
@@ -364,7 +364,7 @@ rp::cmd_volume() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp volume <verb> [flags]
-  create --name <n> --size <gb> --dc <id> [--type STANDARD|HIGH_PERFORMANCE]   (idempotent by name; warns if DC is not S3-capable; tier is immutable)
+  create --name <n> --size <gb> --dc <id> (alias: --data-center-ids) [--type STANDARD|HIGH_PERFORMANCE]   (idempotent by name; warns if DC is not S3-capable; tier is immutable)
   list | get <id> | update <id> [--name <n>] [--size <gb>] | delete <id>
   sync <name> --source <dir> | --models <owner/repo>,...  [--prefix models]
   ls <name> [--path <remote-path>]
