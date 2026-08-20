@@ -95,3 +95,98 @@ function test_should_get_main_shell() {
   assert_contains "vLLM" "$(<"$tmp")"
   rm -f "$tmp"
 }
+
+function test_hub_list_calls_listings_without_search_query() {
+  local log
+  log="$(mktemp)"
+  rp::graphql() {
+    printf '%s\t%s' "$1" "$2" >"$log"
+    printf '{"listings":[]}'
+  }
+  rp::hub_list "" "" "" "" "" "" ""
+  local captured
+  captured="$(<"$log")"
+  assert_not_contains "searchQuery" "$captured"
+  assert_contains "listings(input:\$input)" "$captured"
+  rm -f "$log"
+  rp::graphql() { :; }
+}
+
+function test_hub_list_passes_each_filter_flag_to_listings_input() {
+  local log
+  log="$(mktemp)"
+  rp::graphql() {
+    printf '%s' "$2" >"$log"
+    printf '{"listings":[]}'
+  }
+  rp::hub_list "cat" "createdAt" "ASC" "someowner" "10" "5" ""
+  local captured
+  captured="$(<"$log")"
+  assert_contains '"category":"cat"' "$captured"
+  assert_contains '"orderBy":"createdAt"' "$captured"
+  assert_contains '"orderDirection":"ASC"' "$captured"
+  assert_contains '"owner":"someowner"' "$captured"
+  assert_contains '"limit":10' "$captured"
+  assert_contains '"offset":5' "$captured"
+  rm -f "$log"
+  rp::graphql() { :; }
+}
+
+function test_hub_list_omits_unset_filters_from_listings_input() {
+  local log
+  log="$(mktemp)"
+  rp::graphql() {
+    printf '%s' "$2" >"$log"
+    printf '{"listings":[]}'
+  }
+  rp::hub_list "" "" "" "" "" "" ""
+  local captured
+  captured="$(<"$log")"
+  assert_not_contains "category" "$captured"
+  assert_not_contains "orderBy" "$captured"
+  assert_not_contains "owner" "$captured"
+  rm -f "$log"
+  rp::graphql() { :; }
+}
+
+function test_hub_list_filters_type_client_side() {
+  local fixture
+  fixture='{"listings":[{"id":"a","title":"V","repoOwner":"o","repoName":"r","type":"SERVERLESS"},{"id":"b","title":"P","repoOwner":"o","repoName":"r","type":"POD"}]}'
+  rp::graphql() { printf '%s' "$fixture"; }
+  local data
+  data="$(rp::hub_list "" "" "" "" "" "" "POD")"
+  assert_contains '"id":"b"' "$data"
+  assert_not_contains '"id":"a"' "$data"
+  rp::graphql() { :; }
+}
+
+function test_hub_list_command_threads_flags_and_filters_type() {
+  local fixture log
+  fixture='{"listings":[{"id":"a","title":"V","repoOwner":"o","repoName":"r","type":"SERVERLESS"},{"id":"b","title":"P","repoOwner":"o","repoName":"r","type":"POD"}]}'
+  log="$(mktemp)"
+  rp::graphql() {
+    printf '%s' "$2" >"$log"
+    printf '%s' "$fixture"
+  }
+  local out
+  out="$(rp::cmd_hub list --category cat --order-by createdAt --order-dir ASC --owner o --limit 10 --offset 0 --type POD)"
+  local captured
+  captured="$(<"$log")"
+  assert_contains '"category":"cat"' "$captured"
+  assert_contains '"orderBy":"createdAt"' "$captured"
+  assert_contains "P" "$out"
+  assert_not_contains "V" "$out"
+  rm -f "$log"
+  rp::graphql() { :; }
+}
+
+function test_hub_list_command_accepts_lowercase_type() {
+  local fixture
+  fixture='{"listings":[{"id":"a","title":"V","repoOwner":"o","repoName":"r","type":"SERVERLESS"},{"id":"b","title":"P","repoOwner":"o","repoName":"r","type":"POD"}]}'
+  rp::graphql() { printf '%s' "$fixture"; }
+  local out
+  out="$(rp::cmd_hub list --type pod)"
+  assert_contains "P" "$out"
+  assert_not_contains "V" "$out"
+  rp::graphql() { :; }
+}

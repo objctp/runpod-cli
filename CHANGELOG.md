@@ -11,6 +11,7 @@
 - Add --compute-type GPU|CPU coercion alias to rp pod create
 - Extend serverless update with --template-id, --name, and scale-by/scale-threshold
 - Add --volume-mount-path to template create and update
+- Add rp hub list (GraphQL listings, client-side --type filter)
 
 ### Fixed
 
