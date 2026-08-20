@@ -12,6 +12,7 @@
 - Extend serverless update with --template-id, --name, and scale-by/scale-threshold
 - Add --volume-mount-path to template create and update
 - Add rp hub list (GraphQL listings, client-side --type filter)
+- Extend `rp account` with email and notify toggles
 
 ### Fixed
 
