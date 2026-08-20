@@ -240,28 +240,32 @@ _pod_logs() {
 #   --template-id <id>             seed the container config from a template id;
 #                                  makes --image optional
 #   --name <n>                     pod name (required)
-#   --gpu <type>                   GPU type id — see `rp stock gpu`
+#   --gpu <type>                   GPU type id — see `rp stock gpu` (alias: --gpu-id)
 #   --gpu-count N                  GPUs to attach (default: 1)
 #   --cpu-flavor <id>              CPU flavour id — see `rp stock cpus`
 #   --vcpu N                       vCPUs; a power of two, minimum 2
-#   --compute-type GPU|CPU         runpodctl alias: routes to --gpu or to
-#                                  --cpu-flavor/--vcpu (requires the matching
-#                                  flags); adds no data of its own
-#   --cloud SECURE|COMMUNITY       hardware tier (default: SECURE)
+#   --compute-type GPU|CPU         runpodctl coercion: selects the --gpu path, or
+#                                  the --cpu-flavor/--vcpu path (requires the
+#                                  matching flags); adds no data of its own
+#   --cloud SECURE|COMMUNITY       hardware tier (default: SECURE) (alias: --cloud-type)
 #   --dc <id,…>                    preferred datacentres; omit to let the
-#                                  scheduler place the pod
+#                                  scheduler place the pod (alias: --data-center-ids)
 #   --volume-gb N                  host-local persistent volume, GB (minimum 10)
+#                                  (alias: --volume-in-gb)
 #   --network-volume-id <id>       attach an existing network volume instead
 #   --volume-path <path>           mount path for either volume kind
-#                                  (default: /workspace)
+#                                  (default: /workspace) (alias: --volume-mount-path)
 #   --container-disk-gb N          ephemeral container disk, GB (minimum 1)
+#                                  (alias: --container-disk-in-gb)
 #   --global-networking true|false give the pod a private IP reachable across
 #                                  datacentres; omit for the API default (false)
 #   --ports <a/b,…>                exposed ports, each as port/protocol
-#   --env K=V                      environment variable; repeatable
+#   --env K=V                      environment variable; repeatable; NOT aliased to runpodctl's --env (a single JSON object) — the repeatable K=V shapes differ
 #   --start-cmd <a,b,…>            arguments passed to the container entrypoint
+#                                  (alias: --docker-args)
 #   --template <id>                template whose container config seeds the pod
 #   --registry <id>                registry credential for a private image
+#                                  (alias: --registry-auth-id)
 #   --ssh                          start the pod with runpodctl-style SSH
 #                                  access enabled (requires registered SSH keys)
 #   --min-cuda-version <x.y>       require a GPU driver with at least this CUDA
@@ -359,12 +363,17 @@ _pod_logs() {
 #   --name <n>                     rename the pod
 #   --image <ref>                  Docker image reference
 #   --container-disk-gb N          ephemeral container disk, GB (minimum 1)
+#                                  (alias: --container-disk-in-gb)
 #   --volume-gb N                  resize the host-local persistent volume, GB
+#                                  (alias: --volume-in-gb)
 #   --volume-path <path>           mount path (default: /workspace)
+#                                  (alias: --volume-mount-path)
 #   --ports <a/b,…>                exposed ports, each as port/protocol
-#   --env K=V                      environment variable; repeatable
+#   --env K=V                      environment variable; repeatable; NOT aliased to runpodctl's --env (a single JSON object) — the repeatable K=V shapes differ
 #   --start-cmd <a,b,…>            arguments passed to the container entrypoint
+#                                  (alias: --docker-args)
 #   --registry <id>                registry credential for a private image
+#                                  (alias: --registry-auth-id)
 #   --global-networking true|false enable or disable global networking; omit to
 #                                  leave it unchanged
 #   --locked true|false            lock the pod against stop and restart; omit
@@ -519,17 +528,26 @@ rp::cmd_pod() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp pod <verb> [flags]
-  create --image <img> [--name <n>] [--gpu <id>] [--gpu-count N] [--compute-type GPU|CPU]
-          [--dc <id,id>] [--cpu-flavor <id>] [--vcpu <n>]   (CPU-only pod: --cpu-flavor excludes --gpu and --volume-gb)
-          [--cloud SECURE|COMMUNITY] [--network-volume-id <id>] [--volume-gb N] [--container-disk-gb N]
-          [--volume-path <p>] [--global-networking true|false] [--ports <a/b,...>] [--env K=V]…
-            [--start-cmd <a,b,...>] [--template <id>] [--template-id <id>] [--registry <id>] [--ssh]
-            [--min-cuda-version <x.y>]
-  update <id> [--container-disk-gb N] [--volume-gb N] [--volume-path <p>] [--name <n>] [--image <img>]
-          [--global-networking true|false] [--locked true|false]
-          [--ports <a/b,...>] [--env K=V]… [--start-cmd <a,b,...>] [--registry <id>]   (PATCH; resets a running pod)
-  list | get <id> | start|stop|restart <id> | logs <id> | delete <id>   (reset is an alias for restart; v2 dropped it)
-  logs <id> [--source container|system] [--tail N] [--since <rfc3339>] [--last-event-id <ts>]   (live SSE stream; --tail 0 = live only)
+   create --image <img> [--name <n>] [--gpu <id> (alias: --gpu-id)] [--gpu-count N]
+           [--compute-type GPU|CPU (runpodctl coercion: --gpu, or --cpu-flavor+--vcpu)]
+           [--dc <id,id> (alias: --data-center-ids)] [--cpu-flavor <id>] [--vcpu <n>]
+           (CPU-only pod: --cpu-flavor excludes --gpu and --volume-gb)
+           [--cloud SECURE|COMMUNITY (alias: --cloud-type)]
+           [--network-volume-id <id>] [--volume-gb N (alias: --volume-in-gb)]
+           [--container-disk-gb N (alias: --container-disk-in-gb)]
+           [--volume-path <p> (alias: --volume-mount-path)]
+           [--global-networking true|false] [--ports <a/b,...>]
+           [--env K=V]…  (--env is repeatable K=V; NOT aliased to runpodctl's JSON --env)
+             [--start-cmd <a,b,...> (alias: --docker-args)] [--template <id>] [--template-id <id>]
+             [--registry <id> (alias: --registry-auth-id)] [--ssh] [--min-cuda-version <x.y>]
+   update <id> [--container-disk-gb N (alias: --container-disk-in-gb)]
+           [--volume-gb N (alias: --volume-in-gb)] [--volume-path <p> (alias: --volume-mount-path)]
+           [--name <n>] [--image <img>] [--global-networking true|false] [--locked true|false]
+           [--ports <a/b,...>] [--env K=V]… (--env is repeatable K=V; NOT aliased to runpodctl's JSON --env)
+           [--start-cmd <a,b,...> (alias: --docker-args)]
+           [--registry <id> (alias: --registry-auth-id)]   (PATCH; resets a running pod)
+   list | get <id> | start|stop|restart <id> | logs <id> | delete <id>   (reset is an alias for restart; v2 dropped it)
+   logs <id> [--source container|system] [--tail N] [--since <rfc3339>] [--last-event-id <ts>]   (live SSE stream; --tail 0 = live only)
 EOF
     ;;
   *) rp::usage "unknown pod verb: '$verb'" ;;

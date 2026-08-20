@@ -593,6 +593,7 @@ _serverless_logs() {
 #                                 mutually exclusive with --template)
 #   --name <n>                    endpoint name (required); idempotent by name
 #   --gpu <type,..>               GPU type ids (comma-separated) for the pool
+#                                 (alias: --gpu-id)
 #   --gpus-from-volume <name>     resolve in-stock GPU types from a network
 #                                 volume's datacentre instead of --gpu
 #   --network-volume <name>       attach a network volume by name
@@ -606,11 +607,14 @@ _serverless_logs() {
 #   --gpu-count N                 GPUs per worker (default: 1)
 #   --flashboot                   enable FlashBoot (boolean flag)
 #   --env K=V                     environment variable; repeatable; merged over
-#                                 the template's env on the --template path
+#                                 the template's env on the --template path;
+#                                 NOT aliased to runpodctl's --env (a single
+#                                 JSON object) — the shapes differ
 #   --scaler-type QUEUE_DELAY|REQUEST_COUNT   scaling policy
 #   --scaler-value V              scaling threshold (default: 4s / 1 request)
 #   --execution-timeout <s>       per-job timeout, sent as milliseconds
 #   --registry <id>               registry credential for a private image
+#                                 (alias: --registry-auth-id)
 #   --force                       skip the name idempotency check
 #   --min-cuda-version <ver>      accepted but ignored: v2 keeps it only as a
 #                                 /catalog/gpus filter
@@ -683,16 +687,16 @@ _serverless_logs() {
 #   --workers-min N  new minimum worker count
 #   --workers-max N  new maximum worker count
 #   --idle S         workers.idleTimeout (ignored with REQUEST_COUNT scaling)
-#   --gpu <types>    GPU type ids for the worker pool
+#   --gpu <types>    GPU type ids for the worker pool (alias: --gpu-id)
 #   --gpu-count N    GPUs per worker (default: 1)
-#   --registry <id>  registry credential for a private image
+#   --registry <id>  registry credential for a private image (alias: --registry-auth-id)
 #   --template-id <id>   swap the endpoint's template (PATCH field templateId;
 #                        the API applies the template's container config)
 #   --name <n>           rename the endpoint (PATCH field name)
-#   --scale-by delay|requests   runpodctl alias for --scaler-type: delay maps to
-#                               QUEUE_DELAY, requests to REQUEST_COUNT
-#   --scale-threshold N  runpodctl alias for --scaler-value: the scaling
-#                        threshold (queueDelay seconds, or requestCount)
+#   --scale-by delay|requests   runpodctl coercion: maps to --scaler-type
+#                               (delay→QUEUE_DELAY, requests→REQUEST_COUNT)
+#   --scale-threshold N  runpodctl coercion: maps to --scaler-value (the
+#                        queueDelay seconds, or requestCount)
 #   --scaler-type QUEUE_DELAY|REQUEST_COUNT   scaling policy (rp native flag)
 #   --scaler-value V      scaling threshold (rp native flag)
 #   --json           print the raw API response
@@ -892,13 +896,16 @@ rp::cmd_serverless() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp serverless <verb> [flags]
-  create --template <id>|--template-id <id> [--name <n>] [--gpu <type,..> | --gpus-from-volume <name>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids <id,id>]
-          [--type QUEUE|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot] [--env K=V]…
-          [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] [--execution-timeout <s>] [--hub-id <listing-id>] [--force] [--registry <id>]
-          (idempotent by --name; --hub-id deploys from a Hub listing; --type defaults to QUEUE;
-           --scaler-type defaults to QUEUE_DELAY with queueDelay 4; --idle sets workers.idleTimeout;
-           --env overlays the template's env, user value winning per key)
-  list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types>] [--gpu-count N] [--registry <id>] [--template-id <id>] [--name <n>] [--scale-by delay|requests] [--scale-threshold N] [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] | scale <id> --min N --max N [--idle S] | delete <id>
+   create --template <id>|--template-id <id> [--name <n>] [--gpu <type,..> (alias: --gpu-id) | --gpus-from-volume <name>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids <id,id>]
+           [--type QUEUE|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot]
+           [--env K=V]…  (--env is repeatable K=V; NOT aliased to runpodctl's JSON --env)
+           [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] [--execution-timeout <s>] [--hub-id <listing-id>] [--force] [--registry <id> (alias: --registry-auth-id)]
+           (idempotent by --name; --hub-id deploys from a Hub listing; --type defaults to QUEUE;
+            --scaler-type defaults to QUEUE_DELAY with queueDelay 4; --idle sets workers.idleTimeout;
+            --env overlays the template's env, user value winning per key)
+   list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types> (alias: --gpu-id)] [--gpu-count N] [--registry <id> (alias: --registry-auth-id)] [--template-id <id>] [--name <n>]
+           [--scale-by delay|requests (runpodctl coercion: --scaler-type)] [--scale-threshold N (runpodctl coercion: --scaler-value)]
+           [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] | scale <id> --min N --max N [--idle S] | delete <id>
   run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]
   workers <id>        live worker ids/states/placement (+ status histogram, --json for full envelope)
   releases <id>       release history newest-first (+ rollout summary; per-release diff column)
