@@ -12,14 +12,18 @@ _account_info_human() {
   printf '%s' "$1" | jq -r '
     .myself |
     "USER            \(.id // "")",
+    "EMAIL           \(.email // "")",
     "BALANCE         $\((.clientBalance // 0))",
     "SPEND LIMIT     $\((.spendLimit // 0))",
-    "SPEND / HOUR    $\((.currentSpendPerHr // 0))"'
+    "SPEND / HOUR    $\((.currentSpendPerHr // 0))",
+    "NOTIFY STALE    \(.notifyPodsStale // false)",
+    "NOTIFY GENERAL  \(.notifyPodsGeneral // false)",
+    "NOTIFY LOW BAL  \(.notifyLowBalance // false)"'
 }
 
 _account_info() {
   local data
-  data="$(rp::graphql 'query { myself { id clientBalance spendLimit currentSpendPerHr } }')"
+  data="$(rp::graphql 'query { myself { id email clientBalance spendLimit currentSpendPerHr notifyPodsStale notifyPodsGeneral notifyLowBalance } }')"
   rp::emit_json_or "$data" _account_info_human "$data"
 }
 
@@ -39,8 +43,8 @@ _account_info() {
 #   Backed by the GraphQL `myself` query — there is no API v2 equivalent
 #   (see docs/API_ALIGNMENT_REPORT_V2.md, NO-V2-EQUIVALENT list, line ~753).
 #
-# API: GraphQL `myself { id clientBalance spendLimit currentSpendPerHr }`
-#      (NO-V2-EQUIVALENT)
+# API: GraphQL `myself { id email clientBalance spendLimit currentSpendPerHr
+#      notifyPodsStale notifyPodsGeneral notifyLowBalance }` (NO-V2-EQUIVALENT)
 
 rp::cmd_account() {
   local verb="${1:-info}"
