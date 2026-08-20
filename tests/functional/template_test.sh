@@ -70,6 +70,51 @@ function test_should_omit_volumeInGb_when_serverless_and_volume_gb_given() {
   rm -f "$body"
 }
 
+function test_should_include_volume_mount_path_when_volume_gb_given() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[]'
+    else
+      printf '%s' "$3" >"$body"
+      printf '{"id":"x"}'
+    fi
+  }
+  rp::args_parse --name p-ocr --image img --volume-gb 10 --volume-mount-path /data
+  _template_create >/dev/null 2>&1
+  assert_equals "10" "$(jq -r '.mounts.persistent.size' "$body")"
+  assert_equals "/data" "$(jq -r '.mounts.persistent.path' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_accept_volume_path_alias_for_mount_path() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[]'
+    else
+      printf '%s' "$3" >"$body"
+      printf '{"id":"x"}'
+    fi
+  }
+  rp::args_parse --name p-ocr --image img --volume-gb 10 --volume-path /data
+  _template_create >/dev/null 2>&1
+  assert_equals "10" "$(jq -r '.mounts.persistent.size' "$body")"
+  assert_equals "/data" "$(jq -r '.mounts.persistent.path' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_die_when_volume_mount_path_given_without_volume_gb() {
+  rp::http() { :; }
+  rp::args_parse --name n --image i --volume-mount-path /data
+  (_template_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
 function test_should_include_volumeInGb_when_not_serverless() {
   local body
   body="$(mktemp)"
@@ -132,6 +177,43 @@ function test_should_patch_template_fields_on_update() {
   assert_equals "true" "$(jq -r '.public' "$body")"
   rp::http() { :; }
   rm -f "$cap" "$body"
+}
+
+function test_should_include_volume_mount_path_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "$3" >"$body"
+    printf '{"id":"t1"}'
+  }
+  rp::args_parse t1 --volume-gb 10 --volume-mount-path /data
+  _template_update >/dev/null 2>&1
+  assert_equals "10" "$(jq -r '.mounts.persistent.size' "$body")"
+  assert_equals "/data" "$(jq -r '.mounts.persistent.path' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_accept_volume_path_alias_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "$3" >"$body"
+    printf '{"id":"t1"}'
+  }
+  rp::args_parse t1 --volume-gb 10 --volume-path /data
+  _template_update >/dev/null 2>&1
+  assert_equals "10" "$(jq -r '.mounts.persistent.size' "$body")"
+  assert_equals "/data" "$(jq -r '.mounts.persistent.path' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_die_on_update_when_volume_mount_path_without_volume_gb() {
+  rp::http() { :; }
+  rp::args_parse t1 --volume-mount-path /data
+  (_template_update >/dev/null 2>&1)
+  assert_exit_code 2
 }
 
 function test_should_die_when_update_has_no_fields() {
