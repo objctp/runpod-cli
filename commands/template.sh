@@ -35,7 +35,7 @@ _template_create() {
   local name image
   name="$(rp::args_get name)"
   image="$(rp::args_get image)"
-  [[ -n "$name" && -n "$image" ]] || rp::usage "usage: rp template create --name <n> --image <img> [--docker-cmd <a,b>] [--env K=V]… [--serverless] [--ports <a/b>] [--volume-gb N] [--container-disk-gb N] [--category <c>] [--public true|false] [--registry <id>] [--force]  (idempotent by name; --env repeatable)"
+  [[ -n "$name" && -n "$image" ]] || rp::usage "usage: rp template create --name <n> --image <img> [--docker-cmd <a,b>] [--env K=V]… [--serverless] [--ports <a/b>] [--volume-gb N] [--volume-mount-path <path>] [--container-disk-gb N] [--category <c>] [--public true|false] [--registry <id>] [--force]  (idempotent by name; --env repeatable)"
   local obj='{}'
   rp::obj_set obj name "$(rp::json_str "$name")"
   rp::obj_set obj image "$(rp::json_str "$image")"
@@ -48,10 +48,15 @@ _template_create() {
   ports="$(rp::args_get ports)"
   [[ -n "$ports" ]] && rp::obj_set obj ports "$(rp::csv_to_jsonarray "$ports")"
   vol_gb="$(rp::args_get_uint volume-gb)"
+  local vol_path
+  vol_path="$(rp::args_get volume-path)"
+  if [[ -n "$vol_path" && -z "$vol_gb" ]]; then
+    rp::usage "usage: rp template create --volume-mount-path/--volume-path requires --volume-gb"
+  fi
   if rp::args_has serverless && [[ -n "$vol_gb" ]]; then
     rp::warn "ignoring --volume-gb: serverless templates reject volumeInGb"
   elif [[ -n "$vol_gb" ]]; then
-    rp::obj_set obj mounts "$(rp::json_persistent_mount "$vol_gb")"
+    rp::obj_set obj mounts "$(rp::json_persistent_mount "$vol_gb" "$vol_path")"
   fi
   cdisk="$(rp::args_get_uint container-disk-gb)"
   [[ -n "$cdisk" ]] && rp::obj_set obj disk "$cdisk"
@@ -73,7 +78,7 @@ _template_create() {
 
 _template_update() {
   local id
-  rp::require_pos id "usage: rp template update <id> [--name <n>] [--image <img>] [--public true|false] [--registry <id>] [--docker-cmd <a,b>] [--env K=V]… [--ports <a/b>] [--container-disk-gb N] [--volume-gb N] [--category <c>] [--serverless]  (PATCH)"
+  rp::require_pos id "usage: rp template update <id> [--name <n>] [--image <img>] [--public true|false] [--registry <id>] [--docker-cmd <a,b>] [--env K=V]… [--ports <a/b>] [--container-disk-gb N] [--volume-gb N] [--volume-mount-path <path>] [--category <c>] [--serverless]  (PATCH)"
   local obj='{}' name image cmd env ports cdisk registry category vol_gb pub
   name="$(rp::args_get name)"
   [[ -n "$name" ]] && rp::obj_set obj name "$(rp::json_str "$name")"
@@ -97,10 +102,15 @@ _template_update() {
   rp::require_bool pub public
   rp::obj_set obj public "$pub"
   vol_gb="$(rp::args_get_uint volume-gb)"
+  local vol_path
+  vol_path="$(rp::args_get volume-path)"
+  if [[ -n "$vol_path" && -z "$vol_gb" ]]; then
+    rp::usage "usage: rp template update --volume-mount-path/--volume-path requires --volume-gb"
+  fi
   if rp::args_has serverless && [[ -n "$vol_gb" ]]; then
     rp::warn "ignoring --volume-gb: serverless templates reject volumeInGb"
   elif [[ -n "$vol_gb" ]]; then
-    rp::obj_set obj mounts "$(rp::json_persistent_mount "$vol_gb")"
+    rp::obj_set obj mounts "$(rp::json_persistent_mount "$vol_gb" "$vol_path")"
   fi
   [[ "$obj" != '{}' ]] || rp::usage "nothing to update (see: rp template update --help)"
   local res
@@ -169,7 +179,10 @@ _template_update() {
 #   --env K=V                 environment variable; repeatable
 #   --ports <a/b,…>           exposed ports, each as port/protocol
 #   --container-disk-gb N     ephemeral container disk, GB
-#   --volume-gb N             persistent volume mounted at /workspace, GB
+#   --volume-gb N             persistent volume size, GB
+#   --volume-mount-path <path> mount path for the persistent volume (requires
+#                             --volume-gb; alias: --volume-path); defaults to
+#                             /workspace
 #   --registry <id>           registry credential for a private image
 #   --force                   create even when a template of this name exists
 #
@@ -180,8 +193,9 @@ _template_update() {
 #   this name is not recreated — its id is printed and no POST is sent.
 #   --serverless is a bare flag, so it can only turn the serverless kind on.
 #   --volume-gb is ignored with a warning when --serverless is set: serverless
-#   templates reject a volume mount. There is no --volume-path either — a
-#   template's mount path is fixed at /workspace.
+#   templates reject a volume mount. --volume-mount-path (alias --volume-path)
+#   sets the volume's mount path and is only meaningful alongside --volume-gb;
+#   given without --volume-gb it errors, and omitted it defaults to /workspace.
 #   --public is tri-state: omitting it leaves the key out of the body, so the
 #   API applies its own default and the template stays private.
 #   --category is checked locally against CPU|NVIDIA|AMD before the request.
@@ -216,7 +230,10 @@ _template_update() {
 #   --env K=V                 environment variable; repeatable
 #   --ports <a/b,…>           exposed ports, each as port/protocol
 #   --container-disk-gb N     ephemeral container disk, GB
-#   --volume-gb N             persistent volume mounted at /workspace, GB
+#   --volume-gb N             persistent volume size, GB
+#   --volume-mount-path <path> mount path for the persistent volume (requires
+#                             --volume-gb; alias: --volume-path); defaults to
+#                             /workspace
 #   --registry <id>           registry credential for a private image
 #   --json                    print the raw API response
 #
@@ -298,9 +315,9 @@ rp::cmd_template() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp template <verb> [flags]
-  create --name <n> --image <img> [--serverless] [--docker-cmd <a,b>] [--env K=V]… [--ports <a/b>] [--volume-gb N] [--container-disk-gb N] [--category <c>] [--public true|false] [--registry <id>] [--force]
+  create --name <n> --image <img> [--serverless] [--docker-cmd <a,b>] [--env K=V]… [--ports <a/b>] [--volume-gb N] [--volume-mount-path <path>] [--container-disk-gb N] [--category <c>] [--public true|false] [--registry <id>] [--force]
          (idempotent by --name; --env repeatable; --category defaults to NVIDIA; templates are private unless --public true)
-  update <id> [--name <n>] [--image <img>] [--public true|false] [--registry <id>] [--docker-cmd <a,b>] [--env K=V]… [--ports <a/b>] [--container-disk-gb N] [--volume-gb N] [--category <c>] [--serverless]
+  update <id> [--name <n>] [--image <img>] [--public true|false] [--registry <id>] [--docker-cmd <a,b>] [--env K=V]… [--ports <a/b>] [--container-disk-gb N] [--volume-gb N] [--volume-mount-path <path>] [--category <c>] [--serverless]
          (PATCH; every field optional, at least one required)
   list | get <id> | search <name-substring> | delete <id>
 EOF
