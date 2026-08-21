@@ -5,17 +5,22 @@ function set_up_before_script() {
   local _opts
   _opts=$(shopt -po errexit nounset pipefail 2>/dev/null || true)
   source "$RP_ROOT/lib/common.sh"
+  source "$RP_ROOT/lib/auth.sh"
+  source "$RP_ROOT/lib/transport.sh"
   source "$RP_ROOT/lib/http.sh"
   source "$RP_ROOT/lib/args.sh"
   source "$RP_ROOT/lib/json.sh"
   source "$RP_ROOT/lib/paginate.sh"
   source "$RP_ROOT/lib/resource.sh"
+  # Define the rp::http double AFTER the real libs are sourced so it always
+  # wins — lib/http.sh's _RP_HTTP guard would otherwise skip re-sourcing in the
+  # full suite (when http_test.sh pre-sourced it) but re-define rp::http when
+  # this file runs alone, clobbering the mock.
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >>"${RES_CAP:-/dev/null}"
+    printf '%s' "$RES_MOCK"
+  }
   eval "$_opts"
-}
-
-function rp::http() {
-  printf '%s %s\n' "$1" "$2" >>"${RES_CAP:-/dev/null}"
-  printf '%s' "$RES_MOCK"
 }
 
 function set_up() {
