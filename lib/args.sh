@@ -8,7 +8,7 @@ declare -gA RP_ARGS=()
 # the first). A handful of verbs (e.g. `rp serverless status <id> <jobId>`) take
 # more than one positional; read the rest via rp::args_pos_at / rp::require_pos_at.
 declare -ga RP_POSITIONALS=()
-RP_BOOL_FLAGS=(async json flashboot force help interruptible serverless sync ssh)
+RP_BOOL_FLAGS=(async json flashboot force help interruptible serverless sync ssh insecure)
 # Value flags that may be repeated; occurrences accumulate newline-joined, so
 # `--env A=1 --env B=2` becomes "A=1\nB=2". Newline (not comma) is the separator
 # so a single value may itself contain commas (e.g. --env LIST=a,b). Add a flag
@@ -27,6 +27,12 @@ rp::args_parse() {
     case "$1" in
     --help | -h)
       RP_ARGS[help]=1
+      shift
+      ;;
+    -k)
+      # Short alias for --insecure: skip TLS certificate verification, e.g. when
+      # rp runs from inside a pod whose CA bundle can't validate the API.
+      RP_ARGS[insecure]=1
       shift
       ;;
     --*=*)

@@ -131,6 +131,9 @@ Examples:
   rp billing all
 
 Add --json to list/get commands for raw JSON.
+Add --insecure (or -k, or RP_INSECURE_TLS=1) to skip TLS certificate verification
+  when running from an environment whose CA bundle can't validate the API
+  (e.g. inside a pod). Traffic stays encrypted; the server identity is not checked.
 EOF
   fi
   printf '%s\n' "$_RP_HELP"

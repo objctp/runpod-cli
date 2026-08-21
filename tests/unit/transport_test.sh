@@ -194,3 +194,45 @@ function test_should_not_pass_empty_arg_to_rm_on_get() {
   rm -f "$_RP_RM_LOG"
   assert_equals 0 "$empty"
 }
+
+# --insecure: the buffered curl seam must pass -k so a pod whose CA bundle can't
+# validate the API still works. RP_ARGS[insecure] is what rp::args_parse sets
+# after `--insecure`/`-k`.
+function test_should_pass_k_when_insecure_flag_set() {
+  RP_ARGS[insecure]=1
+  rp::http GET /pods >/dev/null 2>&1
+  assert_contains "-k" "$(<"$GQL_ARGS_CAPTURE")"
+  unset 'RP_ARGS[insecure]'
+}
+
+function test_should_not_pass_k_when_insecure_flag_unset() {
+  unset 'RP_ARGS[insecure]'
+  rp::http GET /pods >/dev/null 2>&1
+  local captured
+  captured="$(<"$GQL_ARGS_CAPTURE")"
+  [[ "$captured" == *"-k"* ]] && fail "-k should be absent without --insecure (got: $captured)"
+  assert_equals 0 0
+}
+
+# The streaming seam (SSE logs) must also honour --insecure.
+function test_should_pass_k_on_stream_when_insecure_flag_set() {
+  RP_ARGS[insecure]=1
+  curl() {
+    printf '%s\n' "$*" >>"$GQL_ARGS_CAPTURE"
+    local hdrs=""
+    while (($#)); do
+      case "$1" in
+      -D)
+        hdrs="$2"
+        shift 2
+        ;;
+      *) shift ;;
+      esac
+    done
+    [[ -n "$hdrs" ]] && printf 'HTTP/1.1 200 OK\r\n\r\n' >"$hdrs"
+    return 0
+  }
+  (rp::api_stream rest /pods/x >/dev/null 2>&1)
+  assert_contains "-k" "$(<"$GQL_ARGS_CAPTURE")"
+  unset 'RP_ARGS[insecure]'
+}

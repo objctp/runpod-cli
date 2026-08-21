@@ -16,6 +16,24 @@ declare -g _RP_CURL_STATUS=200
 # across calls. Module-global.
 declare -g _RP_SUNSET=""
 
+# TLS certificate verification opt-out: when rp runs from inside a pod whose CA
+# bundle can't validate api.runpod.io, curl fails with "certificate signed by
+# unknown authority". --insecure (alias -k), or RP_INSECURE_TLS=1, pass curl -k.
+# This is orthogonal to RP_ALLOW_INSECURE_HTTP: that guard refuses *plaintext*
+# (http://) transport, whereas --insecure only relaxes the cert chain check over
+# an already-encrypted https:// link. Warned once per process.
+declare -g _RP_INSECURE_WARNED=0
+
+_rp_insecure_enabled() {
+  [[ -n "${RP_ARGS[insecure]:-}" || -n "${RP_INSECURE_TLS:-}" ]]
+}
+
+_rp_insecure_warn() {
+  ((_RP_INSECURE_WARNED)) && return 0
+  _RP_INSECURE_WARNED=1
+  rp::warn "TLS certificate verification disabled (--insecure): traffic stays encrypted but the server identity is NOT authenticated"
+}
+
 # Base URL for a transport plane. Resolved at call time so env overrides of
 # RP_REST_BASE / RP_API_BASE / RP_GRAPHQL_URL (set in lib/common.sh) take effect.
 # Every client (REST, data plane, GraphQL) routes through here, so the
@@ -64,6 +82,10 @@ _curl_json() {
   _mktemp hdr
   rp::auth_header >"$hdr"
   local -a args=(-sSL --connect-timeout "$RP_TIMEOUT_CONNECT" --max-time "$max_time" -X "$method" -H @"$hdr" -H 'Content-Type: application/json')
+  if _rp_insecure_enabled; then
+    _rp_insecure_warn
+    args+=(-k)
+  fi
   # Capture response headers (-D) so the `Sunset` header (sent on GraphQL/v1)
   # can be surfaced to the user as a retirement countdown.
   _mktemp hdrfile
@@ -153,8 +175,13 @@ rp::api_stream() {
   _mktemp hdrs
   rp::auth_header >"$hdr"
   [[ -z "$leid" ]] || printf 'Last-Event-ID: %s\n' "$leid" >>"$hdr"
-  curl -s --no-buffer --connect-timeout "$RP_TIMEOUT_CONNECT" \
-    -H @"$hdr" -H 'Accept: text/event-stream' -D "$hdrs" -f "$base$path"
+  local -a stream_args=(-s --no-buffer --connect-timeout "$RP_TIMEOUT_CONNECT"
+    -H @"$hdr" -H 'Accept: text/event-stream' -D "$hdrs" -f "$base$path")
+  if _rp_insecure_enabled; then
+    _rp_insecure_warn
+    stream_args+=(-k)
+  fi
+  curl "${stream_args[@]}"
   rc=$?
   rm -f -- "$hdr"
   # Recover the HTTP status from the dumped first line, then let the classifier

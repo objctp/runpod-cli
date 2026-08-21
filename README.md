@@ -147,6 +147,10 @@ behind a release:
 - **runpodctl aliases** — several commands also accept `runpodctl`-style flag
   spellings (e.g. `--gpu-id`, `--data-center-ids`) alongside `rp`'s own. Run
   `rp doc <command> <verb>` to see which apply.
+- **`--insecure`** (alias `-k`, or `RP_INSECURE_TLS=1`) — skips TLS certificate
+  verification for in-pod runs where the CA bundle can't validate the API. Traffic
+  stays encrypted; the server identity is not checked. Distinct from
+  `RP_ALLOW_INSECURE_HTTP`, which refuses plaintext `http://`.
 - **Scriptable exit codes** — `0` success · `1` transport/API/general · `2`
   usage · `3` auth (no key/creds) · `4` not-found. Branch on `$?` rather than
   grepping stderr.
