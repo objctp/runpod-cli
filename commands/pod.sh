@@ -205,11 +205,106 @@ _pod_create() {
     obj="$(_json_merge "$tmpl" "$obj")"
   fi
 
-  if rp::args_has interruptible; then
-    rp::warn "note: --interruptible has no v2 equivalent and was ignored"
+  # Spot / interruptible pods. REST v2 carries these at the body's top level:
+  # `interruptible` (boolean) and `bidPerGpu` (number, the max $/GPU-hr you will
+  # pay). --bid-per-gpu is the canonical trigger and implies --interruptible;
+  # pass --interruptible alone to mark the pod spot and let the server bid the
+  # on-demand price. The bid must be a positive number. (The published v2
+  # OpenAPI is beta and omits these fields; the request shape matches RunPod's
+  # REST spot fields and is what the v2 handler accepts.)
+  local bid_per_gpu
+  bid_per_gpu="$(rp::args_get bid-per-gpu)"
+  if [[ -n "$bid_per_gpu" ]]; then
+    [[ "$bid_per_gpu" =~ ^[0-9]+(\.[0-9]+)?$ ]] ||
+      rp::usage "usage: rp pod create --bid-per-gpu must be a positive number (got '$bid_per_gpu')"
+    [[ "$bid_per_gpu" =~ ^0+(\.0+)?$ ]] &&
+      rp::usage "usage: rp pod create --bid-per-gpu must be greater than 0"
+    rp::obj_set obj interruptible true
+    rp::obj_set obj bidPerGpu "$bid_per_gpu"
+  elif rp::args_has interruptible; then
+    rp::obj_set obj interruptible true
+  fi
+
+  if [[ -n "$bid_per_gpu" ]] || rp::args_has interruptible; then
+    # v2 is the future-proof path: send it first with the spot fields. If the
+    # server does not yet advertise them it rejects the request; detect that
+    # exact rejection and fall back to the deprecated GraphQL bridge below. Once
+    # v2 natively supports spot, the v2 branch succeeds and the bridge is dead
+    # code to be removed. Honour the same idempotency-by-name gate as
+    # rp::resource_create so re-running with an existing name is a no-op.
+    if rp::resource_existing pod "$name_val"; then
+      return 0
+    fi
+    local _bodyfile _status _newid
+    _mktemp _bodyfile
+    rp::http_soft "$_bodyfile" POST "/pods" "$obj"
+    _status="$_RP_CURL_STATUS"
+    if ((_status < 400)); then
+      rp::extract_id _newid "$(<"$_bodyfile")" "pod"
+      rp::ok "created pod${name_val:+ '$name_val'}: $_newid"
+      printf '%s\n' "$_newid"
+      rm -f -- "$_bodyfile"
+      return 0
+    fi
+    if _rp_spot_rejected "$(<"$_bodyfile")"; then
+      rp::warn "v2 rejected the spot fields (interruptible/bidPerGpu not yet advertised); using the deprecated GraphQL podRentInterruptable bridge — it will be removed once v2 supports spot pods"
+      _pod_create_graphql_spot "$obj" "${bid_per_gpu:-}"
+      rm -f -- "$_bodyfile"
+      return 0
+    fi
+    local _msg
+    _msg="$(jq -rc '.error // .message // .title // empty' "$_bodyfile" 2>/dev/null || true)"
+    rm -f -- "$_bodyfile"
+    _rp_exit_for_status "$_status" "RunPod POST /pods -> HTTP $_status${_msg:+: $_msg}"
   fi
 
   rp::resource_create pod "" "$obj"
+}
+
+# True (0) when a v2 create error body indicates the spot fields were the
+# rejected extras — i.e. the server does not yet advertise interruptible/bidPerGpu
+# (a 422 from an unevaluatedProperties:false schema, or a similar validation
+# message). A non-spot validation error (e.g. bad GPU type) does not mention
+# these and so does not trigger the bridge.
+_rp_spot_rejected() {
+  printf '%s' "$1" | grep -qiE 'interruptible|bidPerGpu|unevaluatedProperties|extra_forbidden|additionalProperties' 2>/dev/null
+}
+
+# Spot-pod bridge: v2 rejected the spot fields, so create via the GraphQL
+# podRentInterruptable mutation. Translates the v2 request body into that
+# mutation's input shape (spot is GPU-only, so it requires a gpu block). This is
+# a temporary, deprecated path kept only until REST v2 supports spot natively;
+# it dies with the GraphQL error if the bridge itself fails.
+_pod_create_graphql_spot() {
+  local obj="$1" input q data id
+  [[ "$(printf '%s' "$obj" | jq -r 'has("gpu")')" == "true" ]] ||
+    rp::die "spot pods require a GPU (--gpu); CPU spot pods are not supported"
+  input="$(printf '%s' "$obj" | jq -c '{
+    name: .name,
+    imageName: .image,
+    templateId: (.templateId // null),
+    cloudType: (.cloud // "SECURE"),
+    containerDiskInGb: (.disk // null),
+    volumeInGb: (if .mounts and .mounts.persistent then .mounts.persistent.size else null end),
+    volumeMountPath: (if .mounts and .mounts.persistent then .mounts.persistent.path else null end),
+    networkVolumeId: (if .mounts and .mounts.network then .mounts.network.volumeId else null end),
+    dataCenterId: (if (.dataCenterIds | length) > 0 then .dataCenterIds[0] else null end),
+    ports: (if .ports and (.ports | length) > 0 then (.ports | join(",")) else null end),
+    dockerArgs: (.args // null),
+    env: (if .env then [ .env | to_entries[] | {key: .key, value: .value} ] else null end),
+    containerRegistryAuthId: (.registry // null),
+    gpuTypeId: (.gpu.id // null),
+    gpuCount: (.gpu.count // null),
+    startSsh: (.startSsh // false),
+    bidPerGpu: (.bidPerGpu // null)
+  }')"
+  q='mutation($input: PodRentInterruptableInput!) {
+    podRentInterruptable(input: $input) { id imageName }
+  }'
+  data="$(rp::graphql "$q" "$(rp::json_obj input "$input")")" || return $?
+  id="$(printf '%s' "$data" | jq -r '.podRentInterruptable.id')"
+  rp::ok "created pod (GraphQL bridge)${name_val:+ '$name_val'}: $id"
+  printf '%s\n' "$id"
 }
 
 _pod_logs() {
@@ -271,6 +366,11 @@ _pod_logs() {
 #                                  access enabled (requires registered SSH keys)
 #   --min-cuda-version <x.y>       require a GPU driver with at least this CUDA
 #                                  version (e.g. 12.1); GPU pods only
+#   --interruptible                 create a spot (interruptible) pod; the server
+#                                  bids the on-demand price unless --bid-per-gpu
+#                                  is also set (GPU pods only)
+#   --bid-per-gpu <n>               max $/GPU-hour to pay for a spot pod; implies
+#                                  --interruptible; must be > 0 (GPU pods only)
 #
 # Notes:
 #   A pod is either a GPU pod or a CPU pod: pass --gpu or --cpu-flavor, never
@@ -295,8 +395,15 @@ _pod_logs() {
 #   --global-networking needs an NVIDIA GPU and a datacentre that supports it,
 #   so it is rejected alongside --cpu-flavor.
 #   v2 has no templateId parameter. --template fetches the template and spreads
-#   its container config as defaults, which any explicit flag then overrides.
-#   --interruptible is accepted and ignored: v2 has no interruptible pod tier.
+#   its container config as defaults.
+#   --interruptible and --bid-per-gpu create a spot pod: --bid-per-gpu sets the
+#   maximum $/GPU-hour you will pay and implies --interruptible; given alone,
+#   --interruptible bids the on-demand price. Both are GPU-only — a spot pod is
+#   preempted when capacity is reclaimed, so checkpoint long work. The bid must
+#   be a positive number. The request is sent to REST v2 first; if that server
+#   does not yet advertise the spot fields it falls back to the deprecated
+#   GraphQL podRentInterruptable mutation, warning as it does so. The bridge is
+#   temporary and will be removed once v2 supports spot pods natively.
 #   --min-cuda-version is a GPU-only field: a value not matching X.Y (e.g. 12.1)
 #   is rejected up front, and a valid value is applied only to GPU pods — on a
 #   CPU pod it is silently ignored (there is no gpu block to carry it). It is
@@ -312,6 +419,8 @@ _pod_logs() {
 #   rp pod create --name cpu-box --image alpine --cpu-flavor cpu5c --vcpu 4
 #   rp pod create --name shared --image alpine --gpu "NVIDIA L4" \
 #     --network-volume-id vol_xyz --volume-path /runpod-volume
+#   rp pod create --name spot-trainer --image runpod/pytorch:2.2.0 \
+#     --gpu "NVIDIA RTX 4090" --bid-per-gpu 0.20
 #
 # API: POST /v2/pods
 
@@ -539,8 +648,9 @@ Usage: rp pod <verb> [flags]
            [--volume-path <p> (alias: --volume-mount-path)]
            [--global-networking true|false] [--ports <a/b,...>]
            [--env K=V]…  (--env is repeatable K=V; NOT aliased to runpodctl's JSON --env)
-             [--start-cmd <a,b,...> (alias: --docker-args)] [--template <id>] [--template-id <id>]
-             [--registry <id> (alias: --registry-auth-id)] [--ssh] [--min-cuda-version <x.y>]
+              [--start-cmd <a,b,...> (alias: --docker-args)] [--template <id>] [--template-id <id>]
+              [--registry <id> (alias: --registry-auth-id)] [--ssh] [--min-cuda-version <x.y>]
+              [--interruptible] [--bid-per-gpu <n>]  (spot pod; --bid-per-gpu implies --interruptible)
    update <id> [--container-disk-gb N (alias: --container-disk-in-gb)]
            [--volume-gb N (alias: --volume-in-gb)] [--volume-path <p> (alias: --volume-mount-path)]
            [--name <n>] [--image <img>] [--global-networking true|false] [--locked true|false]

@@ -10,6 +10,7 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/json.sh"
   source "$RP_ROOT/lib/validate.sh"
   source "$RP_ROOT/lib/resource.sh"
+  source "$RP_ROOT/lib/graphql.sh"
   source "$RP_ROOT/commands/pod.sh"
   _s3_dcs_live() { :; }
   eval "$_opts"
@@ -99,6 +100,94 @@ function test_should_omit_registry_when_create_flag_absent() {
   assert_equals "false" "$(jq -r 'has("registry")' "$body")"
   rp::http() { :; }
   rm -f "$body"
+}
+
+function test_should_set_interruptible_and_bid_when_bid_per_gpu_given() {
+  local body
+  body="$(mktemp)"
+  rp::http_soft() {
+    _RP_CURL_STATUS=200
+    printf '%s' "${4:-}" >"$body"
+    printf '{"id":"pod1"}' >"$1"
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --bid-per-gpu 0.20
+  local out
+  out="$(_pod_create 2>/dev/null)"
+  assert_equals "pod1" "$out"
+  assert_equals "true" "$(jq -r '.interruptible' "$body")"
+  assert_equals "0.20" "$(jq -r '.bidPerGpu' "$body")"
+  rp::http_soft() { :; }
+  rm -f "$body"
+}
+
+function test_should_set_interruptible_true_when_flag_given_alone() {
+  local body
+  body="$(mktemp)"
+  rp::http_soft() {
+    _RP_CURL_STATUS=200
+    printf '%s' "${4:-}" >"$body"
+    printf '{"id":"pod1"}' >"$1"
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --interruptible
+  local out
+  out="$(_pod_create 2>/dev/null)"
+  assert_equals "pod1" "$out"
+  assert_equals "true" "$(jq -r '.interruptible' "$body")"
+  assert_equals "false" "$(jq -r 'has("bidPerGpu")' "$body")"
+  rp::http_soft() { :; }
+  rm -f "$body"
+}
+
+function test_should_fall_back_to_graphql_when_v2_rejects_spot() {
+  local body
+  body="$(mktemp)"
+  rp::resource_existing() { return 1; }
+  rp::http_soft() {
+    _RP_CURL_STATUS=422
+    printf '%s' "${4:-}" >"$body"
+    printf '{"detail":[{"loc":["body","interruptible"],"msg":"extra forbidden"}]}' >"$1"
+  }
+  rp::graphql() {
+    printf '{"podRentInterruptable":{"id":"podG"}}'
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --bid-per-gpu 0.20
+  local out
+  out="$(_pod_create 2>/dev/null)"
+  assert_equals "podG" "$out"
+  assert_contains "interruptible" "$(cat "$body")"
+  rp::resource_existing() { :; }
+  rp::http_soft() { :; }
+  rp::graphql() { :; }
+  rm -f "$body"
+}
+
+function test_should_omit_spot_fields_when_not_requested() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090"
+  _pod_create >/dev/null 2>&1
+  assert_equals "false" "$(jq -r 'has("interruptible")' "$body")"
+  assert_equals "false" "$(jq -r 'has("bidPerGpu")' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_die_when_bid_per_gpu_is_zero() {
+  rp::http() { :; }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --bid-per-gpu 0
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_die_when_bid_per_gpu_not_a_number() {
+  rp::http() { :; }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --bid-per-gpu abc
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 2
 }
 
 function test_should_set_registry_when_update_flag_given() {

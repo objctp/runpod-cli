@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Add spot pod support via --bid-per-gpu and --interruptible
+
 ### Changed
 
 - Add Scope note clarifying rp is not a runpodctl replacement

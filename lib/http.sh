@@ -79,6 +79,18 @@ rp::query_params() {
   [[ -n "$q" ]] && printf '?%s' "$q"
 }
 
+# Soft REST call: like rp::http but never dies, and the HTTP status lands in the
+# caller's _RP_CURL_STATUS (read it in the caller's shell, not via $() — a status
+# set inside a command-substitution subshell would be lost). Writes the response
+# body to the file named by $1. Used by the spot-pod GraphQL bridge, which must
+# observe a v2 rejection without the normal die-on-4xx policy so it can fall back.
+rp::http_soft() {
+  local outfile="$1"
+  rp::require_api_key || return 1
+  rp::require_cmd curl || return 1
+  rp::api_call rest "$2" "$3" "${4:-}" "${5:-$RP_TIMEOUT_REST}" >"$outfile" || true
+}
+
 # Data-plane call under RP_API_BASE (https://api.runpod.ai/v2 — job submission to
 # deployed serverless endpoints). runsync blocks until the job completes, so the
 # default --max-time is 300 s; $4 overrides it.
