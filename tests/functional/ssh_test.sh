@@ -98,6 +98,24 @@ function test_should_report_no_runtime_for_stopped_pod() {
   rp::http() { :; }
 }
 
+function test_should_default_info_user_to_root() {
+  rp::http() { printf '{"id":"p","runtime":{"ports":[{"type":"ssh","ip":"1.2.3.4","public":22}]}}'; }
+  rp::args_parse p1
+  local out
+  out="$(_ssh_info 2>/dev/null)"
+  assert_contains "ssh root@1.2.3.4 -p 22" "$out"
+  rp::http() { :; }
+}
+
+function test_should_use_user_flag_in_info_line() {
+  rp::http() { printf '{"id":"p","runtime":{"ports":[{"type":"ssh","ip":"1.2.3.4","public":22}]}}'; }
+  rp::args_parse p1 --user bob
+  local out
+  out="$(_ssh_info 2>/dev/null)"
+  assert_contains "ssh bob@1.2.3.4 -p 22" "$out"
+  rp::http() { :; }
+}
+
 # main-shell dispatcher call so the public rp::cmd_ssh entry registers coverage.
 function test_should_show_help_when_help_verb_given() {
   local tmp

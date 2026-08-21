@@ -9,6 +9,7 @@
 ### Fixed
 
 - Resolve lint and docs-compat regressions
+- Honour --user in rp ssh info for non-root containers
 
 ## [1.1.0] - 2026-08-21
 
