@@ -36,7 +36,9 @@ _sshkey_locked() {
   # normal return path; the inner covers the exit path.
   (
     _sshkey_unlock() {
+      # shellcheck disable=SC2317
       rm -f "$lock_dir/pid" 2>/dev/null
+      # shellcheck disable=SC2317
       rmdir "$lock_dir" 2>/dev/null
     }
     trap _sshkey_unlock EXIT

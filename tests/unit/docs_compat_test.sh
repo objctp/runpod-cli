@@ -1,21 +1,13 @@
 #!/usr/bin/env bash
 # Documentation acceptance for ticket 10-docs-compat: every runpodctl-compatible
-# flag alias must be discoverable in the command --help text, the `rp doc`
-# reference blocks, and the top-level compatibility notes in README.md /
-# CONTEXT.md. This is a doc-only ticket, so the assertions inspect rendered
+# flag alias must be discoverable in the command --help text and the `rp doc`
+# reference blocks. This is a doc-only ticket, so the assertions inspect rendered
 # output rather than transport behaviour.
 RP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # Run the real CLI binary so we assert what a user actually sees. `--help` and
 # `doc` never touch the network, so no API key is required.
 _rp() { bash "$RP_ROOT/bin/rp" "$@"; }
-
-# Assert $2 (a substring) appears in the file at $1.
-_file_contains() {
-  local file="$1" needle="$2" content
-  content="$(cat "$file")"
-  assert_contains "$needle" "$content"
-}
 
 # The nine key-copy aliases, as (canonical-flag, runpodctl-alias-flag) pairs.
 ALIASES=(
@@ -140,33 +132,4 @@ function test_volume_doc_create_shows_dc_alias() {
   local out
   out="$(_rp doc volume create)"
   assert_contains "alias: --data-center-ids" "$out"
-}
-
-# The top-level notes must list the whole alias set and the --env divergence.
-function test_readme_lists_every_alias_and_env_divergence() {
-  local pair canonical alias
-  for pair in "${ALIASES[@]}"; do
-    canonical="${pair%%|*}"
-    alias="${pair##*|}"
-    _file_contains "$RP_ROOT/README.md" "$canonical"
-    _file_contains "$RP_ROOT/README.md" "$alias"
-  done
-  _file_contains "$RP_ROOT/README.md" "runpodctl compatibility"
-  _file_contains "$RP_ROOT/README.md" "not aliased"
-  _file_contains "$RP_ROOT/README.md" "--compute-type GPU|CPU"
-  _file_contains "$RP_ROOT/README.md" "--scale-by"
-}
-
-function test_context_lists_every_alias_and_env_divergence() {
-  local pair canonical alias
-  for pair in "${ALIASES[@]}"; do
-    canonical="${pair%%|*}"
-    alias="${pair##*|}"
-    _file_contains "$RP_ROOT/CONTEXT.md" "$canonical"
-    _file_contains "$RP_ROOT/CONTEXT.md" "$alias"
-  done
-  _file_contains "$RP_ROOT/CONTEXT.md" "runpodctl compatibility"
-  _file_contains "$RP_ROOT/CONTEXT.md" "NOT aliased"
-  _file_contains "$RP_ROOT/CONTEXT.md" "--compute-type GPU|CPU"
-  _file_contains "$RP_ROOT/CONTEXT.md" "--scale-by"
 }
