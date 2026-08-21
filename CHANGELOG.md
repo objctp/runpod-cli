@@ -8,6 +8,7 @@
 - Add --insecure flag to skip TLS verification for in-pod runs
 - Add --public-ip for community-cloud pods
 - Add per-user multi-account credential store
+- Import API key from runpodctl config
 
 ### Changed
 

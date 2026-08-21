@@ -142,3 +142,33 @@ function test_unknown_verb_usage() {
   out="$(rp::cmd_auth bogus 2>&1)"
   assert_contains "unknown auth verb" "$out"
 }
+
+function test_login_from_runpodctl_imports_key() {
+  local rpc
+  rpc="$(mktemp -u).toml"
+  printf 'apiKey = "rpa_fromrpc"\n' >"$rpc"
+  RUNPODCTL_CONFIG="$rpc" rp::cmd_auth login --from-runpodctl </dev/null
+  assert_file_contains "$RP_CONFIG_HOME/credentials.d/default" "RUNPOD_API_KEY=rpa_fromrpc"
+  rm -f "$rpc"
+}
+
+function test_login_from_runpodctl_explicit_key_wins() {
+  local rpc
+  rpc="$(mktemp -u).toml"
+  printf 'apiKey = "rpa_fromrpc"\n' >"$rpc"
+  RUNPODCTL_CONFIG="$rpc" rp::cmd_auth login --api-key sk-explicit --from-runpodctl </dev/null
+  assert_file_contains "$RP_CONFIG_HOME/credentials.d/default" "RUNPOD_API_KEY=sk-explicit"
+  rm -f "$rpc"
+}
+
+function test_login_from_runpodctl_missing_key_dies() {
+  local rpc out rc=0
+  rpc="$(mktemp -u).toml"
+  printf 'other = true\n' >"$rpc"
+  # Capture via a subshell so rp::die's exit doesn't abort the test.
+  out="$(RUNPODCTL_CONFIG="$rpc" rp::cmd_auth login --from-runpodctl </dev/null 2>/dev/null)"
+  rc=$?
+  assert_equals 1 "$rc"
+  assert_file_not_exists "$RP_CONFIG_HOME/credentials.d/default"
+  rm -f "$rpc"
+}

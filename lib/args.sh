@@ -8,7 +8,7 @@ declare -gA RP_ARGS=()
 # the first). A handful of verbs (e.g. `rp serverless status <id> <jobId>`) take
 # more than one positional; read the rest via rp::args_pos_at / rp::require_pos_at.
 declare -ga RP_POSITIONALS=()
-RP_BOOL_FLAGS=(async json flashboot force help interruptible serverless sync ssh insecure public-ip)
+RP_BOOL_FLAGS=(async json flashboot force help interruptible serverless sync ssh insecure public-ip from-runpodctl)
 # Value flags that may be repeated; occurrences accumulate newline-joined, so
 # `--env A=1 --env B=2` becomes "A=1\nB=2". Newline (not comma) is the separator
 # so a single value may itself contain commas (e.g. --env LIST=a,b). Add a flag

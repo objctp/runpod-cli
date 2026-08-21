@@ -91,22 +91,60 @@ _auth_set_active() {
   chmod 600 "$RP_ACTIVE_FILE"
 }
 
+# Print runpodctl's apiKey from its config file, empty if absent or unset.
+# Honours $RUNPODCTL_CONFIG for the path; defaults to ~/.runpod/config.toml.
+_auth_runpodctl_key() {
+  local f="${RUNPODCTL_CONFIG:-$HOME/.runpod/config.toml}"
+  [[ -f "$f" ]] || return 0
+  local line val
+  line="$(grep -E '^[[:space:]]*apiKey[[:space:]]*=' "$f" 2>/dev/null | head -1)"
+  [[ -z "$line" ]] && return 0
+  val="${line#*=}"
+  val="${val#"${val%%[![:space:]]*}"}"
+  val="${val%"${val##*[![:space:]]}"}"
+  val="${val#\"}"
+  val="${val%\"}"
+  val="${val#\'}"
+  val="${val%\'}"
+  [[ -n "$val" ]] && printf '%s' "$val"
+}
+
 _auth_login() {
-  local name api_key s3_ak s3_sk
+  local name api_key s3_ak s3_sk from_rpc
   name="$(rp::args_get name)"
   [[ -z "$name" ]] && name=default
   api_key="$(rp::args_get api-key)"
   s3_ak="$(rp::args_get s3-access-key)"
   s3_sk="$(rp::args_get s3-secret-key)"
-  # Interactive capture when no key flag is given and we have a terminal.
+  from_rpc="$(rp::args_get from-runpodctl)"
+  # --from-runpodctl pulls the key from runpodctl's config (non-interactive); an
+  # explicit --api-key still wins.
+  if [[ -z "$api_key" && -n "$from_rpc" ]]; then
+    api_key="$(_auth_runpodctl_key)"
+    [[ -z "$api_key" ]] &&
+      rp::die "no apiKey found in runpodctl config (${RUNPODCTL_CONFIG:-$HOME/.runpod/config.toml})"
+  fi
+  # Interactive capture when no key is set yet and we have a terminal.
   if [[ -z "$api_key" && -t 0 ]]; then
-    read -s -r -p "RunPod API key (console > Settings > API Keys): " api_key
-    printf '\n' >/dev/tty
-    read -r -p "S3 access key (optional, empty to skip): " s3_ak
-    [[ -n "$s3_ak" ]] && {
-      read -s -r -p "S3 secret key: " s3_sk
+    # Offer to import from an existing runpodctl install before prompting fresh.
+    if [[ -z "$from_rpc" ]]; then
+      local rpc_key rpc_path="${RUNPODCTL_CONFIG:-$HOME/.runpod/config.toml}"
+      rpc_key="$(_auth_runpodctl_key)"
+      if [[ -n "$rpc_key" ]]; then
+        local ans=""
+        read -r -p "Import API key from runpodctl config ($rpc_path)? [y/N] " ans
+        [[ "$ans" == [yY] ]] && api_key="$rpc_key"
+      fi
+    fi
+    if [[ -z "$api_key" ]]; then
+      read -s -r -p "RunPod API key (console > Settings > API Keys): " api_key
       printf '\n' >/dev/tty
-    }
+      read -r -p "S3 access key (optional, empty to skip): " s3_ak
+      [[ -n "$s3_ak" ]] && {
+        read -s -r -p "S3 secret key: " s3_sk
+        printf '\n' >/dev/tty
+      }
+    fi
   elif [[ -z "$api_key" && -z "$s3_ak" && ! -t 0 ]]; then
     # Piped, no flags: take the API key from the first stdin line.
     IFS= read -r api_key
@@ -222,6 +260,7 @@ Verbs:
 login flags:
   --name <n>              account name (default: "default")
   --api-key <k>           API key to store (non-interactive)
+  --from-runpodctl        import the API key from runpodctl's ~/.runpod/config.toml
   --s3-access-key <k>     S3 access key (optional, for rp volume sync)
   --s3-secret-key <k>     S3 secret key (optional)
   (with no flags, prompts interactively, or reads the API key from stdin)
@@ -239,17 +278,20 @@ EOF
 # Store a RunPod API key as an account (additive — does not replace others) and
 # mark it active. The key loads automatically on every `rp` call thereafter.
 #
-# Usage: rp auth login [--name <n>] [--api-key <k>] [--s3-access-key <k>] [--s3-secret-key <k>]
+# Usage: rp auth login [--name <n>] [--api-key <k>] [--from-runpodctl] [--s3-access-key <k>] [--s3-secret-key <k>]
 #
 # Options:
 #   --name <n>            account name (default: "default")
 #   --api-key <k>         API key to store (non-interactive)
+#   --from-runpodctl      import the API key from runpodctl's ~/.runpod/config.toml
 #   --s3-access-key <k>   S3 access key (optional, for `rp volume sync`)
 #   --s3-secret-key <k>   S3 secret key (optional)
 #
 # Notes:
 #   With no flags, prompts interactively at a terminal (input hidden), or reads
-#   the API key from the first stdin line when piped. Stored unquoted at
+#   the API key from the first stdin line when piped. If runpodctl's config holds
+#   a key, interactive login offers to import it; pass `--from-runpodctl` to take
+#   it without prompting. An explicit `--api-key` always wins. Stored unquoted at
 #   $RP_CONFIG_HOME/credentials.d/<name> (mode 600, dir 700); other lines there
 #   are preserved. The API key is the only auth RunPod supports — no OAuth.
 #
