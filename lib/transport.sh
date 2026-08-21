@@ -10,6 +10,12 @@ _RP_TRANSPORT=1
 # die/soft policy. Module-global: set inside _curl_json, read by callers.
 declare -g _RP_CURL_STATUS=200
 
+# The `Sunset` header value (HTTP-date) from the most recent response, when the
+# server sent one. GraphQL (and v1) responses now carry it; surfaced by callers
+# so users see the retirement countdown. Reset each request so it never leaks
+# across calls. Module-global.
+declare -g _RP_SUNSET=""
+
 # Base URL for a transport plane. Resolved at call time so env overrides of
 # RP_REST_BASE / RP_API_BASE / RP_GRAPHQL_URL (set in lib/common.sh) take effect.
 # Every client (REST, data plane, GraphQL) routes through here, so the
@@ -54,10 +60,14 @@ _rp_plane_timeout() {
 # password; on `rp serverless run`, the job payload).
 _curl_json() {
   local url="$1" method="$2" body="${3:-}" max_time="${4:-$RP_TIMEOUT_REST}"
-  local hdr body_tmp tmp status out
+  local hdr body_tmp tmp hdrfile status out
   _mktemp hdr
   rp::auth_header >"$hdr"
   local -a args=(-sSL --connect-timeout "$RP_TIMEOUT_CONNECT" --max-time "$max_time" -X "$method" -H @"$hdr" -H 'Content-Type: application/json')
+  # Capture response headers (-D) so the `Sunset` header (sent on GraphQL/v1)
+  # can be surfaced to the user as a retirement countdown.
+  _mktemp hdrfile
+  args+=(-D "$hdrfile")
   _mktemp tmp
   if [[ -n "$body" ]]; then
     _mktemp body_tmp
@@ -65,9 +75,10 @@ _curl_json() {
     args+=(--data @"$body_tmp")
   fi
   args+=("$url")
+  _RP_SUNSET="" # reset; populated below only when the response carries it
   status="$(curl "${args[@]}" -o "$tmp" -w '%{http_code}')" || {
     rc=$?
-    _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}"
+    _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}" "$hdrfile"
     # curl exit 130 == killed by SIGINT: surface as "interrupted" (exit 130),
     # never a bogus transport error. The emit helpers (_rp_http_emit /
     # _rp_graphql_emit) check _RP_CURL_STATUS and bail quietly; the stream path
@@ -80,7 +91,9 @@ _curl_json() {
     return "$rc"
   }
   out="$(<"$tmp")"
-  _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}"
+  # Stash the Sunset header (case-insensitive) if the server sent one.
+  _RP_SUNSET="$(grep -i '^sunset:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//')"
+  _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}" "$hdrfile"
   _RP_CURL_STATUS="$status"
   printf '%s' "$out"
   return 0
@@ -91,9 +104,10 @@ _curl_json() {
 # an empty string to `rm -f` is harmless but sloppy, so we collect only the paths
 # that were actually created into an array and remove those. Pure (no exit).
 _rp_cleanup_tmp() {
-  local hdr="$1" tmp="$2" body="${3:-}"
+  local hdr="$1" tmp="$2" body="${3:-}" hdrfile="${4:-}"
   local -a c=("$hdr" "$tmp")
   [[ -n "$body" ]] && c+=("$body")
+  [[ -n "$hdrfile" ]] && c+=("$hdrfile")
   rm -f -- "${c[@]}"
 }
 

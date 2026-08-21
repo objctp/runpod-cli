@@ -13,6 +13,7 @@
 - Add --volume-mount-path to template create and update
 - Add rp hub list (GraphQL listings, client-side --type filter)
 - Extend `rp account` with email and notify toggles
+- Align ssh keys to v2 REST and add GraphQL-sunset readiness
 
 ### Changed
 

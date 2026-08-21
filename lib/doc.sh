@@ -129,7 +129,9 @@ rp::doc_verbs() {
     elif [[ "$line" == *'case "$verb" in'* ]]; then
       in_case=1
     elif [[ "$line" =~ \"\$verb\"[[:space:]]*==[[:space:]]*\"([a-z][a-z0-9-]*)\" ]]; then
-      printf '%s\n' "${BASH_REMATCH[1]}"
+      local _v="${BASH_REMATCH[1]}"
+      [[ "$_v" == "help" || "$_v" == "*" ]] && continue
+      printf '%s\n' "$_v"
     fi
   done <"$file"
 }

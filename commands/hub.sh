@@ -131,6 +131,7 @@ _hub_list_cmd() {
 rp::cmd_hub() {
   local verb="${1:-help}"
   shift || true
+  _RP_SUNSET=""
   rp::args_parse "$@"
   rp::args_has help && verb=help
   case "$verb" in
@@ -147,4 +148,10 @@ EOF
     ;;
   *) rp::usage "unknown hub verb: '$verb'" ;;
   esac
+  # GraphQL bridge: the Hub has NO v2 endpoint, so this is the highest-risk
+  # surface — it stops working outright when GraphQL is retired (early 2027)
+  # unless RunPod ships a v2 Hub path. Warn every invocation (help excluded) and
+  # append the Sunset header countdown when the server starts sending it.
+  [[ "$verb" == "help" ]] && return 0
+  rp::warn "rp hub is GraphQL-backed and has no v2 endpoint yet; it will stop working when the GraphQL API is retired${_RP_SUNSET:+ (Sunset: $_RP_SUNSET)}."
 }

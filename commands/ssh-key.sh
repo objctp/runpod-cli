@@ -41,7 +41,7 @@ _sshkey_locked() {
 # stdin: one authorized-key line -> its SHA256 fingerprint (empty if ssh-keygen missing)
 _sshkey_fp() {
   command -v ssh-keygen >/dev/null 2>&1 || return 0
-  ssh-keygen -lf - 2>/dev/null | awk '{print $2}'
+  ssh-keygen -lf - 2>/dev/null | awk '{print $2}' || true
 }
 
 _sshkey_list_human() {
@@ -55,10 +55,11 @@ _sshkey_list_human() {
 }
 
 _sshkey_list() {
-  local raw keys_json
+  local raw keys_json keys
   raw="$(rp::http GET "/account/ssh-keys")"
   keys_json="$(printf '%s' "$raw" | jq -c '.keys // []')"
-  rp::emit_json_or "$keys_json" _sshkey_list_human "$keys_json"
+  keys="$(printf '%s' "$raw" | jq -r '.keys // [] | join("\n")')"
+  rp::emit_json_or "$keys_json" _sshkey_list_human "$keys"
 }
 
 _sshkey_add_unlocked() {

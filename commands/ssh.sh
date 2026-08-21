@@ -2,27 +2,26 @@
 #
 # SSH public keys, and the ssh line for a running pod.
 #
-# Your keys live on your account as one newline-joined string, which the three
-# key verbs read and rewrite over GraphQL — API v2 has no user-settings path.
-# `info` is the exception: it reads a pod's runtime ports over REST and prints
-# the command that reaches it.
+# Your keys live on your account as a set the v2 REST route serves as a JSON
+# array (`{keys:[...]}`); the three key verbs read and rewrite that set over
+# `GET`/`PUT /account/ssh-keys` — the same v2 path `rp ssh-key` uses. `info` is
+# the exception: it reads a pod's runtime ports over REST and prints the command
+# that reaches it.
 #
 # Usage: rp ssh <verb> [flags]
 #
 
-# Keys are stored as a newline-joined string on `myself.pubKey` (read) and
-# written via the `updateUserSettings(input:{pubKey})` mutation — both confirmed
-# against runpodctl's api/user.go.
+# Keys are stored as a JSON array on the v2 account route; the CLI splits the
+# array into one key per line for display and joins it back for writes.
 _ssh_pubkey_raw() {
-  rp::graphql 'query { myself { pubKey } }' | jq -r '.myself.pubKey // ""'
+  rp::http GET /account/ssh-keys | jq -r '.keys // [] | join("\n")'
 }
 
 _ssh_write_pubkey() {
   local keys="$1"
-  local q='mutation($input:UpdateUserSettingsInput){ updateUserSettings(input:$input){ id } }'
-  local vars
-  vars="$(jq -c -n --arg k "$keys" '{input:{pubKey:$k}}')"
-  rp::graphql "$q" "$vars" >/dev/null
+  local arr
+  arr="$(printf '%s' "$keys" | jq -R -s 'split("\n")|map(select(length>0))')"
+  rp::http PUT /account/ssh-keys "$(rp::json_obj keys "$arr")" >/dev/null
 }
 
 # Serialise concurrent read-modify-write of `myself.pubKey` so two `rp ssh
@@ -58,7 +57,7 @@ _ssh_locked() {
 # stdin: one authorized-key line -> its SHA256 fingerprint (empty if ssh-keygen missing)
 _ssh_fp() {
   command -v ssh-keygen >/dev/null 2>&1 || return 0
-  ssh-keygen -lf - 2>/dev/null | awk '{print $2}'
+  ssh-keygen -lf - 2>/dev/null | awk '{print $2}' || true
 }
 
 _ssh_list_keys_human() {
@@ -163,10 +162,10 @@ _ssh_info() {
 #   characters of the key itself.
 #   Fingerprints are computed locally by ssh-keygen. Where ssh-keygen is not
 #   installed the column reads - and matching by fingerprint stops working.
-#   Every key lives in a single newline-joined pubKey string on your user
-#   record; the CLI splits it back into one key per line.
+#   Every key lives in the v2 account key set; the CLI splits it into one
+#   key per line.
 #
-# API: GraphQL myself { pubKey }  (NO-V2-EQUIVALENT)
+# API: GET /v2/account/ssh-keys
 
 # doc: add-key
 # Add a public key from a file or stdin.
@@ -181,16 +180,16 @@ _ssh_info() {
 #   at an authorized_keys file with several keys adds just the first.
 #   Re-adding a key you already hold is a no-op: the CLI says so and writes
 #   nothing.
-#   The write is read-modify-write over one joined string — the whole set is
-#   fetched, appended to, and sent back — so two adds racing from different
-#   sessions can lose one of the keys.
+#   The write is read-modify-write over the v2 key set — the whole set is
+#   fetched, appended to, and sent back as a JSON array — so two adds racing
+#   from different sessions can lose one of the keys.
 #   --json is accepted and ignored: the outcome is a status line on stderr.
 #
 # Examples:
 #   rp ssh add-key ~/.ssh/id_ed25519.pub
 #   ssh-keygen -y -f ~/.ssh/id_ed25519 | rp ssh add-key -
 #
-# API: GraphQL updateUserSettings(input: { pubKey })  (NO-V2-EQUIVALENT)
+# API: PUT /v2/account/ssh-keys
 
 # doc: remove-key
 # Remove a registered public key.
@@ -206,7 +205,7 @@ _ssh_info() {
 #   else as a substring, so a fragment that hits several keys is rejected
 #   rather than removing them all — pass a longer fingerprint or key fragment.
 #   No match at all is a not-found error and nothing is written.
-#   The surviving keys are rewritten as one joined string, so the same
+#   The surviving keys are rewritten as a JSON array, so the same
 #   read-modify-write race as `rp ssh add-key` applies.
 #   --json is accepted and ignored: the outcome is a status line on stderr.
 #
@@ -214,7 +213,7 @@ _ssh_info() {
 #   rp ssh remove-key SHA256:2yKPqJ4hTVEnBmvJ5vHJd0LmqUTAqZk0lQbHkbG0kQE
 #   rp ssh remove-key laptop@example.com
 #
-# API: GraphQL updateUserSettings(input: { pubKey })  (NO-V2-EQUIVALENT)
+# API: PUT /v2/account/ssh-keys
 
 # doc: info
 # Print the ssh connection line for a running pod.
@@ -254,8 +253,8 @@ rp::cmd_ssh() {
   info) _ssh_info ;;
   -h | --help | help)
     cat <<'EOF'
-Usage: rp ssh <verb>   (keys via GraphQL — no API v2 endpoint yet)
-  list-keys                     list your registered public keys (myself.pubKey)
+Usage: rp ssh <verb>   (keys via API v2 REST — see rp ssh-key)
+  list-keys                     list your registered public keys (GET /account/ssh-keys)
   add-key <file|->              add a public key (file path, or - / stdin)
   remove-key <fingerprint|key>  remove a key by SHA256 fingerprint or key substring
   info <pod-id>                 ssh connection line for a running pod

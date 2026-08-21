@@ -80,6 +80,16 @@ function test_should_exit_one_when_http_status_is_error() {
   assert_exit_code 1
 }
 
+function test_should_give_clear_message_on_410_graphql_retired() {
+  GQL_BODY='{"error":"gone"}'
+  GQL_STATUS=410
+  local err rc
+  err="$(rp::graphql 'query { x }' 2>&1 >/dev/null)"
+  rc=$?
+  assert_contains "GraphQL API has been retired" "$err"
+  assert_equals 1 "$rc"
+}
+
 function test_should_exit_four_when_http_status_is_404() {
   GQL_BODY='{"error":"not found"}'
   GQL_STATUS=404

@@ -40,8 +40,10 @@ _account_info() {
 #   --json  print the raw GraphQL response
 #
 # Notes:
-#   Backed by the GraphQL `myself` query — there is no API v2 equivalent
-#   (see docs/API_ALIGNMENT_REPORT_V2.md, NO-V2-EQUIVALENT list, line ~753).
+#   Backed by the GraphQL `myself` query — there is no API v2 equivalent in the
+#   current v2 spec (confirmed against /v2/openapi.json: no user/account read
+#   endpoint exists; only /v2/account/ssh-keys). Runs until the early-2027
+#   GraphQL retirement; revisit if RunPod ships a v2 account endpoint.
 #
 # API: GraphQL `myself { id email clientBalance spendLimit currentSpendPerHr
 #      notifyPodsStale notifyPodsGeneral notifyLowBalance }` (NO-V2-EQUIVALENT)
@@ -49,6 +51,7 @@ _account_info() {
 rp::cmd_account() {
   local verb="${1:-info}"
   shift || true
+  _RP_SUNSET=""
   rp::args_parse "$@"
   rp::args_has help && verb=help
   case "$verb" in
@@ -58,4 +61,9 @@ rp::cmd_account() {
   info) _account_info ;;
   *) rp::usage "unknown account verb: '$verb'" ;;
   esac
+  # GraphQL bridge: stays until RunPod ships a v2 account endpoint or retires
+  # GraphQL (early 2027). Warn every invocation (help excluded) and append the
+  # Sunset header countdown when the server starts sending it.
+  [[ "$verb" == "help" ]] && return 0
+  rp::warn "rp account is GraphQL-backed; Runpod retires GraphQL in early 2027${_RP_SUNSET:+ (Sunset: $_RP_SUNSET)}. It will move to a v2 endpoint when one is available."
 }

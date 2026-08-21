@@ -11,28 +11,30 @@ function set_up_before_script() {
   eval "$_opts"
 }
 
-function test_should_render_balance_and_spend() {
-  rp::graphql() {
-    printf '{"myself":{"id":"user_abc","clientBalance":10,"spendLimit":80,"currentSpendPerHr":0}}'
+# bashunit runs set_up after set_up_before_script (which sources lib/graphql.sh
+# and defines the real rp::graphql), so the mock is defined here to win.
+function set_up() {
+  function rp::graphql() {
+    printf '%s' "$RP_ACCOUNT_BODY"
   }
+}
+
+function test_should_render_balance_and_spend() {
+  RP_ACCOUNT_BODY='{"myself":{"id":"user_abc","clientBalance":10,"spendLimit":80,"currentSpendPerHr":0}}'
   rp::args_parse
   local out
   out="$(_account_info 2>/dev/null)"
   assert_contains "user_abc" "$out"
   assert_contains "\$10" "$out"
   assert_contains "\$80" "$out"
-  rp::graphql() { :; }
 }
 
 function test_should_emit_raw_json_when_json_flag_set() {
-  rp::graphql() {
-    printf '{"myself":{"id":"user_abc","clientBalance":10,"spendLimit":80,"currentSpendPerHr":0}}'
-  }
+  RP_ACCOUNT_BODY='{"myself":{"id":"user_abc","clientBalance":10,"spendLimit":80,"currentSpendPerHr":0}}'
   rp::args_parse --json
   local out
   out="$(_account_info 2>/dev/null)"
   assert_contains '"clientBalance":10' "$out"
-  rp::graphql() { :; }
 }
 
 # main-shell dispatcher call (bashunit skips lines run inside $(...)) so the
@@ -66,16 +68,12 @@ function test_should_request_extended_account_fields() {
   assert_contains "clientBalance" "$q"
   assert_contains "spendLimit" "$q"
   assert_contains "currentSpendPerHr" "$q"
-  rp::graphql() { :; }
   rm -f "$cap"
 }
 
 # Human output must surface email and the three notify toggles when present.
 function test_should_render_email_and_notify_toggles() {
-  local payload='{"myself":{"id":"user_abc","clientBalance":10,"spendLimit":80,"currentSpendPerHr":0,"email":"a@b.com","notifyPodsStale":true,"notifyPodsGeneral":false,"notifyLowBalance":true}}'
-  rp::graphql() {
-    printf '%s' "$payload"
-  }
+  RP_ACCOUNT_BODY='{"myself":{"id":"user_abc","clientBalance":10,"spendLimit":80,"currentSpendPerHr":0,"email":"a@b.com","notifyPodsStale":true,"notifyPodsGeneral":false,"notifyLowBalance":true}}'
   rp::args_parse
   local out
   out="$(_account_info 2>/dev/null)"
@@ -83,15 +81,11 @@ function test_should_render_email_and_notify_toggles() {
   assert_contains "NOTIFY STALE" "$out"
   assert_contains "NOTIFY GENERAL" "$out"
   assert_contains "NOTIFY LOW BAL" "$out"
-  rp::graphql() { :; }
 }
 
 # --json must include the new fields in the envelope.
 function test_should_emit_extended_json() {
-  local payload='{"myself":{"id":"user_abc","clientBalance":10,"spendLimit":80,"currentSpendPerHr":0,"email":"a@b.com","notifyPodsStale":true,"notifyPodsGeneral":false,"notifyLowBalance":true}}'
-  rp::graphql() {
-    printf '%s' "$payload"
-  }
+  RP_ACCOUNT_BODY='{"myself":{"id":"user_abc","clientBalance":10,"spendLimit":80,"currentSpendPerHr":0,"email":"a@b.com","notifyPodsStale":true,"notifyPodsGeneral":false,"notifyLowBalance":true}}'
   rp::args_parse --json
   local out
   out="$(_account_info 2>/dev/null)"
@@ -99,7 +93,6 @@ function test_should_emit_extended_json() {
   assert_contains '"notifyPodsStale":true' "$out"
   assert_contains '"notifyPodsGeneral":false' "$out"
   assert_contains '"notifyLowBalance":true' "$out"
-  rp::graphql() { :; }
 }
 
 # Main-shell routing: the info verb (and the no-arg default) both hit _account_info.
@@ -115,4 +108,14 @@ function test_should_route_info_verb() {
   rp::cmd_account >/dev/null 2>&1
   assert_contains "myself" "$(<"$cap")"
   rm -f "$cap"
+}
+
+function test_should_warn_account_is_graphql_bridged() {
+  RP_ACCOUNT_BODY='{"myself":{"id":"u","clientBalance":0,"spendLimit":0,"currentSpendPerHr":0}}'
+  local err
+  err="$(mktemp)"
+  rp::cmd_account info >/dev/null 2>"$err"
+  assert_contains "GraphQL-backed" "$(<"$err")"
+  assert_contains "early 2027" "$(<"$err")"
+  rm -f "$err"
 }

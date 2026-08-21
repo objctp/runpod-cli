@@ -4,8 +4,8 @@ RP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 function set_up_before_script() {
   local _opts
   _opts=$(shopt -po errexit nounset pipefail 2>/dev/null || true)
-  # Drop guards so the real modules (re)define; the curl seam now lives in
-  # lib/transport.sh + lib/graphql.sh, which validate.sh delegates to.
+  # Drop guards so the real modules (re)define; the S3 live check routes through
+  # lib/graphql.sh's rp::graphql_soft over lib/transport.sh's curl seam.
   unset _RP_TRANSPORT _RP_GRAPHQL _RP_VALIDATE
   source "$RP_ROOT/lib/common.sh"
   source "$RP_ROOT/lib/transport.sh"
@@ -71,13 +71,14 @@ function test_should_stay_silent_when_dc_is_s3_capable() {
   assert_empty "$err"
 }
 
+# GraphQL is the live source for the S3 signal, so a live body is honoured over
+# the static fallback: EU-RO-1 is in the fallback but not the live set, so it is
+# no longer S3-capable.
 function test_should_use_live_query_when_available() {
   GQL_STATUS=200
   GQL_BODY='{"data":{"dataCenters":[{"id":"ZZ-LIVE-1","s3apiEnabled":true}]}}'
   rp::is_s3_dc ZZ-LIVE-1
   assert_successful_code "$?"
-  # Live set wins over the static fallback: EU-RO-1 is in the fallback but not the
-  # live set, so it is no longer S3-capable.
   rp::is_s3_dc EU-RO-1
   assert_general_error "$?"
 }
