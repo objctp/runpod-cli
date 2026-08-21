@@ -78,7 +78,8 @@ _auth_write_account() {
   chmod 700 "$RP_CONFIG_HOME"
   chmod 700 "$dir"
   tmp="$(mktemp)"
-  [[ -f "$file" ]] && grep -vE "$_AUTH_KEYS" "$file" >"$tmp" 2>/dev/null || : >"$tmp"
+  : >"$tmp"
+  [[ -f "$file" ]] && grep -vE "$_AUTH_KEYS" "$file" >>"$tmp" 2>/dev/null
   [[ -n "$ak" ]] && printf 'RUNPOD_API_KEY=%s\n' "$ak" >>"$tmp"
   [[ -n "$sak" ]] && printf 'RUNPOD_S3_ACCESS_KEY=%s\n' "$sak" >>"$tmp"
   [[ -n "$ssk" ]] && printf 'RUNPOD_S3_SECRET_KEY=%s\n' "$ssk" >>"$tmp"
