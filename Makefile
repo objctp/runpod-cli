@@ -1,6 +1,6 @@
 RP ?= ./bin/rp
 
-.PHONY: install fmt lint test check package stock volumes serverless pods destroy
+.PHONY: install fmt lint test check docs hooks package stock volumes serverless pods destroy
 
 install:
 	@ln -sf "$(CURDIR)/bin/rp" /usr/local/bin/rp 2>/dev/null || echo "Add $(CURDIR)/bin to your PATH instead"
@@ -15,6 +15,19 @@ test:
 	bashunit tests
 
 check: lint test
+
+# Regenerate docs/ from the `rp doc` reference blocks in the command sources
+# (scripts/gen-manual.sh reads `bin/rp doc`). Run after editing any `# doc:`
+# comment so the manual stays in sync with the CLI.
+docs:
+	@./scripts/gen-manual.sh
+
+# Point git at the committed hooks in .githooks (the pre-commit hook
+# regenerates docs/ and stages it, so the manual never drifts). Run once per
+# clone; it sets core.hooksPath locally, which only affects this repo.
+hooks:
+	git config core.hooksPath .githooks
+	@echo "git hooks now resolve from .githooks (pre-commit syncs docs/)"
 
 # Build the release tarball + SHA256SUMS locally, mirroring the
 # .github/workflows/release.yml steps (version stamped into a staged copy so the

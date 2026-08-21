@@ -36,6 +36,7 @@
     "changelog": "scripts/changelog.sh unreleased",
     "changelog:preview": "scripts/changelog.sh preview",
     "release": "scripts/changelog.sh release",
+    "docs": "scripts/gen-manual.sh",
     "build": "scripts/build.mjs"
   }
 }

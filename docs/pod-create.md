@@ -44,6 +44,11 @@ rp pod create --image <ref> --name <n>
                                  access enabled (requires registered SSH keys)
   --min-cuda-version <x.y>       require a GPU driver with at least this CUDA
                                  version (e.g. 12.1); GPU pods only
+  --interruptible                 create a spot (interruptible) pod; the server
+                                 bids the on-demand price unless --bid-per-gpu
+                                 is also set (GPU pods only)
+  --bid-per-gpu <n>               max $/GPU-hour to pay for a spot pod; implies
+                                 --interruptible; must be > 0 (GPU pods only)
 ```
 
 ## NOTES
@@ -69,8 +74,15 @@ rp pod create --image <ref> --name <n>
   --global-networking needs an NVIDIA GPU and a datacentre that supports it,
   so it is rejected alongside --cpu-flavor.
   v2 has no templateId parameter. --template fetches the template and spreads
-  its container config as defaults, which any explicit flag then overrides.
-  --interruptible is accepted and ignored: v2 has no interruptible pod tier.
+  its container config as defaults.
+  --interruptible and --bid-per-gpu create a spot pod: --bid-per-gpu sets the
+  maximum $/GPU-hour you will pay and implies --interruptible; given alone,
+  --interruptible bids the on-demand price. Both are GPU-only — a spot pod is
+  preempted when capacity is reclaimed, so checkpoint long work. The bid must
+  be a positive number. The request is sent to REST v2 first; if that server
+  does not yet advertise the spot fields it falls back to the deprecated
+  GraphQL podRentInterruptable mutation, warning as it does so. The bridge is
+  temporary and will be removed once v2 supports spot pods natively.
   --min-cuda-version is a GPU-only field: a value not matching X.Y (e.g. 12.1)
   is rejected up front, and a valid value is applied only to GPU pods — on a
   CPU pod it is silently ignored (there is no gpu block to carry it). It is
@@ -88,6 +100,8 @@ rp pod create --image <ref> --name <n>
   rp pod create --name cpu-box --image alpine --cpu-flavor cpu5c --vcpu 4
   rp pod create --name shared --image alpine --gpu "NVIDIA L4" \
     --network-volume-id vol_xyz --volume-path /runpod-volume
+  rp pod create --name spot-trainer --image runpod/pytorch:2.2.0 \
+    --gpu "NVIDIA RTX 4090" --bid-per-gpu 0.20
 ```
 
 **API:** `POST /v2/pods`

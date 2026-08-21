@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Pre-commit: keep docs/ in sync with the `rp doc` reference blocks.
+#
+# docs/ is generated from the `# doc:` comments in commands/*.sh and lib/*.sh by
+# scripts/gen-manual.sh (which reads `bin/rp doc`). On every commit we
+# regenerate and stage any changed pages, so the manual can never drift from the
+# CLI. Installed via `make hooks`, which sets core.hooksPath to .githooks.
+#
+# Non-blocking: a tooling failure (e.g. jq or bash 5 absent in a sparse
+# environment) only warns, so it can never hang or block a commit.
+set -o pipefail
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$ROOT" || exit 0
+
+if command -v bash >/dev/null 2>&1 && [[ -x bin/rp ]]; then
+  if ./scripts/gen-manual.sh >/dev/null 2>&1; then
+    git add docs 2>/dev/null || true
+  else
+    echo "warning: docs generation failed; skipping docs sync" >&2
+  fi
+fi
