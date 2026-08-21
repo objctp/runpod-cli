@@ -34,7 +34,7 @@ function set_up() {
 function test_should_list_each_registered_key() {
   RP_SSH_EXISTING='{"keys":["ssh-ed25519 AAAA c1","ssh-rsa BBBB c2"]}'
   local out
-  out="$(_ssh_list_keys 2>/dev/null)"
+  out="$(_sshkey_list 2>/dev/null)"
   assert_contains "ssh-ed25519" "$out"
   assert_contains "ssh-rsa" "$out"
 }
@@ -47,7 +47,7 @@ function test_should_append_new_key_and_write_back() {
   printf 'ssh-rsa NEWKEY c2' >"$kf"
   RP_SSH_CAPTURE="$capture"
   rp::args_parse "$kf"
-  _ssh_add_key >/dev/null 2>&1
+  _sshkey_add >/dev/null 2>&1
   local written
   written="$(cat "$capture")"
   assert_contains "EXISTING" "$written"
@@ -63,7 +63,7 @@ function test_should_skip_write_when_key_already_present() {
   printf 'ssh-ed25519 DUP c1' >"$kf"
   RP_SSH_CAPTURE="$capture"
   rp::args_parse "$kf"
-  _ssh_add_key >/dev/null 2>&1
+  _sshkey_add >/dev/null 2>&1
   assert_empty "$(cat "$capture")" # no write happened
   rm -f "$kf" "$capture"
 }
@@ -74,7 +74,7 @@ function test_should_remove_key_by_substring() {
   capture="$(mktemp)"
   RP_SSH_CAPTURE="$capture"
   rp::args_parse "GONE"
-  _ssh_remove_key >/dev/null 2>&1
+  _sshkey_remove >/dev/null 2>&1
   local written
   written="$(cat "$capture")"
   assert_contains "KEEP" "$written"
@@ -85,7 +85,7 @@ function test_should_remove_key_by_substring() {
 function test_should_die_when_remove_target_not_found() {
   RP_SSH_EXISTING='{"keys":["ssh-ed25519 KEEP c1"]}'
   rp::args_parse "NOPE"
-  (_ssh_remove_key >/dev/null 2>&1)
+  (_sshkey_remove >/dev/null 2>&1)
   assert_exit_code 4
 }
 

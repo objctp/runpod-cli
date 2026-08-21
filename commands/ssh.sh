@@ -1,129 +1,21 @@
 #!/usr/bin/env bash
 #
-# SSH public keys, and the ssh line for a running pod.
+# Pod ssh connection line; key management moved to rp ssh-key.
 #
-# Your keys live on your account as a set the v2 REST route serves as a JSON
-# array (`{keys:[...]}`); the three key verbs read and rewrite that set over
-# `GET`/`PUT /account/ssh-keys` — the same v2 path `rp ssh-key` uses. `info` is
-# the exception: it reads a pod's runtime ports over REST and prints the command
-# that reaches it.
+# `info` prints the ssh connection line for a running pod. The three key verbs
+# (list-keys / add-key / remove-key) are DEPRECATED aliases onto the v2 REST
+# `rp ssh-key` Resource: this file sources commands/ssh-key.sh and calls its
+# _sshkey_* functions, warning and delegating so the key logic lives in exactly
+# one place. There is no GraphQL path — both surfaces hit
+# GET/PUT /v2/account/ssh-keys. Use `rp ssh-key` for keys; `rp ssh` is now just
+# `info`.
 #
 # Usage: rp ssh <verb> [flags]
 #
 
-# Keys are stored as a JSON array on the v2 account route; the CLI splits the
-# array into one key per line for display and joins it back for writes.
-_ssh_pubkey_raw() {
-  rp::http GET /account/ssh-keys | jq -r '.keys // [] | join("\n")'
-}
-
-_ssh_write_pubkey() {
-  local keys="$1"
-  local arr
-  arr="$(printf '%s' "$keys" | jq -R -s 'split("\n")|map(select(length>0))')"
-  rp::http PUT /account/ssh-keys "$(rp::json_obj keys "$arr")" >/dev/null
-}
-
-# Serialise concurrent read-modify-write of `myself.pubKey` so two `rp ssh
-# add-key` / `remove-key` from the same host cannot clobber each other (lost
-# update): each fetches the whole set, mutates it, and writes it back, so a pair
-# racing leaves one edit lost. A mkdir(1)-based lock is created atomically, so
-# only one process holds it; others spin briefly then proceed. No flock needed,
-# so it works on Bash 3.2 / macOS / Linux. $1 is the callback to run while
-# holding the lock; the rest are its args. A stale lock left by a crashed/killed
-# holder is reclaimed by checking the recorded PID.
-_ssh_locked() {
-  local fn="$1"
-  shift
-  local lock_dir="${TMPDIR:-/tmp}/.rp-ssh-pubkey.lock"
-  local tries=0 pid
-  while ! mkdir "$lock_dir" 2>/dev/null; do
-    pid="$(cat "$lock_dir/pid" 2>/dev/null)"
-    if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
-      rm -rf "$lock_dir" 2>/dev/null
-    fi
-    tries=$((tries + 1))
-    ((tries > 50)) && rp::die "could not acquire the ssh key lock (another rp ssh add-key/remove-key is running)"
-    sleep 0.1
-  done
-  printf '%s' "$$" >"$lock_dir/pid" 2>/dev/null
-  "$fn" "$@"
-  local rc=$?
-  rm -f "$lock_dir/pid" 2>/dev/null
-  rmdir "$lock_dir" 2>/dev/null
-  return "$rc"
-}
-
-# stdin: one authorized-key line -> its SHA256 fingerprint (empty if ssh-keygen missing)
-_ssh_fp() {
-  command -v ssh-keygen >/dev/null 2>&1 || return 0
-  ssh-keygen -lf - 2>/dev/null | awk '{print $2}' || true
-}
-
-_ssh_list_keys_human() {
-  printf '%s\t%s\t%s\n' "TYPE" "FINGERPRINT" "KEY"
-  local fp line
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    fp="$(_ssh_fp <<<"$line")"
-    printf '%s\t%s\t%s\n' "${line%% *}" "${fp:--}" "${line:0:64}"
-  done <<<"$1"
-}
-
-_ssh_list_keys() {
-  local raw keys_json
-  raw="$(_ssh_pubkey_raw)"
-  keys_json="$(printf '%s' "$raw" | jq -R -s 'split("\n")|map(select(length>0))')"
-  rp::emit_json_or "$keys_json" _ssh_list_keys_human "$raw"
-}
-
-_ssh_add_key() {
-  local src newkey
-  src="$(rp::args_pos)"
-  if [[ -z "$src" || "$src" == "-" ]]; then
-    newkey="$(cat)"
-  else
-    [[ -r "$src" ]] || rp::notfound "cannot read key file: $src"
-    newkey="$(<"$src")"
-  fi
-  newkey="$(printf '%s' "$newkey" | awk 'NF' | head -n1)"
-  [[ -n "$newkey" ]] || rp::usage "no key found in input"
-  local raw kept="" found=0 line
-  raw="$(_ssh_pubkey_raw)"
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    [[ "$line" == "$newkey" ]] && found=1
-    kept="${kept:+$kept$'\n'}$line"
-  done <<<"$raw"
-  if [[ "$found" == 1 ]]; then
-    rp::ok "key already registered"
-    return 0
-  fi
-  _ssh_write_pubkey "${kept:+$kept$'\n'}$newkey"
-  rp::ok "added key"
-}
-
-_ssh_remove_key() {
-  local target
-  rp::require_pos target "usage: rp ssh remove-key <fingerprint|key>"
-  local raw kept="" line fp matches=0
-  raw="$(_ssh_pubkey_raw)"
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    fp="$(_ssh_fp <<<"$line")"
-    if [[ "$fp" == "$target" || "$line" == *"$target"* ]]; then
-      matches=$((matches + 1))
-    else
-      kept="${kept:+$kept$'\n'}$line"
-    fi
-  done <<<"$raw"
-  # Refuse to bulk-remove: a short substring can match several keys, so require
-  # exactly one hit and ask for a more specific fingerprint/key otherwise.
-  ((matches)) || rp::notfound "no matching key found for '$target'"
-  ((matches == 1)) || rp::usage "usage: rp ssh remove-key '$target' is ambiguous ($matches keys match); use a longer fingerprint or key substring"
-  _ssh_write_pubkey "$kept"
-  rp::ok "removed key"
-}
+# Only one command module is sourced per invocation, so pull in the canonical
+# key implementation explicitly; the aliases below call its _sshkey_* functions.
+. "$RP_ROOT/commands/ssh-key.sh"
 
 _ssh_info_human() {
   printf '%s' "$1" | jq -r '
@@ -152,23 +44,28 @@ _ssh_info() {
 # doc: list-keys
 # List your registered public keys.
 #
+# DEPRECATED — use `rp ssh-key list`.
+#
 # Usage: rp ssh list-keys [--json]
 #
 # Options:
 #   --json  print the keys as a JSON array of authorized-key lines
 #
 # Notes:
-#   The table shows the key type, its SHA256 fingerprint, and the first 64
-#   characters of the key itself.
-#   Fingerprints are computed locally by ssh-keygen. Where ssh-keygen is not
-#   installed the column reads - and matching by fingerprint stops working.
-#   Every key lives in the v2 account key set; the CLI splits it into one
-#   key per line.
+#   DEPRECATED: this verb now warns and delegates to `rp ssh-key list`, which is
+#   the canonical key command — same v2 REST route, same output. Prefer
+#   `rp ssh-key list` in new scripts. The table shows the key type, its SHA256
+#   fingerprint, and the first 64 characters of the key itself. Fingerprints are
+#   computed locally by ssh-keygen; where ssh-keygen is absent the column reads -
+#   and fingerprint matching stops working. Every key lives in the v2 account key
+#   set; the CLI splits it into one key per line.
 #
 # API: GET /v2/account/ssh-keys
 
 # doc: add-key
 # Add a public key from a file or stdin.
+#
+# DEPRECATED — use `rp ssh-key add`.
 #
 # Usage: rp ssh add-key <file|->
 #
@@ -176,42 +73,44 @@ _ssh_info() {
 #   <file|->  public-key file to read; - or no argument reads stdin
 #
 # Notes:
-#   Only the first non-blank line of the input is registered, so pointing this
-#   at an authorized_keys file with several keys adds just the first.
-#   Re-adding a key you already hold is a no-op: the CLI says so and writes
-#   nothing.
-#   The write is read-modify-write over the v2 key set — the whole set is
-#   fetched, appended to, and sent back as a JSON array — so two adds racing
-#   from different sessions can lose one of the keys.
-#   --json is accepted and ignored: the outcome is a status line on stderr.
+#   DEPRECATED: this verb now warns and delegates to `rp ssh-key add`, the
+#   canonical key command (same v2 REST route). Only the first non-blank line of
+#   the input is registered, so pointing this at an authorized_keys file with
+#   several keys adds just the first. Re-adding a key you already hold is a no-op.
+#   The write is read-modify-write over the v2 key set — the whole set is fetched,
+#   appended to, and sent back as a JSON array — so two adds racing from different
+#   sessions are serialised behind a lock. --json is accepted and ignored: the
+#   outcome is a status line on stderr.
 #
 # Examples:
-#   rp ssh add-key ~/.ssh/id_ed25519.pub
-#   ssh-keygen -y -f ~/.ssh/id_ed25519 | rp ssh add-key -
+#   rp ssh-key add ~/.ssh/id_ed25519.pub
+#   ssh-keygen -y -f ~/.ssh/id_ed25519 | rp ssh-key add -
 #
 # API: PUT /v2/account/ssh-keys
 
 # doc: remove-key
 # Remove a registered public key.
 #
+# DEPRECATED — use `rp ssh-key remove`.
+#
 # Usage: rp ssh remove-key <fingerprint|key>
 #
 # Arguments:
-#   <fingerprint|key>  SHA256 fingerprint from `rp ssh list-keys`, or any
+#   <fingerprint|key>  SHA256 fingerprint from `rp ssh-key list`, or any
 #                      substring of the key line
 #
 # Notes:
-#   Exactly one key must match. A fingerprint is compared whole and anything
-#   else as a substring, so a fragment that hits several keys is rejected
-#   rather than removing them all — pass a longer fingerprint or key fragment.
-#   No match at all is a not-found error and nothing is written.
-#   The surviving keys are rewritten as a JSON array, so the same
-#   read-modify-write race as `rp ssh add-key` applies.
-#   --json is accepted and ignored: the outcome is a status line on stderr.
+#   DEPRECATED: this verb now warns and delegates to `rp ssh-key remove`, the
+#   canonical key command (same v2 REST route). Exactly one key must match: a
+#   fingerprint is compared whole and anything else as a substring, so a fragment
+#   hitting several keys is rejected rather than removing them all. No match is a
+#   not-found error and nothing is written. The surviving keys are rewritten as a
+#   JSON array, so the same read-modify-write race as `rp ssh add-key` applies.
+#   --json is accepted and ignored.
 #
 # Examples:
-#   rp ssh remove-key SHA256:2yKPqJ4hTVEnBmvJ5vHJd0LmqUTAqZk0lQbHkbG0kQE
-#   rp ssh remove-key laptop@example.com
+#   rp ssh-key remove SHA256:2yKPqJ4hTVEnBmvJ5vHJd0LmqUTAqZk0lQbHkbG0kQE
+#   rp ssh-key remove laptop@example.com
 #
 # API: PUT /v2/account/ssh-keys
 
@@ -227,17 +126,14 @@ _ssh_info() {
 #   --json    print the raw pod record the line was derived from
 #
 # Notes:
-#   This is the one verb here that never touches GraphQL: it reads the pod over
-#   REST API v2 and formats what it finds, so it keeps working even where the
-#   key verbs would not.
-#   The line comes from the first runtime port labelled ssh, or failing that
-#   the first TCP port, printed as `ssh root@<ip> -p <port>`.
-#   A stopped pod has no runtime and so no connection line — the command says
-#   as much rather than failing. Start the pod and ask again.
-#   A running pod exposing no ssh or TCP port prints its runtime ports instead,
-#   so you can see what it does expose.
-#   Registering a key with `rp ssh add-key` is what makes the address usable;
-#   this verb only reports it.
+#   This is the one verb here that never touches the key set: it reads the pod
+#   over REST API v2 and formats what it finds, so it keeps working even where
+#   the key verbs would not. The line comes from the first runtime port labelled
+#   ssh, or failing that the first TCP port, printed as `ssh root@<ip> -p <port>`.
+#   A stopped pod has no runtime and so no connection line — the command says as
+#   much rather than failing. Start the pod and ask again. A running pod exposing
+#   no ssh or TCP port prints its runtime ports instead. Registering a key with
+#   `rp ssh add-key` is what makes the address usable; this verb only reports it.
 #
 # API: GET /v2/pods/{id}
 
@@ -247,16 +143,25 @@ rp::cmd_ssh() {
   rp::args_parse "$@"
   rp::args_has help && verb=help
   case "$verb" in
-  list-keys) _ssh_list_keys ;;
-  add-key) _ssh_locked _ssh_add_key ;;
-  remove-key) _ssh_locked _ssh_remove_key ;;
+  list-keys)
+    rp::warn "rp ssh list-keys is deprecated; use 'rp ssh-key list'"
+    _sshkey_list
+    ;;
+  add-key)
+    rp::warn "rp ssh add-key is deprecated; use 'rp ssh-key add'"
+    _sshkey_add
+    ;;
+  remove-key)
+    rp::warn "rp ssh remove-key is deprecated; use 'rp ssh-key remove'"
+    _sshkey_remove
+    ;;
   info) _ssh_info ;;
   -h | --help | help)
     cat <<'EOF'
-Usage: rp ssh <verb>   (keys via API v2 REST — see rp ssh-key)
-  list-keys                     list your registered public keys (GET /account/ssh-keys)
-  add-key <file|->              add a public key (file path, or - / stdin)
-  remove-key <fingerprint|key>  remove a key by SHA256 fingerprint or key substring
+Usage: rp ssh <verb>   (key verbs deprecated — use rp ssh-key; ssh is now just info)
+  list-keys                     [deprecated] list keys — use: rp ssh-key list
+  add-key <file|->              [deprecated] add a key  — use: rp ssh-key add
+  remove-key <fingerprint|key>  [deprecated] remove a key — use: rp ssh-key remove
   info <pod-id>                 ssh connection line for a running pod
 EOF
     ;;

@@ -2,20 +2,19 @@
 #
 # SSH public keys over the API v2 REST plane.
 #
-# The legacy `rp ssh list-keys` / `add-key` / `remove-key` verbs still talk to
-# the GraphQL plane (no v2 user-settings path existed when they were written).
-# These `rp ssh-key` verbs are the v2 REST equivalents, backed by GET/PUT
-# /v2/account/ssh-keys, living alongside the GraphQL ones. The v2 route replaces
-# the WHOLE key set on PUT, so add/remove are read-modify-write around a lock.
+# The canonical home for key management: `rp ssh list-keys` / `add-key` /
+# `remove-key` are aliases that source this file and call the _sshkey_* functions
+# below, so the key logic exists in exactly one place. The v2 route replaces the
+# WHOLE key set on PUT, so add/remove are read-modify-write around a lock.
 #
 # Usage: rp ssh-key <verb> [flags]
 #
 
 # Serialise concurrent read-modify-write of the account key set so two
-# `rp ssh-key add` / `remove` from the same host cannot clobber each other.
-# Mirrors the lock in commands/ssh.sh; a mkdir(1)-based lock works on Bash 3.2 /
-# macOS / Linux without flock. $1 is the callback, the rest its args; a stale
-# lock left by a crashed holder is reclaimed via its recorded PID.
+# `rp ssh-key add` / `remove` (or their `rp ssh add-key` / `remove-key` aliases)
+# from the same host cannot clobber each other. A mkdir(1)-based lock works on
+# Bash 3.2 / macOS / Linux without flock. $1 is the callback, the rest its args;
+# a stale lock left by a crashed holder is reclaimed via its recorded PID.
 _sshkey_locked() {
   local fn="$1"
   shift
@@ -31,7 +30,18 @@ _sshkey_locked() {
     sleep 0.1
   done
   printf '%s' "$$" >"$lock_dir/pid" 2>/dev/null
-  "$fn" "$@"
+  # Run the callback in a subshell with its own EXIT trap so the lock is removed
+  # even if the callback dies via `exit` (e.g. rp::notfound inside an add/remove,
+  # which the outer `return` would otherwise skip). The outer cleanup covers the
+  # normal return path; the inner covers the exit path.
+  (
+    _sshkey_unlock() {
+      rm -f "$lock_dir/pid" 2>/dev/null
+      rmdir "$lock_dir" 2>/dev/null
+    }
+    trap _sshkey_unlock EXIT
+    "$fn" "$@"
+  )
   local rc=$?
   rm -f "$lock_dir/pid" 2>/dev/null
   rmdir "$lock_dir" 2>/dev/null
@@ -194,7 +204,7 @@ rp::cmd_ssh-key() {
   remove) _sshkey_remove ;;
   -h | --help | help)
     cat <<'EOF'
-Usage: rp ssh-key <verb>   (v2 REST plane — alongside rp ssh's GraphQL keys)
+Usage: rp ssh-key <verb>   (v2 REST plane — rp ssh's key verbs alias these)
   list                        list your registered public keys (GET /v2/account/ssh-keys)
   add <file|->               add a public key (file path, or - / stdin)
   remove <fingerprint|key>   remove a key by SHA256 fingerprint or key substring

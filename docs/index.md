@@ -13,7 +13,7 @@ Reference for the RunPod CLI (`rp`). Each command has its own page:
 - [registry](registry.md) — Container-registry credentials and ECR access delegations.
 - [serverless](serverless.md) — Serverless endpoints: deploy, scale, inspect and invoke.
 - [ssh-key](ssh-key.md) — SSH public keys over the API v2 REST plane.
-- [ssh](ssh.md) — SSH public keys, and the ssh line for a running pod.
+- [ssh](ssh.md) — Pod ssh connection line; key management moved to rp ssh-key.
 - [stock](stock.md) — Catalogue of GPU types, CPU flavours, and datacentres.
 - [template](template.md) — Reusable container configuration for pods and endpoints.
 - [upgrade](upgrade.md) — Update rp in place from the latest (or a pinned) release.

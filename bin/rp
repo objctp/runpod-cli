@@ -64,8 +64,14 @@ _rp_env_load() {
     # keeps literal quotes inside the value, so RUNPOD_API_KEY="…" would send a
     # Bearer token wrapped in quotes and the API answers HTTP 401. (Fix #N)
     case "$_v" in
-    \"*\") _v="${_v#\"}"; _v="${_v%\"}" ;;
-    \'*\') _v="${_v#\'}"; _v="${_v%\'}" ;;
+    \"*\")
+      _v="${_v#\"}"
+      _v="${_v%\"}"
+      ;;
+    \'*\')
+      _v="${_v#\'}"
+      _v="${_v%\'}"
+      ;;
     esac
     [[ -n "${!_k:-}" ]] && continue
     # shellcheck disable=SC2163 # dynamic var name parsed from a trusted .env line
@@ -105,7 +111,7 @@ Resources:
   billing    pod / serverless / public-endpoint / cluster / network-volume billing
   account    balance + spend (GraphQL)
   hub        Hub marketplace search / get (GraphQL)
-  ssh        registered SSH keys + pod ssh info (GraphQL)
+  ssh        pod ssh info (use ssh-key for keys; ssh key verbs deprecated)
   stock      GPU and CPU types and datacentres
 
 Meta:

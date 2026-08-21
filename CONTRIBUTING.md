@@ -9,8 +9,8 @@ S3-compatible API.
 
 ```
 bin/rp            entry point — loads .env, sources lib/, dispatches to commands/
-lib/              shared helpers (common, constants, transport, auth, http, graphql, s3, args, json, validate, resource, paginate, hub, _version) — `transport` is the single curl impl and delegates credential resolution to `auth` (never read `RUNPOD_API_KEY` directly)
-commands/         one file per resource (volume, serverless, pod, template, registry, billing, stock, account, hub, ssh, upgrade)
+lib/              shared helpers (common, doc, constants, transport, auth, http, graphql, s3, args, json, validate, resource, paginate, hub, _version) — `transport` is the single curl impl and delegates credential resolution to `auth` (never read `RUNPOD_API_KEY` directly)
+commands/         one file per command or resource (volume, serverless, pod, template, registry, billing, stock, account, hub, ssh, ssh-key, catalog, cluster, api, doc, upgrade)
 tests/unit/       bashunit unit tests for lib helpers
 tests/functional/ bashunit functional tests for commands
 Makefile          fmt / lint / test / check + listing shortcuts
@@ -34,9 +34,10 @@ run `make check`; `bashunit` to run `make test`.
 ## Code style
 
 - **Format with shfmt, 2-space indents:** `make fmt`
-  (`shfmt -i 2 -w` over `lib commands tests` and `bin/rp`).
+  (`shfmt -i 2 -w` over `lib`, `commands`, `tests`, `bin/rp`, and `install.sh`).
 - **Lint with shellcheck:** `make lint`. The repo `.shellcheckrc` disables
-  `SC1090`/`SC1091` (dynamic sourcing) and `SC2329`, and treats external sources
+  `SC1090`/`SC1091` (dynamic sourcing), `SC2016` (single-quoted `$` in awk/sed
+  strings), and `SC2329`, and treats external sources
   as trusted — don't re-enable these casually.
 - **`set -euo pipefail`** at the top of executable scripts. Sourced `lib/` and
   `commands/` files do **not** set it (they are sourced into `bin/rp`, which
@@ -199,7 +200,7 @@ consistent.
 - Use **Conventional Commits** (`feat:`, `fix:`, `refactor:`, `perf:`, …). They
   drive [CHANGELOG.md](CHANGELOG.md) via `git-cliff`
   (`cliff.toml`) — grouped as Added / Changed / Fixed.
-- The `post-commit` hook (`.githooks/post-commit.sh`) regenerates the Unreleased
+- The `post-commit` hook (`.githooks/post-commit`) regenerates the Unreleased
   section and amends it into the commit, so each commit lands with an up-to-date
   changelog line. If the hook is not active, run
   `git config core.hooksPath .githooks` once, or generate manually with

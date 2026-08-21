@@ -7,10 +7,6 @@ for CRUD, GraphQL for account/hub/ssh/S3-datacentre stock, and the S3-compatible
 API for filling volumes — so it covers the same ground as `runpodctl` for the
 work in this repo.
 
-It is a general-purpose client for the RunPod v2 APIs — not tied to any one
-workload. This file is just how to run the tool; the quick start below tours what
-it can do, from volumes and pods to serverless endpoints and billing.
-
 ## Requirements
 
 - Bash 5+
@@ -89,163 +85,31 @@ chmod 600 .env
 
 ## Quick start
 
-A tour of the breadth: check stock, provision shared storage, run an on-demand
-pod, and stand up a scale-to-zero serverless endpoint.
+A representative tour — check stock, provision shared storage, run a pod, and
+stand up a scale-to-zero serverless endpoint:
 
 ```bash
 rp stock dc                                         # pick a datacentre, e.g. EU-RO-1
-rp stock gpu                                        # see GPU types and prices
-
-# A network volume for shared model/data storage (needs an S3-API datacentre).
 rp volume create --name shared-data --size 100 --dc EU-RO-1
-rp volume gpus shared-data                          # GPU types that can mount this volume
-
-# An on-demand pod for interactive dev / training — attach the volume for persistence.
 rp pod create --name dev --image nvcr.io/nvidia/pytorch:23.10-py3 \
     --gpu NVIDIA L4 --volume-gb 100
-
-# A serverless endpoint for scale-to-zero inference. Build a template once, deploy
-# an endpoint from it (its id prints on the last line):
-rp template create --name my-worker --serverless \
-    --image <your-worker-image> \
-    --env MODEL_PATH=/runpod-volume/models/my-model
-rp serverless create --name my-endpoint --template <my-worker-template-id> \
+rp serverless create --name my-endpoint --template <id> \
     --network-volume shared-data --gpus-from-volume shared-data \
     --workers-min 0 --workers-max 3 --idle 600
 rp serverless run <id> --input '{"prompt":"hello"}'   # submit a job
 ```
 
 `--network-volume` auto-scopes the endpoint to that volume's datacentre;
-`--gpus-from-volume` builds the GPU fallback list from the types currently in
-stock. The volume mounts at `/runpod-volume` on serverless workers, so point the
-serving template's model path there (for example `/runpod-volume/models/my-model`).
-`template create` and `serverless create` are **idempotent by name** — a re-run
-returns the existing id; pass `--force` to duplicate. `template create --env` is
-repeatable. To deploy straight from a Hub listing instead of a template, use
-`serverless create --hub-id <listing-id>` (resolve listings with `rp hub search` /
-`rp hub get`). `pod create` always provisions a fresh pod.
+`--gpus-from-volume` builds the GPU fallback list from types in stock, and the
+volume mounts at `/runpod-volume` on serverless workers. To deploy from a Hub
+listing instead of a template, use `serverless create --hub-id <listing-id>`
+(resolve listings with `rp hub search` / `rp hub get`).
 
-### Example use case — a scale-to-zero inference API
-
-The same primitives serve any model behind a shared volume. Fill a volume with
-weights from HuggingFace, then deploy a serverless endpoint:
-
-```bash
-rp stock dc
-rp volume create --name model-store --size 50 --dc EU-RO-1
-rp volume sync model-store --models <owner/repo>,<owner/repo>   # e.g. meta-llama/Llama-3-8B,meta-llama/Llama-3-70B
-rp volume gpus model-store
-
-rp template create --name my-worker --serverless \
-    --image <worker-image> \
-    --env MODEL_NAME=my-model \
-    --env MODEL_PATH=/runpod-volume/models/my-model
-rp serverless create --name my-endpoint --template <my-worker-template-id> \
-    --network-volume model-store --gpus-from-volume model-store \
-    --workers-min 0 --workers-max 3 --idle 600
-rp serverless run <id> --input '{"prompt":"hello"}'   # submit a job
-```
-
-`rp volume sync --models` takes HuggingFace repo slugs and downloads each into
-the volume's `models/` prefix.
-
-### Example use case — a training job on a persistent pod
-
-The same volume primitives back long-running pods. Sync a local dataset into a
-volume, launch a pod that mounts it, then watch spend while it runs:
-
-```bash
-rp stock gpu                                         # pick a GPU + datacentre
-rp volume create --name datasets --size 200 --dc EU-RO-1
-rp volume sync datasets --source ./my-corpus --prefix data   # single-hop local -> S3
-
-rp pod create --name trainer --image nvcr.io/nvidia/pytorch:23.10-py3 \
-    --gpu NVIDIA A100-80GB --volume-gb 200
-rp pod get trainer                                   # wait for 'RUNNING'
-rp billing pods                                      # live per-pod spend
-
-# Tear down when finished.
-rp pod stop trainer
-rp pod delete trainer
-```
-
-`rp volume sync --source <dir>` uploads a local directory in a single hop
-(local → S3), unlike `--models` which routes via a HuggingFace cache. Pods are
-billed while `RUNNING`, so `rp pod stop` / `rp pod delete` stops the meter.
-
-
-Run `rp --help` or `rp <resource> --help` for the full flag list.
-
-Every `list` and `get` command accepts `--json` for raw API output and `--jq <filter>`
-for field selection. `list` commands also accept `--limit N` / `--cursor N` for paging
-large result sets.
-Pagination is client-side today (shaped to match the server cursor RunPod will
-add), so the same flags will forward server-side without a CLI change. For
-anything the resource verbs don't cover, `rp api <METHOD> <path>` is a raw escape
-hatch over the same transport — it supports `--body <json>` (prefix `@` to read
-a file), `--plane rest|api`, `--jq`, `--limit`, and `--cursor`.
-
-| Resource | Verbs |
-|---|---|
-| `volume` | `create --name --size --dc` · `list` · `get <id>` · `update <id>` · `delete <id>` · `sync <name> [--source <dir> \| --models a,b,c] [--prefix models]` · `ls <name>` · `gpus <name> [--gpu id,id]` |
-| `serverless` | `create --template <id>\|--template-id <id> --gpu <type,..> \| --gpus-from-volume <name> [...] [--execution-timeout <s>] [--network-volume <name> \| --network-volume-id <id> \| --network-volume-ids id,id] [--type QUEUE\|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot] [--env K=V]… [--scaler-type T] [--scaler-value V] [--hub-id <listing-id>] [--force] [--registry <id>]` · `list` · `get <id>` · `update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <ids>] [--gpu-count N] [--registry <id>] [--template-id <id>] [--name <n>] [--scale-by delay\|requests] [--scale-threshold N] [--scaler-type T] [--scaler-value V]` · `scale <id> --min N --max N [--idle S]` · `delete <id>` · `workers <id>` · `releases <id>` · `logs <id> --worker <workerId>` · `run <id> --input '<json>' \| --input-file <path\|-> [--sync\|--async] [--timeout <s>]` (`--hub-id` deploys from a Hub listing — the listing is fetched via GraphQL, the endpoint created via REST v2; `--template` spreads the template's config client-side so flags can override it, `--template-id` passes the v2-native field; `--env` overlays the template's env, the user's value winning per key; `update`'s `--template-id`/`--name` swap the endpoint's template / rename it (v2-native PATCH fields), and `--scale-by delay\|requests` / `--scale-threshold N` are runpodctl-spelling aliases for `--scaler-type`/`--scaler-value` — rp's native flags always win when both are given; `run` submits a job on the data plane — `api.runpod.ai/v2` — waiting via `/runsync` by default, or queuing via `/run` with `--async`) |
-| `pod` | `create --image <img> [--template-id <id>] [--gpu <id>] [--cpu-flavor <id> --vcpu <n>] [--registry <id>] [...]` · `update <id> [--container-disk-gb N] [--volume-gb N] [--name <n>] [--image <img>] [--ports a/b] [--env K=V] [--start-cmd a,b] [--registry <id>]` · `list` · `get <id>` · `start \| stop \| restart <id>` (`reset` is an alias for `restart`; v2 dropped it) · `delete <id>` · `logs <id> [--source container|system] [--tail N]` |
-| `template` | `create --name --image [--serverless] [--docker-cmd a,b] [--env K=V]… [--ports a/b] [--volume-gb N] [--container-disk-gb N] [--category <c>] [--public true\|false] [--registry <id>] [--force]` · `update <id> [--name <n>] [--image <img>] [--public true\|false] [--registry <id>] [--docker-cmd a,b] [--env K=V]… [--ports a/b] [--container-disk-gb N] [--volume-gb N] [--category <c>] [--serverless]` · `list` · `get <id>` · `search <name-substring>` · `delete <id>` (templates are private unless `--public true`; `update` PATCHes by id and needs at least one field) |
-| `registry` | `create --name --username [--password <p>]` · `list` · `get <id>` · `delete <id>` · `delegations <list\|create\|revoke>` |
-| `cluster` | `create --name --type <kind> --gpu <type> [--pod-count N] [--gpu-count N] [--dc <id,..>] [--image <ref>] [--network-volume-id <id>] [--template-id <id>] [--start-ssh true\|false] [--start-jupyter true\|false] [--force]` · `list` · `get <id>` · `update <id> --name <n>` · `delete <id>` · `pods <id>` (multi-node homogeneous pod fleets; REST v2 only; rename is the only mutable field) |
-| `catalog` | `list` (read-only browse of the public template library: id, name, image, serverless, public — copy an id into `pod create --template-id` / `serverless create --template-id`) |
-| `ssh-key` | `list` · `add <file\|->` · `remove <fp\|key>` (SSH public keys over the REST v2 plane — the v2-native counterpart to `ssh`'s GraphQL `list-keys`/`add-key`/`remove-key`) |
-| `billing` | `pods` · `serverless [id]` · `public-endpoints` · `clusters` · `volumes` · `all` |
-| `account` | `[info]` (balance + spend; GraphQL) |
-| `hub` | `search <query>` · `get <listing-id>` (GraphQL) |
-| `ssh` | `list-keys` · `add-key <file\|->` · `remove-key <fp\|key>` · `info <pod-id>` (GraphQL) |
-| `stock` | `gpu` · `cpus` (CPU flavours: id, vCPU range, per-vCPU RAM/price) · `dc` (S3-API datacentres flagged) |
-| `api` | `GET\|POST\|PUT\|DELETE <path>` (`<path>` may omit the leading `/`) · `--body <json>` (prefix `@` to read a file) · `--plane rest\|api` · `--jq <filter>` · `--limit N` · `--cursor N` |
-| `doc` | `[command] [verb]` (omit to list every command) — prints the source-comment docs for a user-facing command; with a verb, its options/flags; and with a group verb, sub-verb routing (`rp doc serverless`, `rp doc serverless create`, `rp doc registry delegations`, `rp doc registry delegations create`) |
-| `upgrade` | `[--version <x.y.z>]` (self-update in place; re-runs the installer) |
-
-`make` exposes a few shortcuts: `make stock` (GPU + DC stock), `make volumes` /
-`serverless` / `pods` (list each), `make destroy` (lists everything you may want
-to tear down).
-
-## runpodctl compatibility
-
-`rp` covers the same ground as `runpodctl` for the commands it wraps, and where
-the two tools share a command but spell a flag differently, `rp` accepts
-**both** names — `runpodctl`'s spelling as an additional alias alongside `rp`'s
-own (never replacing it). An alias only copies its value into `rp`'s canonical
-flag when that flag is unset, so an explicit `rp` flag always wins.
-
-| `rp` flag (canonical) | `runpodctl` alias |
-| --- | --- |
-| `--gpu` | `--gpu-id` |
-| `--dc` | `--data-center-ids` |
-| `--container-disk-gb` | `--container-disk-in-gb` |
-| `--volume-gb` | `--volume-in-gb` |
-| `--volume-path` | `--volume-mount-path` |
-| `--registry` | `--registry-auth-id` |
-| `--cloud` | `--cloud-type` |
-| `--start-cmd` | `--docker-args` |
-| `--docker-cmd` | `--docker-start-cmd` |
-
-Two flags are **coercions** rather than plain aliases — `rp` adopted
-`runpodctl`'s spelling and maps it onto its own fields:
-
-- `--compute-type GPU|CPU` (pod) selects the GPU path (`--gpu`) or the
-  CPU path (`--cpu-flavor` + `--vcpu`); it carries no data of its own and
-  errors if the matching `rp` flags are absent.
-- `--scale-by delay|requests` and `--scale-threshold N` (serverless) map to
-  `--scaler-type` and `--scaler-value`.
-
-One deliberate divergence: **`--env` is not aliased.** `rp`'s `--env` is
-repeatable `K=V` (e.g. `--env A=1 --env B=2`), whereas `runpodctl`'s `--env` is
-a single JSON object — the shapes are incompatible, so `rp` keeps only its own
-form. Each alias above is listed in the relevant command's `--help` and
-`rp doc <command> <verb>` output.
-
-This release also closes the `rp`/`runpodctl` coverage gap with new flags that
-have no `runpodctl` equivalent: `pod --ssh`, `pod --min-cuda-version`,
-`serverless update --template-id`/`--name`, and `template --volume-mount-path`.
+For command reference and worked examples, use `rp doc` (in-shell) or the docs
+site — both are generated from the same source as the CLI, so they never fall
+behind a release:
+- [`docs/`](docs/index.md)
+- In-shell: `rp --help`, `rp <resource> --help`, `rp doc <command> [<verb>]`
 
 ## Things worth knowing
 
@@ -272,6 +136,9 @@ have no `runpodctl` equivalent: `pod --ssh`, `pod --min-cuda-version`,
   mirror the cursor shape RunPod will add, so they forward server-side later
   without a CLI change.
 - **Stock and prices drift** — re-run the CLI before each booking.
+- **runpodctl aliases** — several commands also accept `runpodctl`-style flag
+  spellings (e.g. `--gpu-id`, `--data-center-ids`) alongside `rp`'s own. Run
+  `rp doc <command> <verb>` to see which apply.
 - **Scriptable exit codes** — `0` success · `1` transport/API/general · `2`
   usage · `3` auth (no key/creds) · `4` not-found. Branch on `$?` rather than
   grepping stderr.
