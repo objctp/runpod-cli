@@ -4,6 +4,7 @@ Reference for the RunPod CLI (`rp`). Each command has its own page:
 
 - [account](account.md) — Show your account balance and spend.
 - [api](api.md) — Raw REST and data-plane call over rp's own transport.
+- [auth](auth.md) — Manage RunPod API credentials in a stable per-user store that survives any
 - [billing](billing.md) — Spend reports for pods, serverless, clusters and volumes.
 - [catalog](catalog.md) — Catalog templates: browse the public template library.
 - [cluster](cluster.md) — Clusters: multi-node homogeneous pod fleets (REST v2).

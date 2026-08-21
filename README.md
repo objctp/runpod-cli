@@ -12,7 +12,7 @@ API for filling volumes.
 for the official [`runpodctl`](https://github.com/runpod/runpodctl). I built it
 because a shell CLI is easy to extend and to wrap other tooling around — and
 because a few workflows (notably `volume sync`, plus `catalog` and `cluster`)
-aren't covered by `runpodctl`. Where commands overlap with `runpodctl`, the shared
+and its single-key auth model aren't covered by `runpodctl`. Where commands overlap with `runpodctl`, the shared
 flag spellings are accepted as a convenience only.
 
 ## Requirements
@@ -69,11 +69,22 @@ rp _ping            # ok: REST auth works (https://api.runpod.io/v2)
 
 ## Configure
 
-Copy the example env file and add your keys.
+The simplest path is `rp auth login`, which stores your key in a per-user
+config (`${XDG_CONFIG_HOME:-$HOME/.config}/rp`) that survives any install method,
+including npm global installs. Multiple accounts are supported — each is a
+separate file, with one marked active:
 
 ```bash
-cp .env.example .env
+rp auth login                                  # prompts for the key; stored as "default"
+rp auth login --name work --api-key <key>      # named account, marked active
+rp auth list                                   # show accounts
+rp auth switch work                            # change the active account
+rp auth status                                 # show the active account + key source
 ```
+
+`--account <name>` on any command uses a specific account for that call.
+Alternatively, set the variables directly (an exported `RUNPOD_API_KEY` always
+wins over the stored config):
 
 | Variable | Where to get it | Required for |
 |---|---|---|
@@ -85,11 +96,8 @@ cp .env.example .env
 | `RP_MODEL_CACHE` | any writable directory | `volume sync --models` download cache (default `$RP_ROOT/.cache/models`) |
 
 The S3 key pair is **separate** from the REST API key — create it from its own
-console page. The CLI warns if `.env` is group- or world-readable, so tighten it:
-
-```bash
-chmod 600 .env
-```
+console page. `rp auth login` writes the key file at mode `600` (dir `700`); the
+CLI also warns if a manually-placed `.env` is group- or world-readable.
 
 ## Quick start
 

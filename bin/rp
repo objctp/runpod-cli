@@ -19,6 +19,13 @@ export RP_ROOT
 unset _rp_src _rp_dir
 
 . "$RP_ROOT/lib/common.sh"
+# Re-derive the credential-store paths from the now-final RP_CONFIG_HOME.
+# constants.sh bakes these once on first evaluation, which is wrong if
+# RP_CONFIG_HOME is reassigned afterwards (e.g. in tests); pin them to the live
+# value so the active-account store always tracks the chosen config home.
+RP_CREDS_DIR="$RP_CONFIG_HOME/credentials.d"
+RP_ACTIVE_FILE="$RP_CONFIG_HOME/active"
+export RP_CREDS_DIR RP_ACTIVE_FILE
 # Hard runtime preflight (Bash 5+ / jq / curl) must run *before* the lib loop
 # below: lib/args.sh and friends use Bash 5 syntax (`declare -g`), so a too-old
 # Bash must be caught here with a clear message rather than a syntax error.
@@ -35,7 +42,10 @@ trap 'exit 130' INT
 # .env entry override a variable already exported to the environment (so an
 # explicit RUNPOD_API_KEY / RUNPOD_API_KEY_FILE on the command line wins).
 _rp_env_load() {
-  local f="$1" perm _ln _k _rp_xtrace
+  local f="$1" force="${2:-}" perm _ln _k _rp_xtrace
+  # A missing file is a clean no-op (the per-user config often doesn't exist yet
+  # on first run, and `set -e` would otherwise abort on the stat below).
+  [[ -f "$f" ]] || return 0
   # Silence xtrace across the load: the loop reads RUNPOD_API_KEY and exports it,
   # so a `bash -x rp` trace would otherwise print the live token.
   _rp_xtrace="$(rp::_xtrace_save)"
@@ -73,13 +83,22 @@ _rp_env_load() {
       _v="${_v%\'}"
       ;;
     esac
-    [[ -n "${!_k:-}" ]] && continue
+    # Skip vars already set UNLESS force-loading an account file, which must
+    # override a lower-priority source (install .env) to honour the active
+    # account selection.
+    [[ -n "${!_k:-}" && -z "$force" ]] && continue
     # shellcheck disable=SC2163 # dynamic var name parsed from a trusted .env line
     export "$_k=$_v"
+    # shellcheck disable=SC2034 # consumed by `rp auth status` (commands/auth.sh)
+    RP_ENV_SRC[$_k]="$f"
   done <"$f"
   rp::_xtrace_restore "$_rp_xtrace"
 }
 
+# Load the per-user config (survives any install method) BEFORE the local
+# .env, so an explicit env var still wins and the local install file can never
+# override the user's global config. _rp_env_load is a no-op on a missing file.
+_rp_env_load "$RP_CONFIG_HOME/.env"
 [[ -f "$RP_ROOT/.env" ]] && _rp_env_load "$RP_ROOT/.env"
 
 for _RP_LIB_FILE in "$RP_ROOT"/lib/*.sh; do
@@ -113,6 +132,7 @@ Resources:
   hub        Hub marketplace search / get (GraphQL)
   ssh        pod ssh info (use ssh-key for keys; ssh key verbs deprecated)
   stock      GPU and CPU types and datacentres
+  auth       manage API-key accounts in a per-user store (survives installs)
 
 Meta:
   api        raw REST / data-plane call (escape hatch over rp::api_call)

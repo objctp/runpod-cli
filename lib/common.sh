@@ -3,6 +3,12 @@
 [[ -n "${_RP_COMMON:-}" ]] && return 0
 _RP_COMMON=1
 
+# Per-credential source tracking (file path) for `rp auth status`. Always
+# declared here (not just in bin/rp) so it exists even when common.sh is sourced
+# directly by unit tests under `set -u`. bin/rp populates it while loading .env.
+# shellcheck disable=SC2034 # populated by bin/rp's _rp_env_load + consumed by rp auth status
+declare -gA RP_ENV_SRC=()
+
 RP_ROOT="${RP_ROOT:-$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)}"
 # Tunable defaults / magic values (timeouts, size defaults, data tables) live in
 # lib/constants.sh. Sourced here so every consumer — including the test harnesses
@@ -155,7 +161,9 @@ rp::require_api_key() {
   local _rp_xtrace
   _rp_xtrace="$(rp::_xtrace_save)"
   set +x
-  [[ -n "${RUNPOD_API_KEY:-}" || -n "${RUNPOD_API_KEY_FILE:-}" ]] || _auth "RUNPOD_API_KEY unset — add it to .env (console > Settings > API Keys), or set RUNPOD_API_KEY_FILE"
+  # Honour a selected account (or the active pointer) before the presence check.
+  rp::_load_account 2>/dev/null || true
+  [[ -n "${RUNPOD_API_KEY:-}" || -n "${RUNPOD_API_KEY_FILE:-}" ]] || _auth "RUNPOD_API_KEY unset — run 'rp auth login', or set RUNPOD_API_KEY / RUNPOD_API_KEY_FILE"
   rp::_xtrace_restore "$_rp_xtrace"
 }
 
