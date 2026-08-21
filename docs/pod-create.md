@@ -33,6 +33,10 @@ rp pod create --image <ref> --name <n>
                                  (alias: --container-disk-in-gb)
   --global-networking true|false give the pod a private IP reachable across
                                  datacentres; omit for the API default (false)
+  --public-ip                    request a public IP; community-cloud pods are
+                                 not publicly routable by default, so set this
+                                 to reach them directly (alias of runpodctl's
+                                 --public-ip; maps to supportPublicIp)
   --ports <a/b,…>                exposed ports, each as port/protocol
   --env K=V                      environment variable; repeatable; NOT aliased to runpodctl's --env (a single JSON object) — the repeatable K=V shapes differ
   --start-cmd <a,b,…>            arguments passed to the container entrypoint

@@ -183,6 +183,12 @@ _pod_create() {
   fi
   rp::obj_set obj globalNetworking "$gn"
 
+  if rp::args_has public-ip; then
+    # Community-cloud pods are not publicly routable by default; supportPublicIp
+    # asks the scheduler for a public IP (the runpodctl --public-ip mapping).
+    rp::obj_set obj supportPublicIp true
+  fi
+
   if rp::args_has ssh; then
     rp::obj_set obj startSsh "true"
   fi
@@ -355,6 +361,10 @@ _pod_logs() {
 #                                  (alias: --container-disk-in-gb)
 #   --global-networking true|false give the pod a private IP reachable across
 #                                  datacentres; omit for the API default (false)
+#   --public-ip                    request a public IP; community-cloud pods are
+#                                  not publicly routable by default, so set this
+#                                  to reach them directly (alias of runpodctl's
+#                                  --public-ip; maps to supportPublicIp)
 #   --ports <a/b,…>                exposed ports, each as port/protocol
 #   --env K=V                      environment variable; repeatable; NOT aliased to runpodctl's --env (a single JSON object) — the repeatable K=V shapes differ
 #   --start-cmd <a,b,…>            arguments passed to the container entrypoint
@@ -433,6 +443,7 @@ _pod_logs() {
 #   --limit N        return at most N pods
 #   --cursor <c>     offset to resume from; pairs with --limit
 #   --jq <filter>    jq filter applied to the array
+#   --public-ip      show only pods that currently expose a public IP
 #   --json           print the raw API response
 #
 # Notes:
@@ -615,6 +626,23 @@ _pod_logs() {
 #
 # API: GET /v2/pods/{id}/logs
 
+_pod_list() {
+  local body arr jqf
+  body="$(rp::http GET /pods)"
+  arr="$(rp::unwrap pods "$body")"
+  # --public-ip keeps only pods that currently expose a public IP (the
+  # community-cloud concern from the upstream request): the pod record's
+  # publicIp is empty while initialising and absent once terminated.
+  if rp::args_has public-ip; then
+    arr="$(printf '%s' "$arr" | jq -c 'map(select((.publicIp // "") != ""))')" ||
+      rp::die "public-ip filter failed"
+  fi
+  jqf="$(rp::args_get jq)"
+  [[ -z "$jqf" ]] || arr="$(printf '%s' "$arr" | jq -c "$jqf")" || rp::die "invalid --jq filter: $jqf"
+  rp::paginate arr
+  rp::emit_json_or "$arr" rp::table "$arr" id name image status cost publicIp
+}
+
 rp::cmd_pod() {
   local verb="${1:-help}"
   shift || true
@@ -622,7 +650,7 @@ rp::cmd_pod() {
   rp::args_has help && verb=help
   case "$verb" in
   create) _pod_create ;;
-  list) rp::resource_list pod id name image status cost ;;
+  list) _pod_list ;;
   get) rp::resource_get pod ;;
   update) _pod_update ;;
   delete) rp::resource_delete pod ;;
@@ -657,7 +685,7 @@ Usage: rp pod <verb> [flags]
            [--ports <a/b,...>] [--env K=V]… (--env is repeatable K=V; NOT aliased to runpodctl's JSON --env)
            [--start-cmd <a,b,...> (alias: --docker-args)]
            [--registry <id> (alias: --registry-auth-id)]   (PATCH; resets a running pod)
-   list | get <id> | start|stop|restart <id> | logs <id> | delete <id>   (reset is an alias for restart; v2 dropped it)
+   list [--public-ip] [--limit N] [--cursor <c>] [--jq <filter>] | get <id> | start|stop|restart <id> | logs <id> | delete <id>   (reset is an alias for restart; v2 dropped it)
    logs <id> [--source container|system] [--tail N] [--since <rfc3339>] [--last-event-id <ts>]   (live SSE stream; --tail 0 = live only)
 EOF
     ;;

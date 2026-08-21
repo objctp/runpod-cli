@@ -6,6 +6,7 @@
 
 - Add spot pod support via --bid-per-gpu and --interruptible
 - Add --insecure flag to skip TLS verification for in-pod runs
+- Add --public-ip for community-cloud pods
 
 ### Changed
 

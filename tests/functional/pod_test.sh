@@ -725,3 +725,63 @@ function test_should_send_cpu_block_when_compute_type_cpu_with_cpu_flags() {
   rp::http() { :; }
   rm -f "$body"
 }
+
+function test_should_set_support_public_ip_when_public_ip_flag_given() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then printf '{"pods":[]}'; return; fi
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --public-ip
+  _pod_create >/dev/null 2>&1
+  assert_equals "true" "$(jq -r '.supportPublicIp' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_omit_support_public_ip_when_flag_absent() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then printf '{"pods":[]}'; return; fi
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090"
+  _pod_create >/dev/null 2>&1
+  assert_equals "false" "$(jq -r 'has("supportPublicIp")' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+function test_should_filter_pods_by_public_ip_when_list_flag_given() {
+  rp::http() {
+    printf '%s' '{"pods":[
+      {"id":"pub1","name":"a","image":"i","status":"RUNNING","cost":1,"publicIp":"1.2.3.4"},
+      {"id":"priv1","name":"b","image":"i","status":"RUNNING","cost":1,"publicIp":""},
+      {"id":"init1","name":"c","image":"i","status":"PROVISIONING","cost":1}
+    ]}'
+  }
+  local out
+  out="$(rp::args_parse --public-ip; _pod_list 2>/dev/null)"
+  assert_contains "pub1" "$out"
+  [[ "$out" == *"priv1"* ]] && fail "private-IP pod should be filtered out"
+  [[ "$out" == *"init1"* ]] && fail "pod without publicIp should be filtered out"
+  rp::http() { :; }
+}
+
+function test_should_list_all_pods_when_public_ip_flag_absent() {
+  rp::http() {
+    printf '%s' '{"pods":[
+      {"id":"pub1","name":"a","image":"i","status":"RUNNING","cost":1,"publicIp":"1.2.3.4"},
+      {"id":"priv1","name":"b","image":"i","status":"RUNNING","cost":1,"publicIp":""}
+    ]}'
+  }
+  local out
+  out="$(rp::args_parse; _pod_list 2>/dev/null)"
+  assert_contains "pub1" "$out"
+  assert_contains "priv1" "$out"
+  rp::http() { :; }
+}

@@ -11,6 +11,7 @@ rp pod list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
   --limit N        return at most N pods
   --cursor <c>     offset to resume from; pairs with --limit
   --jq <filter>    jq filter applied to the array
+  --public-ip      show only pods that currently expose a public IP
   --json           print the raw API response
 ```
 
