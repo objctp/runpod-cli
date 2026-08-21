@@ -81,6 +81,7 @@ _pod_create() {
   # matching rp flags be present so the existing gpu/cpu path is selected.
   local compute_type
   compute_type="$(rp::args_get compute-type)"
+  compute_type="${compute_type^^}"
   if [[ -n "$compute_type" ]]; then
     case "$compute_type" in
     GPU)
@@ -102,7 +103,7 @@ _pod_create() {
   fi
   [[ -z "$image" ]] || rp::obj_set obj image "$(rp::json_str "$image")"
   [[ -z "$template_id" ]] || rp::obj_set obj templateId "$(rp::json_str "$template_id")"
-  rp::obj_set obj cloud "$(rp::json_str "$(rp::args_get cloud "$RP_DEFAULT_CLOUD")")"
+  rp::obj_set obj cloud "$(rp::json_str "$(rp::args_get cloud "$RP_DEFAULT_CLOUD" | tr '[:lower:]' '[:upper:]')")"
 
   local disk vol_gb
   disk="$(rp::args_get_uint container-disk-gb)"

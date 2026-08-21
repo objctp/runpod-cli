@@ -67,6 +67,7 @@ _template_create() {
   fi
   local category
   category="$(rp::args_get category "$RP_DEFAULT_TEMPLATE_CATEGORY")"
+  category="${category^^}"
   _template_validate_category "$category"
   rp::obj_set obj category "$(rp::json_str "$category")"
   # Omitted --public leaves the key unset, so the API applies its `false` default.
@@ -96,6 +97,7 @@ _template_update() {
   [[ -n "$registry" ]] && rp::obj_set obj registry "$(rp::json_str "$registry")"
   # Unlike create, category is sent only when given: the spec's defaults are create-side.
   category="$(rp::args_get category)"
+  category="${category^^}"
   _template_validate_category "$category"
   [[ -n "$category" ]] && rp::obj_set obj category "$(rp::json_str "$category")"
   rp::args_has serverless && rp::obj_set obj serverless true

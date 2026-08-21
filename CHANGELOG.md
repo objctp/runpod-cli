@@ -26,6 +26,7 @@
 - Make npm publish idempotent in release workflow
 - 401 from quoted .env values
 - Test polluting cwd with a stray '15' file
+- Accept case-insensitive values for all-caps enum flags
 
 ## [1.0.0] - 2026-08-17
 

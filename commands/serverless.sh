@@ -83,7 +83,7 @@ _serverless_scaling_obj() {
       sval="$RP_DEFAULT_SCALER_QUEUE_DELAY_S"
     fi
   else
-    _out_type="$stype"
+    _out_type="${stype^^}"
     if [[ -z "$sval" ]]; then
       case "$_out_type" in
       REQUEST_COUNT) sval="$RP_DEFAULT_SCALER_REQUEST_COUNT" ;;
@@ -161,6 +161,7 @@ _serverless_create() {
   # `type` is required by the live spec on create (immutable thereafter).
   local etype idle
   etype="$(rp::args_get type "$RP_DEFAULT_SERVERLESS_TYPE")"
+  etype="${etype^^}"
   case "$etype" in
   QUEUE | LOAD_BALANCER) ;;
   *) rp::usage "invalid --type '$etype' (expected QUEUE|LOAD_BALANCER)" ;;
@@ -273,6 +274,7 @@ _serverless_create_hub() {
   hwmax="$(rp::args_get_uint workers-max "$RP_DEFAULT_WORKERS_MAX")"
   hidle="$(rp::args_get_uint idle)"
   htype="$(rp::args_get type "$RP_DEFAULT_SERVERLESS_TYPE")"
+  htype="${htype^^}"
   case "$htype" in
   QUEUE | LOAD_BALANCER) ;;
   *) rp::usage "invalid --type '$htype' (expected QUEUE|LOAD_BALANCER)" ;;

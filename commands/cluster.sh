@@ -16,6 +16,7 @@ _cluster_create() {
   name="$(rp::args_get name)"
   [[ -n "$name" ]] || rp::usage "usage: rp cluster create --name <n> --type <kind> --gpu <type> [--pod-count N] [--gpu-count N] [flags]"
   type="$(rp::args_get type)"
+  type="${type^^}"
   case "$type" in
   APPLICATION | TRAINING | SLURM | RAY) ;;
   *) rp::usage "usage: rp cluster create --type must be APPLICATION|TRAINING|SLURM|RAY (got: '$type')" ;;

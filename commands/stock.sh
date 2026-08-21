@@ -14,7 +14,9 @@
 _stock_gpu() {
   local product cloud cuda count q data
   product="$(rp::args_get product "$RP_DEFAULT_PRODUCT")"
+  product="${product^^}"
   cloud="$(rp::args_get cloud)"
+  cloud="${cloud^^}"
   case "$cloud" in '' | SECURE | COMMUNITY) ;; *) rp::usage "invalid --cloud '$cloud' (expected SECURE|COMMUNITY)" ;; esac
   cuda="$(rp::args_get min-cuda)"
   [[ -z "$cuda" || "$cuda" =~ ^[0-9]+(\.[0-9]+)?$ ]] || rp::usage "invalid --min-cuda '$cuda' (expected major or major.minor, e.g. 12 or 12.1)"
