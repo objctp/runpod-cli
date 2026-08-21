@@ -151,11 +151,27 @@ gen_index() {
   echo "docs/index.md"
 }
 
+# Regenerate a subset of commands when names are passed (incremental mode, used
+# by the pre-commit hook), or the whole tree when called with no arguments.
+# A named command whose source `commands/<name>.sh` no longer exists is treated
+# as deleted: its doc pages are removed so manual and CLI never diverge. The
+# index is always refreshed (one `rp doc` call) since any command's summary may
+# have changed.
 main() {
+  local -a names=("$@")
+  if [ ${#names[@]} -eq 0 ]; then
+    for f in "$ROOT"/commands/*.sh; do
+      names+=("$(basename "$f" .sh)")
+    done
+  fi
   local c
-  for f in "$ROOT"/commands/*.sh; do
-    c="$(basename "$f" .sh)"
-    gen_command "$c"
+  for c in "${names[@]}"; do
+    if [ -f "$ROOT/commands/$c.sh" ]; then
+      gen_command "$c"
+    else
+      rm -f "$OUT/$c.md" "$OUT/$c-"*.md
+      echo "docs/$c*.md (removed)"
+    fi
   done
   gen_index
 }

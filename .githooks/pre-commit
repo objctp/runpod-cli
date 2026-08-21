@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Pre-commit: keep docs/ in sync with the `rp doc` reference blocks.
 #
-# docs/ is generated from the `# doc:` comments in commands/*.sh and lib/*.sh by
-# scripts/gen-manual.sh (which reads `bin/rp doc`). On every commit we
-# regenerate and stage any changed pages, so the manual can never drift from the
-# CLI. Installed via `make hooks`, which sets core.hooksPath to .githooks.
+# docs/ is generated from the `# doc:` comments in commands/*.sh by
+# scripts/gen-manual.sh (which reads `bin/rp doc`). Rather than regenerating the
+# whole manual on every commit, we look at the staged files and regenerate only
+# the pages whose source command actually changed — so an unrelated commit no
+# longer pays for a full doc rebuild. The index is refreshed by gen-manual.sh
+# itself (a single cheap `rp doc` call) whenever any command is regenerated.
+# Installed via `make hooks`, which sets core.hooksPath to .githooks.
 #
 # Non-blocking: a tooling failure (e.g. jq or bash 5 absent in a sparse
 # environment) only warns, so it can never hang or block a commit.
@@ -13,10 +16,24 @@ set -o pipefail
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$ROOT" || exit 0
 
-if command -v bash >/dev/null 2>&1 && [[ -x bin/rp ]]; then
-  if ./scripts/gen-manual.sh >/dev/null 2>&1; then
-    git add docs 2>/dev/null || true
-  else
-    echo "warning: docs generation failed; skipping docs sync" >&2
-  fi
+[ -x bin/rp ] || exit 0
+command -v bash >/dev/null 2>&1 || exit 0
+
+# Collect command names whose source file is staged for this commit. A new,
+# modified, or deleted commands/*.sh all count; lib/*.sh and other changes do
+# not feed the manual, so they are ignored here.
+cmds=()
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  case "$f" in
+    commands/*.sh) cmds+=("$(basename "$f" .sh)") ;;
+  esac
+done < <(git diff --cached --name-only -- commands/)
+
+[ ${#cmds[@]} -gt 0 ] || exit 0
+
+if ./scripts/gen-manual.sh "${cmds[@]}" >/dev/null 2>&1; then
+  git add docs 2>/dev/null || true
+else
+  echo "warning: docs generation failed; skipping docs sync" >&2
 fi
