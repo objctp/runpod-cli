@@ -13,6 +13,7 @@
 ### Changed
 
 - Add Scope note clarifying rp is not a runpodctl replacement
+- Document the `rp auth use` alias and fix summary shape
 
 ### Fixed
 

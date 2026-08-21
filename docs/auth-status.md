@@ -1,6 +1,6 @@
 # rp auth status
-Show the active account and whether an API key is configured and where it is
-read from.
+Show the active account and whether an API key is configured.
+Reports the effective source (environment export, account file, or user/install .env).
 
 ```
 rp auth status

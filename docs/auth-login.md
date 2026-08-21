@@ -1,6 +1,6 @@
 # rp auth login
-Store a RunPod API key as an account (additive — does not replace others) and
-mark it active. The key loads automatically on every `rp` call thereafter.
+Store a RunPod API key as an account (additive — does not replace others).
+Login marks it active; the key then loads automatically on every `rp` call.
 
 ```
 rp auth login [--name <n>] [--api-key <k>] [--from-runpodctl] [--s3-access-key <k>] [--s3-secret-key <k>]

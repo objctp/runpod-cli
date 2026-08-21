@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# Manage RunPod API credentials in a stable per-user store that survives any
-# install method — including an npm global install whose files live inside
-# node_modules and are wiped on every `npm upgrade`. Modeled on gh's multi-
-# account support (v2.40.0): one key per account, exactly one "active" account
-# used for API calls, switchable with `rp auth switch`.
+# Manage RunPod API credentials in a stable per-user store.
+# This store survives any install method — including an npm global install
+# whose files live inside node_modules and are wiped on every `npm upgrade`.
+# Modeled on gh's multi-account support (v2.40.0): one key per account,
+# exactly one "active" account used for API calls, switchable with
+# `rp auth switch`.
 #
 # Layout under $RP_CONFIG_HOME:
 #   credentials.d/<name>   one account: RUNPOD_API_KEY (+ optional S3 keys)
@@ -276,8 +277,8 @@ EOF
 ###
 
 # doc: login
-# Store a RunPod API key as an account (additive — does not replace others) and
-# mark it active. The key loads automatically on every `rp` call thereafter.
+# Store a RunPod API key as an account (additive — does not replace others).
+# Login marks it active; the key then loads automatically on every `rp` call.
 #
 # Usage: rp auth login [--name <n>] [--api-key <k>] [--from-runpodctl] [--s3-access-key <k>] [--s3-secret-key <k>]
 #
@@ -297,8 +298,8 @@ EOF
 #   are preserved. The API key is the only auth RunPod supports — no OAuth.
 #
 # doc: logout
-# Remove an account. If it was active and other accounts remain, the active
-# account switches to one of the others (mirrors gh auth logout).
+# Remove an account (mirrors gh auth logout).
+# If it was active and other accounts remain, the active account switches to one of the others.
 #
 # Usage: rp auth logout [--name <n>]
 #
@@ -310,14 +311,21 @@ EOF
 #
 # Usage: rp auth switch <name>   (alias: rp auth use <name>)
 #
+# doc: use
+# Alias for `rp auth switch <name>` — change the active account.
+# The active account is the one used for all API calls.
+#
+# Usage: rp auth use <name>
+#
+
 # doc: list
 # Show stored accounts, marking the active one.
 #
 # Usage: rp auth list
 #
 # doc: status
-# Show the active account and whether an API key is configured and where it is
-# read from.
+# Show the active account and whether an API key is configured.
+# Reports the effective source (environment export, account file, or user/install .env).
 #
 # Usage: rp auth status
 #

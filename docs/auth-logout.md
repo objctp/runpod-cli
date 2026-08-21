@@ -1,6 +1,6 @@
 # rp auth logout
-Remove an account. If it was active and other accounts remain, the active
-account switches to one of the others (mirrors gh auth logout).
+Remove an account (mirrors gh auth logout).
+If it was active and other accounts remain, the active account switches to one of the others.
 
 ```
 rp auth logout [--name <n>]
