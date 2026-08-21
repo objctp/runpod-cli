@@ -10,7 +10,6 @@ dist/
 
 # Test outputs
 test-results/
-docs/
 coverage/
 
 # Secrets & caches

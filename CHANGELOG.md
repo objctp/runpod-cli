@@ -17,6 +17,7 @@
 ### Changed
 
 - Annotate runpodctl-compatible flag aliases in --help and rp doc
+- Regenerate manual to reflect v2-aligned ssh keys and S3 wording
 
 ### Fixed
 
