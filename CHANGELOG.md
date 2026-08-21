@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Add Scope note clarifying rp is not a runpodctl replacement
+
 ### Fixed
 
 - Resolve lint and docs-compat regressions

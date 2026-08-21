@@ -4,8 +4,16 @@ A small Bash CLI for managing [RunPod](https://runpod.io?ref=a0lqk36q) infrastru
 endpoints, pods, templates, registries, billing, account balance, Hub listings,
 SSH keys, and live GPU stock. It speaks three RunPod APIs directly — REST API v2
 for CRUD, GraphQL for account/hub/ssh/S3-datacentre stock, and the S3-compatible
-API for filling volumes — so it covers the same ground as `runpodctl` for the
-work in this repo.
+API for filling volumes.
+
+## Scope
+
+`rp` is a personal, Bash-based wrapper around RunPod's APIs — not a replacement
+for the official [`runpodctl`](https://github.com/runpod/runpodctl). I built it
+because a shell CLI is easy to extend and to wrap other tooling around — and
+because a few workflows (notably `volume sync`, plus `catalog` and `cluster`)
+aren't covered by `runpodctl`. Where commands overlap with `runpodctl`, the shared
+flag spellings are accepted as a convenience only.
 
 ## Requirements
 
