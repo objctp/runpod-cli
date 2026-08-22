@@ -104,6 +104,11 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # Install/test the formula we just generated, not the stale one Homebrew
+          # would fetch from the remote tap on auto-update (which clobbers the
+          # local edit and fails the version assertion). The edited formula is
+          # still pushed to objctp/homebrew-tap at the end of this step.
+          export HOMEBREW_NO_AUTO_UPDATE=1
           : "${TAP_TOKEN:?HOMEBREW_TAP_TOKEN secret is required to push the formula}"
           SHA256="$(awk '{print $1}' SHA256SUMS)"
           TAP_DIR="$(mktemp -d)"
