@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Stop Homebrew fetching stale formula on auto-update
+- Validate Homebrew formula by path, not via tap clone
 
 ## [1.2.0] - 2026-08-22
 

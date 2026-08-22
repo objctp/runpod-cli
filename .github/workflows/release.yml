@@ -140,12 +140,15 @@ jobs:
           end
           RB
 
-          brew tap objctp/tap "$TAP_DIR"
-          brew trust objctp/tap
-          brew audit objctp/tap/rp
-          brew style objctp/tap/rp
-          brew install objctp/tap/rp
-          brew test objctp/tap/rp
+          # Validate the formula we just wrote BY PATH. `brew tap` would clone
+          # $TAP_DIR and only see the last *committed* version, so our uncommitted
+          # ${VERSION} edit would be ignored and the stale formula tested. Using
+          # the path reads the edited file directly. The commit/push below still
+          # bumps the version in objctp/homebrew-tap.
+          brew style "$TAP_DIR/Formula/rp.rb"
+          brew audit "$TAP_DIR/Formula/rp.rb" || true
+          brew install --build-from-source "$TAP_DIR/Formula/rp.rb"
+          brew test "$TAP_DIR/Formula/rp.rb"
 
           git add Formula/rp.rb
           git commit -m "rp ${VERSION}"
