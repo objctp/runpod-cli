@@ -21,3 +21,7 @@ coverage/
 /rp-*.tar.gz
 /SHA256SUMS
 .bashunit/
+
+# Docs site build
+.venv/
+site/

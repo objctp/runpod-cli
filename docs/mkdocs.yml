@@ -1,0 +1,148 @@
+site_name: rp manual
+site_url: https://objctp.github.io/runpod-cli/manual/
+repo_url: https://github.com/objctp/runpod-cli
+docs_dir: .
+site_dir: ../site/manual
+extra_css:
+- stylesheets/extra.css
+theme:
+  name: material
+  custom_dir: theme
+  features:
+  - navigation.sections
+  - navigation.indexes
+  - navigation.top
+  - content.code.copy
+  - search.suggest
+  palette:
+  - scheme: slate
+    primary: black
+    accent: indigo
+    toggle:
+      icon: material/weather-sunny
+      name: Switch to light mode
+  - scheme: default
+    primary: black
+    accent: indigo
+    toggle:
+      icon: material/weather-night
+      name: Switch to dark mode
+use_directory_urls: true
+markdown_extensions:
+- admonition
+- toc
+- tables
+- fenced_code
+nav:
+- Home: index.md
+- Account:
+  - account: account.md
+  - info: account-info.md
+- Api:
+  - api: api.md
+- Auth:
+  - auth: auth.md
+  - list: auth-list.md
+  - login: auth-login.md
+  - logout: auth-logout.md
+  - status: auth-status.md
+  - switch: auth-switch.md
+  - use: auth-use.md
+- Billing:
+  - billing: billing.md
+  - all: billing-all.md
+  - clusters: billing-clusters.md
+  - pods: billing-pods.md
+  - public-endpoints: billing-public-endpoints.md
+  - serverless: billing-serverless.md
+  - volumes: billing-volumes.md
+- Catalog:
+  - catalog: catalog.md
+  - list: catalog-list.md
+- Cluster:
+  - cluster: cluster.md
+  - create: cluster-create.md
+  - delete: cluster-delete.md
+  - get: cluster-get.md
+  - list: cluster-list.md
+  - pods: cluster-pods.md
+  - update: cluster-update.md
+- Doc:
+  - doc: doc.md
+- Hub:
+  - hub: hub.md
+  - get: hub-get.md
+  - list: hub-list.md
+  - search: hub-search.md
+- Pod:
+  - pod: pod.md
+  - create: pod-create.md
+  - delete: pod-delete.md
+  - get: pod-get.md
+  - list: pod-list.md
+  - logs: pod-logs.md
+  - reset: pod-reset.md
+  - restart: pod-restart.md
+  - start: pod-start.md
+  - stop: pod-stop.md
+  - update: pod-update.md
+- Registry:
+  - registry: registry.md
+  - create: registry-create.md
+  - delegations: registry-delegations.md
+  - delegations-create: registry-delegations-create.md
+  - delegations-list: registry-delegations-list.md
+  - delegations-revoke: registry-delegations-revoke.md
+  - delete: registry-delete.md
+  - get: registry-get.md
+  - list: registry-list.md
+- Serverless:
+  - serverless: serverless.md
+  - create: serverless-create.md
+  - delete: serverless-delete.md
+  - get: serverless-get.md
+  - health: serverless-health.md
+  - list: serverless-list.md
+  - logs: serverless-logs.md
+  - releases: serverless-releases.md
+  - run: serverless-run.md
+  - scale: serverless-scale.md
+  - status: serverless-status.md
+  - update: serverless-update.md
+  - workers: serverless-workers.md
+- Ssh:
+  - ssh: ssh.md
+  - add-key: ssh-add-key.md
+  - info: ssh-info.md
+  - list-keys: ssh-list-keys.md
+  - remove-key: ssh-remove-key.md
+- Ssh-key:
+  - ssh-key: ssh-key.md
+  - add: ssh-key-add.md
+  - list: ssh-key-list.md
+  - remove: ssh-key-remove.md
+- Stock:
+  - stock: stock.md
+  - cpus: stock-cpus.md
+  - dc: stock-dc.md
+  - gpu: stock-gpu.md
+- Template:
+  - template: template.md
+  - create: template-create.md
+  - delete: template-delete.md
+  - get: template-get.md
+  - list: template-list.md
+  - search: template-search.md
+  - update: template-update.md
+- Upgrade:
+  - upgrade: upgrade.md
+- Volume:
+  - volume: volume.md
+  - create: volume-create.md
+  - delete: volume-delete.md
+  - get: volume-get.md
+  - gpus: volume-gpus.md
+  - list: volume-list.md
+  - ls: volume-ls.md
+  - sync: volume-sync.md
+  - update: volume-update.md

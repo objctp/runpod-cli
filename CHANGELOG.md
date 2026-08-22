@@ -9,6 +9,7 @@
 - Add --public-ip for community-cloud pods
 - Add per-user multi-account credential store
 - Import API key from runpodctl config
+- Add MkDocs Material manual published to GitHub Pages
 
 ### Changed
 
