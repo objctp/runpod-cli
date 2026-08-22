@@ -140,16 +140,20 @@ jobs:
           end
           RB
 
-          # Validate the formula we just wrote BY PATH. `brew tap` would clone
-          # $TAP_DIR and only see the last *committed* version, so our uncommitted
-          # ${VERSION} edit would be ignored and the stale formula tested. Using
-          # the path reads the edited file directly. The commit/push below still
-          # bumps the version in objctp/homebrew-tap.
-          brew style "$TAP_DIR/Formula/rp.rb"
-          brew audit "$TAP_DIR/Formula/rp.rb" || true
-          brew install --build-from-source "$TAP_DIR/Formula/rp.rb"
-          brew test "$TAP_DIR/Formula/rp.rb"
-
+          # Commit the generated formula locally BEFORE tapping/installing. A
+          # `git clone` (which `brew tap` performs) only copies *committed*
+          # state, so an uncommitted edit would be invisible and the stale
+          # released version would be tested. HOMEBREW_NO_AUTO_UPDATE (set above)
+          # stops brew from pulling the remote tap at install time. The push
+          # below still bumps the version in objctp/homebrew-tap.
           git add Formula/rp.rb
           git commit -m "rp ${VERSION}"
+
+          brew tap objctp/tap "$TAP_DIR"
+          brew trust objctp/tap
+          brew audit objctp/tap/rp
+          brew style objctp/tap/rp
+          brew install objctp/tap/rp
+          brew test objctp/tap/rp
+
           git push

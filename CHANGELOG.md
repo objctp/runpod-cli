@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Validate Homebrew formula by path, not via tap clone
+- Commit formula in tap clone before brew tap/install
 
 ## [1.2.0] - 2026-08-22
 
