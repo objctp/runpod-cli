@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Unescape #{bin} in Homebrew formula test heredoc
+- Redirect GitHub Pages root to /manual/
 
 ## [1.2.0] - 2026-08-22
 

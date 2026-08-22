@@ -40,6 +40,23 @@ jobs:
       - name: Build site
         run: mkdocs build --strict -f docs/mkdocs.yml
 
+      - name: Add root redirect to /manual/
+        run: |
+          cat > site/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta http-equiv="refresh" content="0; url=/runpod-cli/manual/" />
+              <link rel="canonical" href="/runpod-cli/manual/" />
+              <title>runpod-cli manual</title>
+            </head>
+            <body>
+              <p>Redirecting to the <a href="/runpod-cli/manual/">runpod-cli manual</a>&hellip;</p>
+            </body>
+          </html>
+          EOF
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
