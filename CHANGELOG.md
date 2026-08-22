@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Commit formula in tap clone before brew tap/install
+- Unescape #{bin} in Homebrew formula test heredoc
 
 ## [1.2.0] - 2026-08-22
 
