@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# RunPod CLI — tunable literals (the "magic values" that are NOT the API wire
+# Runpod CLI — tunable literals (the "magic values" that are NOT the API wire
 # contract). Contract constants (API base URLs, REST paths, GraphQL field names,
 # enum values) live closer to the code that uses them (lib/common.sh,
 # lib/resource.sh) or are env-overridable; this file is the single home for the

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Credential resolution — the single seam that knows where the RunPod API token
+# Credential resolution — the single seam that knows where the Runpod API token
 # comes from. The transport (lib/transport.sh) calls rp::auth_header and never
 # reads RUNPOD_API_KEY itself, so the token source is swappable without touching
 # curl. Two adapters today, both resolving to a bare token on stdout:

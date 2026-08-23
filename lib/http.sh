@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RunPod HTTP clients — the control-plane (REST) and serverless data-plane
+# Runpod HTTP clients — the control-plane (REST) and serverless data-plane
 # wrappers. Thin facades over rp::api_call in lib/transport.sh; all curl lives in
 # the shared transport module. Sourced by bin/rp; not executed directly.
 # shellcheck source=transport.sh
@@ -28,7 +28,7 @@ _rp_http_emit() {
     local msg err
     msg="$(jq -rc '.error // .message // .title // empty' "$tmp" 2>/dev/null || true)"
     rm -f -- "$tmp"
-    err="RunPod $method $path -> HTTP $status${msg:+: $msg}"
+    err="Runpod $method $path -> HTTP $status${msg:+: $msg}"
     _rp_exit_for_status "$status" "$err"
   fi
   cat "$tmp"

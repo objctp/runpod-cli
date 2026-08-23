@@ -216,7 +216,7 @@ _pod_create() {
   # pay). --bid-per-gpu is the canonical trigger and implies --interruptible;
   # pass --interruptible alone to mark the pod spot and let the server bid the
   # on-demand price. The bid must be a positive number. (The published v2
-  # OpenAPI is beta and omits these fields; the request shape matches RunPod's
+  # OpenAPI is beta and omits these fields; the request shape matches Runpod's
   # REST spot fields and is what the v2 handler accepts.)
   local bid_per_gpu
   bid_per_gpu="$(rp::args_get bid-per-gpu)"
@@ -261,7 +261,7 @@ _pod_create() {
     local _msg
     _msg="$(jq -rc '.error // .message // .title // empty' "$_bodyfile" 2>/dev/null || true)"
     rm -f -- "$_bodyfile"
-    _rp_exit_for_status "$_status" "RunPod POST /pods -> HTTP $_status${_msg:+: $_msg}"
+    _rp_exit_for_status "$_status" "Runpod POST /pods -> HTTP $_status${_msg:+: $_msg}"
   fi
 
   rp::resource_create pod "" "$obj"

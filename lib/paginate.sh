@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Client-side pagination + field selection for list verbs. RunPod's REST v2 has
+# Client-side pagination + field selection for list verbs. Runpod's REST v2 has
 # no server-side pagination yet (the official MCP server caps client-side with a
 # limit/cursor signature explicitly "shaped to match the cursor-based pagination
 # the REST API will add"), so this slices an already-fetched array. The flags

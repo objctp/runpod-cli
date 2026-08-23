@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Manage RunPod API credentials in a stable per-user store.
+# Manage Runpod API credentials in a stable per-user store.
 # This store survives any install method — including an npm global install
 # whose files live inside node_modules and are wiped on every `npm upgrade`.
 # Modeled on gh's multi-account support (v2.40.0): one key per account,
@@ -11,7 +11,7 @@
 #   credentials.d/<name>   one account: RUNPOD_API_KEY (+ optional S3 keys)
 #   active                 a file containing the name of the active account
 #
-# There is no OAuth/browser login — RunPod is API-key only, so `login` just
+# There is no OAuth/browser login — Runpod is API-key only, so `login` just
 # captures and stores the key you copy from console > Settings > API Keys.
 #
 # Usage: rp auth <verb> [flags]
@@ -139,7 +139,7 @@ _auth_login() {
       fi
     fi
     if [[ -z "$api_key" ]]; then
-      read -s -r -p "RunPod API key (console > Settings > API Keys): " api_key
+      read -s -r -p "Runpod API key (console > Settings > API Keys): " api_key
       printf '\n' >/dev/tty
       read -r -p "S3 access key (optional, empty to skip): " s3_ak
       [[ -n "$s3_ak" ]] && {
@@ -246,7 +246,7 @@ _auth_help() {
   cat <<'EOF'
 Usage: rp auth <verb> [flags]
 
-Manage RunPod API credentials in a stable per-user store
+Manage Runpod API credentials in a stable per-user store
 (${XDG_CONFIG_HOME:-$HOME/.config}/rp by default) that survives any install
 method, including npm global installs. Multiple accounts are supported: each is
 a separate file under credentials.d/, with one marked "active" and used for all
@@ -277,7 +277,7 @@ EOF
 ###
 
 # doc: login
-# Store a RunPod API key as an account (additive — does not replace others).
+# Store a Runpod API key as an account (additive — does not replace others).
 # Login marks it active; the key then loads automatically on every `rp` call.
 #
 # Usage: rp auth login [--name <n>] [--api-key <k>] [--from-runpodctl] [--s3-access-key <k>] [--s3-secret-key <k>]
@@ -295,7 +295,7 @@ EOF
 #   a key, interactive login offers to import it; pass `--from-runpodctl` to take
 #   it without prompting. An explicit `--api-key` always wins. Stored unquoted at
 #   $RP_CONFIG_HOME/credentials.d/<name> (mode 600, dir 700); other lines there
-#   are preserved. The API key is the only auth RunPod supports — no OAuth.
+#   are preserved. The API key is the only auth Runpod supports — no OAuth.
 #
 # doc: logout
 # Remove an account (mirrors gh auth logout).

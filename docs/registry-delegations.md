@@ -1,5 +1,5 @@
 # rp registry delegations
-Manage ECR access delegations between an AWS account and RunPod.
+Manage ECR access delegations between an AWS account and Runpod.
 
 ```
 rp registry delegations <verb> [flags]

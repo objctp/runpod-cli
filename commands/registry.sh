@@ -4,7 +4,7 @@
 #
 # A registry auth entry lets a pod or endpoint pull a private image without
 # embedding a password in the container. An ECR delegation links an AWS account
-# to RunPod so images can be pulled from a private Elastic Container Registry
+# to Runpod so images can be pulled from a private Elastic Container Registry
 # without a stored credential at all. Both surfaces use REST API v2.
 #
 # Usage: rp registry <verb> [flags]
@@ -73,7 +73,7 @@ _registry_create() {
 ###
 
 # doc: delegations
-# Manage ECR access delegations between an AWS account and RunPod.
+# Manage ECR access delegations between an AWS account and Runpod.
 #
 # Usage: rp registry delegations <verb> [flags]
 #
@@ -202,7 +202,7 @@ rp::cmd_registry() {
     -h | --help | help)
       cat <<'EOF'
 Usage: rp registry delegations <verb> [flags]
-  list                                   ECR access delegations (AWS account ↔ RunPod)
+  list                                   ECR access delegations (AWS account ↔ Runpod)
   create --resource <ecr-arn> [--name <n>]   link an ECR repo for private-image pulls
   revoke <id>                            remove a delegation
 EOF

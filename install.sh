@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — one-line installer for rp (RunPod CLI).
+# install.sh — one-line installer for rp (Runpod CLI).
 #
 #   curl -fsSL https://raw.githubusercontent.com/objctp/runpod-cli/main/install.sh | bash
 #

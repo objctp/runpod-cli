@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RunPod transport — the single curl implementation shared by every client
+# Runpod transport — the single curl implementation shared by every client
 # (control-plane REST, serverless data plane, GraphQL). All auth-header, payload,
 # timeout, and status handling lives here; the public clients in lib/http.sh and
 # lib/graphql.sh are thin facades over rp::api_call. Sourced by bin/rp.
@@ -194,7 +194,7 @@ rp::api_stream() {
   http\ *)
     local status
     status="${verdict#http }"
-    _rp_exit_for_status "$status" "RunPod GET $path -> HTTP $status"
+    _rp_exit_for_status "$status" "Runpod GET $path -> HTTP $status"
     ;;
   transport) rp::die "curl transport error: GET $path" ;;
   esac

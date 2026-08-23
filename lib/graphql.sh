@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RunPod GraphQL client — thin wrapper over the shared transport in
+# Runpod GraphQL client — thin wrapper over the shared transport in
 # lib/transport.sh. Sourced by bin/rp; not executed directly.
 # shellcheck source=transport.sh
 [[ -n "${_RP_GRAPHQL:-}" ]] && return 0
@@ -32,7 +32,7 @@ _rp_graphql_emit() {
   fi
   if ((status == 410)); then
     rm -f -- "$tmp"
-    rp::die "RunPod GraphQL API has been retired (HTTP 410 Gone). Update 'rp', or use the v2 endpoint if one is available."
+    rp::die "Runpod GraphQL API has been retired (HTTP 410 Gone). Update 'rp', or use the v2 endpoint if one is available."
   fi
   if ((status >= 400)); then
     rm -f -- "$tmp"

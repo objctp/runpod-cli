@@ -1,14 +1,14 @@
-# RunPod CLI (rp)
+# Runpod CLI (rp)
 
-A small Bash CLI for managing [RunPod](https://runpod.io?ref=a0lqk36q) infrastructure: network volumes, serverless
+A small Bash CLI for managing [Runpod](https://runpod.io?ref=a0lqk36q) infrastructure: network volumes, serverless
 endpoints, pods, templates, registries, billing, account balance, Hub listings,
-SSH keys, and live GPU stock. It speaks three RunPod APIs directly — REST API v2
+SSH keys, and live GPU stock. It speaks three Runpod APIs directly — REST API v2
 for CRUD, GraphQL for account/hub/ssh/S3-datacentre stock, and the S3-compatible
 API for filling volumes.
 
 ## Scope
 
-`rp` is a personal, Bash-based wrapper around RunPod's APIs — not a replacement
+`rp` is a personal, Bash-based wrapper around Runpod's APIs — not a replacement
 for the official [`runpodctl`](https://github.com/runpod/runpodctl). I built it
 because a shell CLI is easy to extend and to wrap other tooling around — and
 because a few workflows (notably `volume sync`, plus `catalog` and `cluster`)
@@ -147,9 +147,9 @@ behind a release:
   transport as the resource verbs, so it reaches any v2 route the typed commands
   don't wrap yet (e.g. a brand-new endpoint). It honours `--body`, `--plane`,
   `--jq`, `--limit`, and `--cursor`.
-- **List paging is client-side** — RunPod's REST v2 has no server-side pagination
+- **List paging is client-side** — Runpod's REST v2 has no server-side pagination
   yet, so `--limit` / `--cursor` slice the already-fetched list locally. The flags
-  mirror the cursor shape RunPod will add, so they forward server-side later
+  mirror the cursor shape Runpod will add, so they forward server-side later
   without a CLI change.
 - **Stock and prices drift** — re-run the CLI before each booking.
 - **runpodctl aliases** — several commands also accept `runpodctl`-style flag

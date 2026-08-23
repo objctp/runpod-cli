@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RunPod CLI (rp) entry point. Loads .env, sources lib/, dispatches <resource> to commands/<resource>.sh (see _help).
+# Runpod CLI (rp) entry point. Loads .env, sources lib/, dispatches <resource> to commands/<resource>.sh (see _help).
 # Usage: rp <resource> <verb> [flags]
 set -euo pipefail
 # Resolve symlinks before locating the root, so rp works whether run from the
@@ -114,7 +114,7 @@ _help() {
   # `cat <<'EOF'` would fork cat on every --help / no-args call (~5 ms on macOS).
   if [[ -z "${_RP_HELP:-}" ]]; then
     read -r -d '' _RP_HELP <<'EOF' || true
-RunPod CLI
+Runpod CLI
 
 Usage: rp <resource> <verb> [flags]   (no args prints this help)
 

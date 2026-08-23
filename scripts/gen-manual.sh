@@ -140,7 +140,7 @@ gen_index() {
   {
     echo "# rp manual"
     echo
-    echo "Reference for the RunPod CLI (\`rp\`). Each command has its own page:"
+    echo "Reference for the Runpod CLI (\`rp\`). Each command has its own page:"
     echo
     rpdoc | while read -r line; do
       # lines look like: "rp pod          On-demand GPU ..."

@@ -36,7 +36,7 @@ _api_help() {
   cat <<'EOF'
 Usage: rp api <METHOD> <path> [flags]
 
-Raw call to the RunPod API — the same transport rp's resource verbs use, exposed
+Raw call to the Runpod API — the same transport rp's resource verbs use, exposed
 for scripting and ad-hoc calls. Prints the response body; dies on HTTP >= 400
 with the API's error message.
 

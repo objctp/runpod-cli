@@ -121,7 +121,7 @@ jobs:
           # 5+ (macOS ships 3.2), and there is no man page.
           cat > Formula/rp.rb <<RB
           class Rp < Formula
-            desc "CLI for managing RunPod infrastructure (volumes, serverless, pods, billing)"
+            desc "CLI for managing Runpod infrastructure (volumes, serverless, pods, billing)"
             homepage "https://github.com/objctp/runpod-cli"
             url "https://github.com/objctp/runpod-cli/releases/download/${VERSION}/rp-${VERSION}.tar.gz"
             sha256 "${SHA256}"

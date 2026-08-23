@@ -23,7 +23,7 @@ rp ssh info <pod-id> [--json] [--user <u>]
   over REST API v2 and formats what it finds, so it keeps working even where
   the key verbs would not. The line comes from the first runtime port labelled
   ssh, or failing that the first TCP port. The login user defaults to `root`
-  (RunPod official images run as root), but images that run as a non-root user
+  (Runpod official images run as root), but images that run as a non-root user
   need `--user` set to match, otherwise the printed `ssh` line fails with a
   permission error. The --user value is not validated against the pod — the CLI
   has no API field for a container's default user — so pass the user the image

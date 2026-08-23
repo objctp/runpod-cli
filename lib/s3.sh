@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RunPod S3-API helpers — region/endpoint derivation and `aws s3 sync`/`ls` wrappers.
+# Runpod S3-API helpers — region/endpoint derivation and `aws s3 sync`/`ls` wrappers.
 [[ -n "${_RP_S3:-}" ]] && return 0
 _RP_S3=1
 

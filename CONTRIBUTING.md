@@ -2,7 +2,7 @@
 
 `rp` is a Bash 5+ CLI: a thin dispatcher (`bin/rp`) sourcing shared helpers
 (`lib/`), with one file per resource (`commands/`) and a bashunit suite
-(`tests/`). It talks to three RunPod APIs directly — REST, GraphQL, and the
+(`tests/`). It talks to three Runpod APIs directly — REST, GraphQL, and the
 S3-compatible API.
 
 ## Repo layout
@@ -123,7 +123,7 @@ in `commands/`.
    `RP_BOOL_FLAGS` inside `lib/args.sh` — add new boolean flags there.
 4. Do CRUD through `rp::http <METHOD> <path> [json]` (REST) and reads-through-stock
    through `rp::graphql <query> [variables]` (GraphQL). Both die on error and both
-   require a RunPod API token, resolved by `lib/auth.sh` from `RUNPOD_API_KEY` or
+   require a Runpod API token, resolved by `lib/auth.sh` from `RUNPOD_API_KEY` or
    `RUNPOD_API_KEY_FILE` — never read `RUNPOD_API_KEY` from a command or the
    transport; add a credential source in `rp::auth_token` instead.
 5. Format output with `rp::table <json> field1 field2 …` for human lists; honour
@@ -214,5 +214,5 @@ make test          # bashunit tests/
 
 Unit tests in `tests/unit/` cover the `lib/` helpers and run without network
 access. Functional tests in `tests/functional/` exercise a command's argument
-parsing and output shaping; live RunPod calls belong behind a flag or a mock so
+parsing and output shaping; live Runpod calls belong behind a flag or a mock so
 `make check` stays hermetic.

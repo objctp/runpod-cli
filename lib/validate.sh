@@ -34,7 +34,7 @@ _RP_S3_DCS=()
 
 # Populate _RP_S3_DCS once: live GraphQL `dataCenters { s3apiEnabled }` first,
 # falling back to the static snapshot only if the query fails or returns
-# nothing. GraphQL is still the source of truth for the S3 signal until RunPod
+# nothing. GraphQL is still the source of truth for the S3 signal until Runpod
 # retires it (early 2027) or ships an `s3apiEnabled` field on the v2 catalog;
 # the v2 /catalog/datacenters currently carries no such flag, so v2 alone would
 # freeze the set on RP_S3_DCS_FALLBACK and never pick up new S3 datacentres.
@@ -58,7 +58,7 @@ _s3_dcs() {
 # (transport, HTTP, or GraphQL errors) so _s3_dcs can fall back. Soft by design
 # — delegates to rp::graphql_soft, which owns the curl/transport seam and never
 # dies (unlike rp::graphql). GraphQL stays the live source for the S3 signal
-# until RunPod retires it or exposes `s3apiEnabled` on the v2 catalog.
+# until Runpod retires it or exposes `s3apiEnabled` on the v2 catalog.
 _s3_dcs_live() {
   local data
   data="$(rp::graphql_soft 'query { dataCenters { id s3apiEnabled } }')" || return 1

@@ -1,7 +1,7 @@
 {
   "name": "@objctp/rp",
   "version": "1.2.0",
-  "description": "A simple CLI for managing RunPod infrastructure.",
+  "description": "A simple CLI for managing Runpod infrastructure.",
   "author": {
     "name": "objct",
     "url": "https://objct.link"
