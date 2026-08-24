@@ -6,7 +6,7 @@ Login marks it active; the key then loads automatically on every `rp` call.
 rp auth login [--name <n>] [--api-key <k>] [--from-runpodctl] [--s3-access-key <k>] [--s3-secret-key <k>]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --name <n>            account name (default: "default")
@@ -16,7 +16,7 @@ rp auth login [--name <n>] [--api-key <k>] [--from-runpodctl] [--s3-access-key <
   --s3-secret-key <k>   S3 secret key (optional)
 ```
 
-## NOTES
+## Notes
   With no flags, prompts interactively at a terminal (input hidden), or reads
   the API key from the first stdin line when piped. If runpodctl's config holds
   a key, interactive login offers to import it; pass `--from-runpodctl` to take

@@ -5,13 +5,13 @@ Show one registry credential's full record.
 rp registry get <id> [--jq <filter>] [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             credential id — from `rp registry list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --jq <filter>    jq filter applied to the record

@@ -6,6 +6,6 @@ Reports the effective source (environment export, account file, or user/install 
 rp auth status
 ```
 
-## NOTES
+## Notes
   Reports the effective source: an exported environment variable, an account
   file, the user config (.env), or the install-local .env. The token is masked.

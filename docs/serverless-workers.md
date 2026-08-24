@@ -5,19 +5,19 @@ Show an endpoint's live workers: ids, states, placement, versions.
 rp serverless workers <id> [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             endpoint id — from `rp serverless list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --json           print the raw envelope (workers + summary + endpointVersion)
 ```
 
-## NOTES
+## Notes
   Human mode prints a status histogram (total/running/idle/init/throttled/
   unhealthy) on stderr, then tables the active workers.
 

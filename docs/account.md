@@ -7,6 +7,6 @@ print the same balance, spend limit and per-hour spend.
 rp account <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp account info`](account-info.md) — Show your account balance and spend.

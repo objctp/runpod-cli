@@ -5,7 +5,7 @@ List public catalog templates (id, name, image, flags).
 rp catalog list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --limit N      return at most N templates
@@ -14,7 +14,7 @@ rp catalog list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
   --json         print the raw API response
 ```
 
-## NOTES
+## Notes
   These are the community catalog templates, not your own `template` Resource
   entries. The v2 catalog surface is list-only, so there is no get/delete here
   — copy a template id into `rp pod create --template-id` or

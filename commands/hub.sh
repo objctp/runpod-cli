@@ -76,8 +76,10 @@ _hub_list_cmd() {
 #   A query matching nothing prints just the header row.
 #
 # Examples:
-#   rp hub search "stable diffusion"
-#   rp hub search whisper
+# # Search the Hub for Stable Diffusion listings
+# $ rp hub search "stable diffusion"
+# # Search the Hub for Whisper listings
+# $ rp hub search whisper
 #
 # API: GraphQL listings(input: { searchQuery, limit })  (NO-V2-EQUIVALENT)
 

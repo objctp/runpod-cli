@@ -596,8 +596,11 @@ _serverless_logs() {
 #   --name <n>                    endpoint name (required); idempotent by name
 #   --gpu <type,..>               GPU type ids (comma-separated) for the pool
 #                                 (alias: --gpu-id)
-#   --gpus-from-volume <name>     resolve in-stock GPU types from a network
-#                                 volume's datacentre instead of --gpu
+#   --gpus-from-volume <name>     pick in-stock serverless GPU types from a
+#                                 fixed four-type preference list (account-wide
+#                                 stock, not filtered by the volume's
+#                                 datacentre); overrides --gpu — placement is
+#                                 pinned by --network-volume, not this flag
 #   --network-volume <name>       attach a network volume by name
 #   --network-volume-id <id>      attach a network volume by id
 #   --network-volume-ids <id,id>  attach several network volumes by id
@@ -636,8 +639,10 @@ _serverless_logs() {
 #   create-side CUDA-version field, only the /catalog/gpus filter.
 #
 # Examples:
-#   rp serverless create --name ocr --template tmpl_abc --gpu "NVIDIA L4"
-#   rp serverless create --name diff --hub-id hub_xyz --gpu "NVIDIA A40"
+# # Deploy a serverless endpoint from a template
+# $ rp serverless create --name ocr --template tmpl_abc --gpu "NVIDIA L4"
+# # Deploy from a Hub listing
+# $ rp serverless create --name diff --hub-id hub_xyz --gpu "NVIDIA A40"
 #
 # API: POST /v2/serverless
 
@@ -828,8 +833,10 @@ _serverless_logs() {
 #   runsync (or run, with --async) route on the data plane.
 #
 # Examples:
-#   rp serverless run end_abc --input '{"prompt":"hi"}'
-#   rp serverless run end_abc --input-file job.json --async
+# # Run a synchronous job with inline input
+# $ rp serverless run end_abc --input '{"prompt":"hi"}'
+# # Submit a job from a file and return immediately
+# $ rp serverless run end_abc --input-file job.json --async
 #
 # API: POST /v2/{id}/runsync  (or /run with --async)
 
@@ -853,7 +860,8 @@ _serverless_logs() {
 #   1 when the job ends FAILED / CANCELLED / TIMED_OUT.
 #
 # Examples:
-#   rp serverless status end_abc job-60902e6c-0a1
+# # Check the status of one job
+# $ rp serverless status end_abc job-60902e6c-0a1
 #
 # API: GET /{id}/status/{jobId}
 
@@ -873,7 +881,8 @@ _serverless_logs() {
 #   control-plane REST. Human mode prints a worker/job histogram to stdout.
 #
 # Examples:
-#   rp serverless health end_abc
+# # Ping an endpoint's health
+# $ rp serverless health end_abc
 #
 # API: GET /{id}/health
 

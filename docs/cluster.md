@@ -10,7 +10,7 @@ The v2 REST plane backs every verb here (no GraphQL equivalent).
 rp cluster <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp cluster list`](cluster-list.md) — List your clusters: id, name, type, node count, created date.
 - [`rp cluster get`](cluster-get.md) — Show one cluster's full record, including its compute shape and member summary.

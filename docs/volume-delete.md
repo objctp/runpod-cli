@@ -5,13 +5,13 @@ Delete a network volume permanently.
 rp volume delete <id>
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>  network volume id — from `rp volume list`
 ```
 
-## NOTES
+## Notes
   Deletion is irreversible and takes the volume's contents with it. There is
   no stop-and-keep state as there is for a pod.
   A volume still mounted by a pod cannot be deleted. Terminate the pod, or

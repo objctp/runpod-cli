@@ -5,13 +5,13 @@ Start a stopped pod.
 rp pod start <id>
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             pod id — from `rp pod list`
 ```
 
-## NOTES
+## Notes
   Starting is asynchronous: the command returns once the transition is
   accepted, not once the container is RUNNING. Poll with `rp pod get <id>`.
   A start can fail later if the pod's GPU type is out of stock in its

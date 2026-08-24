@@ -6,7 +6,7 @@ rp volume create --name <n> --size <gb> --dc <id>
                         [--type STANDARD|HIGH_PERFORMANCE] [--force]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --name <n>                        volume name (required)
@@ -17,7 +17,7 @@ rp volume create --name <n> --size <gb> --dc <id>
   --force                           create even when the name is taken
 ```
 
-## NOTES
+## Notes
   Creation is idempotent by name: where a volume of that name already
   exists, the CLI prints its id and skips the POST. --force sends the
   request regardless, which is how you end up with two volumes sharing a
@@ -35,11 +35,14 @@ rp volume create --name <n> --size <gb> --dc <id>
   The new id is printed on stdout and the confirmation on stderr, so
   `id=$(rp volume create …)` captures just the id.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp volume create --name models --size 500 --dc EU-RO-1
-  rp volume create --name fast --size 100 --dc US-KS-2 \
+# Create a 500 GB volume in the EU-RO-1 datacentre
+$ rp volume create --name models --size 500 --dc EU-RO-1
+
+# Create a high-performance volume in Kansas
+$ rp volume create --name fast --size 100 --dc US-KS-2 \
     --type HIGH_PERFORMANCE
 ```
 

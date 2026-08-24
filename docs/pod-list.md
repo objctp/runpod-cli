@@ -5,7 +5,7 @@ List your pods as a table: id, name, image, status, cost.
 rp pod list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --limit N        return at most N pods
@@ -15,7 +15,7 @@ rp pod list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
   --json           print the raw API response
 ```
 
-## NOTES
+## Notes
   status is one of PROVISIONING, STARTING, RUNNING, EXITED, ERROR or
   TERMINATED.
   Paging is client-side: the whole list is fetched, then sliced. When output

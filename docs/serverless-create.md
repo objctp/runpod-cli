@@ -9,7 +9,7 @@ rp serverless create --template <id>|--template-id <id> --name <n>
                             [--type QUEUE|LOAD_BALANCER] [flags]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --template <id>               template id to deploy (required unless --hub-id
@@ -23,8 +23,11 @@ rp serverless create --template <id>|--template-id <id> --name <n>
   --name <n>                    endpoint name (required); idempotent by name
   --gpu <type,..>               GPU type ids (comma-separated) for the pool
                                 (alias: --gpu-id)
-  --gpus-from-volume <name>     resolve in-stock GPU types from a network
-                                volume's datacentre instead of --gpu
+  --gpus-from-volume <name>     pick in-stock serverless GPU types from a
+                                fixed four-type preference list (account-wide
+                                stock, not filtered by the volume's
+                                datacentre); overrides --gpu — placement is
+                                pinned by --network-volume, not this flag
   --network-volume <name>       attach a network volume by name
   --network-volume-id <id>      attach a network volume by id
   --network-volume-ids <id,id>  attach several network volumes by id
@@ -49,7 +52,7 @@ rp serverless create --template <id>|--template-id <id> --name <n>
                                 /catalog/gpus filter
 ```
 
-## NOTES
+## Notes
   --name is required by the live v2 spec on both the --template and --hub-id
   paths; the CLI checks it up front, so a missing --name fails locally before
   any request rather than as an API error.
@@ -63,11 +66,14 @@ rp serverless create --template <id>|--template-id <id> --name <n>
   --min-cuda-version is accepted and dropped with a warning: v2 has no
   create-side CUDA-version field, only the /catalog/gpus filter.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp serverless create --name ocr --template tmpl_abc --gpu "NVIDIA L4"
-  rp serverless create --name diff --hub-id hub_xyz --gpu "NVIDIA A40"
+# Deploy a serverless endpoint from a template
+$ rp serverless create --name ocr --template tmpl_abc --gpu "NVIDIA L4"
+
+# Deploy from a Hub listing
+$ rp serverless create --name diff --hub-id hub_xyz --gpu "NVIDIA A40"
 ```
 
 **API:** `POST /v2/serverless`

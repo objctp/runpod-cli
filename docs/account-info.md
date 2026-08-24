@@ -5,13 +5,13 @@ Show your account balance and spend.
 rp account [info]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --json  print the raw GraphQL response
 ```
 
-## NOTES
+## Notes
   Backed by the GraphQL `myself` query — there is no API v2 equivalent in the
   current v2 spec (confirmed against /v2/openapi.json: no user/account read
   endpoint exists; only /v2/account/ssh-keys). Runs until the early-2027

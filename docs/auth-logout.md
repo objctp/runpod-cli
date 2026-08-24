@@ -6,7 +6,7 @@ If it was active and other accounts remain, the active account switches to one o
 rp auth logout [--name <n>]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --name <n>            account to remove (default: the active account)

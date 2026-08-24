@@ -6,13 +6,13 @@ DEPRECATED — use `rp ssh-key list`.
 rp ssh list-keys [--json]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --json  print the keys as a JSON array of authorized-key lines
 ```
 
-## NOTES
+## Notes
   DEPRECATED: this verb now warns and delegates to `rp ssh-key list`, which is
   the canonical key command — same v2 REST route, same output. Prefer
   `rp ssh-key list` in new scripts. The table shows the key type, its SHA256

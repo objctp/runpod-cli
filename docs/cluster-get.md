@@ -5,13 +5,13 @@ Show one cluster's full record, including its compute shape and member summary.
 rp cluster get <id> [--jq <filter>] [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             cluster id — from `rp cluster list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --jq <filter>    jq filter applied to the record

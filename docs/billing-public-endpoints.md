@@ -7,7 +7,7 @@ rp billing public-endpoints [--start <rfc3339>] [--end <rfc3339>]
                                    [--last-n N] [--json]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --start <rfc3339>                       window start, inclusive
@@ -18,7 +18,7 @@ rp billing public-endpoints [--start <rfc3339>] [--end <rfc3339>]
   --json                                  print the raw API response
 ```
 
-## NOTES
+## Notes
   Public endpoints are Runpod's own hosted inference APIs, billed as their
   own product. This is not spend on endpoints you deployed — that is
   `rp billing serverless`.
@@ -28,10 +28,11 @@ rp billing public-endpoints [--start <rfc3339>] [--end <rfc3339>]
   --last-n counts back from now in whole buckets. It cannot be combined with
   --start or --end, and its minimum is 1.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp billing public-endpoints --last-n 30 --bucket-size day
+# Spend for public endpoints over the last 30 days
+$ rp billing public-endpoints --last-n 30 --bucket-size day
 ```
 
 **API:** `GET /v2/billing/endpoints`

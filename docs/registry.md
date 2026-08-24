@@ -9,7 +9,7 @@ without a stored credential at all. Both surfaces use REST API v2.
 rp registry <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp registry delegations`](registry-delegations.md) — Manage ECR access delegations between an AWS account and Runpod.
 - [`rp registry list`](registry-list.md) — List your registry credentials: id and name.

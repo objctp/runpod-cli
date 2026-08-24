@@ -5,7 +5,7 @@ List your clusters: id, name, type, node count, created date.
 rp cluster list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --limit N      return at most N clusters
@@ -14,7 +14,7 @@ rp cluster list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
   --json         print the raw API response
 ```
 
-## NOTES
+## Notes
   node count is the cluster's podCount (the homogeneous fleet size), not the
   number currently provisioned — see `rp cluster pods <id>` for live counts.
 

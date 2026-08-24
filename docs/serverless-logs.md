@@ -7,13 +7,13 @@ rp serverless logs <id> --worker <workerId>
                     [--since <rfc3339>] [--last-event-id <ts>]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>                      endpoint id — from `rp serverless list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --worker <workerId>       worker id (from `rp serverless workers <id>`);
@@ -25,7 +25,7 @@ rp serverless logs <id> --worker <workerId>
   --last-event-id <ts>      SSE reconnect cursor emitted by this endpoint
 ```
 
-## NOTES
+## Notes
   The stream is Server-Sent Events written raw to stdout (no --json); Ctrl-C
   ends it. The three resume flags follow --last-event-id > --since > --tail
   precedence.

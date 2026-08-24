@@ -5,7 +5,7 @@ List your templates as a table: id, name, image, serverless.
 rp template list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --limit N        return at most N templates
@@ -14,7 +14,7 @@ rp template list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
   --json           print the raw API response
 ```
 
-## NOTES
+## Notes
   serverless marks the kind: true for a serverless template, false for a pod
   template.
   Category and visibility have no column here; read them with

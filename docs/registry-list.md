@@ -5,7 +5,7 @@ List your registry credentials: id and name.
 rp registry list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --limit N        return at most N credentials

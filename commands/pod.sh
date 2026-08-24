@@ -424,12 +424,16 @@ _pod_logs() {
 #   this command creates a second pod.
 #
 # Examples:
-#   rp pod create --name trainer --image runpod/pytorch:2.2.0 \
+# # Create a GPU pod from the PyTorch image
+# $ rp pod create --name trainer --image runpod/pytorch:2.2.0 \
 #     --gpu "NVIDIA GeForce RTX 4090" --container-disk-gb 50
-#   rp pod create --name cpu-box --image alpine --cpu-flavor cpu5c --vcpu 4
-#   rp pod create --name shared --image alpine --gpu "NVIDIA L4" \
+# # Create a CPU-only pod
+# $ rp pod create --name cpu-box --image alpine --cpu-flavor cpu5c --vcpu 4
+# # Attach a network volume to a GPU pod
+# $ rp pod create --name shared --image alpine --gpu "NVIDIA L4" \
 #     --network-volume-id vol_xyz --volume-path /runpod-volume
-#   rp pod create --name spot-trainer --image runpod/pytorch:2.2.0 \
+# # Create a spot pod with a per-GPU bid
+# $ rp pod create --name spot-trainer --image runpod/pytorch:2.2.0 \
 #     --gpu "NVIDIA RTX 4090" --bid-per-gpu 0.20
 #
 # API: POST /v2/pods
@@ -514,8 +518,10 @@ _pod_logs() {
 #   A locked pod cannot be stopped or restarted until it is unlocked.
 #
 # Examples:
-#   rp pod update pod_abc123 --name renamed
-#   rp pod update pod_abc123 --container-disk-gb 80 --env HF_TOKEN=xxx
+# # Rename the pod
+# $ rp pod update pod_abc123 --name renamed
+# # Grow the container disk and set an env var
+# $ rp pod update pod_abc123 --container-disk-gb 80 --env HF_TOKEN=xxx
 #
 # API: PATCH /v2/pods/{id}
 
@@ -621,8 +627,10 @@ _pod_logs() {
 #   lifecycle log, which is where pull failures and OOM kills appear.
 #
 # Examples:
-#   rp pod logs pod_abc123 --tail 0
-#   rp pod logs pod_abc123 --source system --tail 500
+# # Show the full container log from the start
+# $ rp pod logs pod_abc123 --tail 0
+# # Show the last 500 system-log lines
+# $ rp pod logs pod_abc123 --source system --tail 500
 #
 # API: GET /v2/pods/{id}/logs
 

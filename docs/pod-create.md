@@ -6,7 +6,7 @@ rp pod create --image <ref> --name <n>
                      (--gpu <type> | --cpu-flavor <id> --vcpu N) [flags]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --image <ref>                  Docker image reference (required unless
@@ -55,7 +55,7 @@ rp pod create --image <ref> --name <n>
                                  --interruptible; must be > 0 (GPU pods only)
 ```
 
-## NOTES
+## Notes
   A pod is either a GPU pod or a CPU pod: pass --gpu or --cpu-flavor, never
   both. The CLI enforces "exactly one": it rejects a create that sets neither
   or that sets both, so the failure is a local usage error, not an API error.
@@ -96,15 +96,22 @@ rp pod create --image <ref> --name <n>
   `rp template create`, pod creation is not idempotent by name, so re-running
   this command creates a second pod.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp pod create --name trainer --image runpod/pytorch:2.2.0 \
+# Create a GPU pod from the PyTorch image
+$ rp pod create --name trainer --image runpod/pytorch:2.2.0 \
     --gpu "NVIDIA GeForce RTX 4090" --container-disk-gb 50
-  rp pod create --name cpu-box --image alpine --cpu-flavor cpu5c --vcpu 4
-  rp pod create --name shared --image alpine --gpu "NVIDIA L4" \
+
+# Create a CPU-only pod
+$ rp pod create --name cpu-box --image alpine --cpu-flavor cpu5c --vcpu 4
+
+# Attach a network volume to a GPU pod
+$ rp pod create --name shared --image alpine --gpu "NVIDIA L4" \
     --network-volume-id vol_xyz --volume-path /runpod-volume
-  rp pod create --name spot-trainer --image runpod/pytorch:2.2.0 \
+
+# Create a spot pod with a per-GPU bid
+$ rp pod create --name spot-trainer --image runpod/pytorch:2.2.0 \
     --gpu "NVIDIA RTX 4090" --bid-per-gpu 0.20
 ```
 

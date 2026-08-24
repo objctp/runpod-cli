@@ -5,13 +5,13 @@ List datacentres with GPU stock and S3-API support.
 rp stock dc [--json]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --json  print the raw API response
 ```
 
-## NOTES
+## Notes
   The DATACENTER column is the id `rp pod create --dc` and
   `rp volume create --dc` take.
   GPUS counts how many GPU types have any stock there, not how many cards

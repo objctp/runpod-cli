@@ -6,13 +6,13 @@ DEPRECATED — use `rp ssh-key add`.
 rp ssh add-key <file|->
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <file|->  public-key file to read; - or no argument reads stdin
 ```
 
-## NOTES
+## Notes
   DEPRECATED: this verb now warns and delegates to `rp ssh-key add`, the
   canonical key command (same v2 REST route). Only the first non-blank line of
   the input is registered, so pointing this at an authorized_keys file with
@@ -22,11 +22,14 @@ rp ssh add-key <file|->
   sessions are serialised behind a lock. --json is accepted and ignored: the
   outcome is a status line on stderr.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp ssh-key add ~/.ssh/id_ed25519.pub
-  ssh-keygen -y -f ~/.ssh/id_ed25519 | rp ssh-key add -
+# Add a public key from a file
+$ rp ssh-key add ~/.ssh/id_ed25519.pub
+
+# Pipe a public key straight from ssh-keygen
+$ ssh-keygen -y -f ~/.ssh/id_ed25519 | rp ssh-key add -
 ```
 
 **API:** `PUT /v2/account/ssh-keys`

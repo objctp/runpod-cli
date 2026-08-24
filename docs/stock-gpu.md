@@ -6,7 +6,7 @@ rp stock gpu [--product <p,…>] [--min-count N]
                     [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] [--json]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --product <p,…>           POD, CLUSTER or SERVERLESS, comma-separated
@@ -18,7 +18,7 @@ rp stock gpu [--product <p,…>] [--min-count N]
   --json                    print the raw API response
 ```
 
-## NOTES
+## Notes
   The ID column is the value `rp pod create --gpu` and
   `rp serverless create --gpu` take. Ids are display names containing
   spaces, so quote them.
@@ -30,11 +30,14 @@ rp stock gpu [--product <p,…>] [--min-count N]
   across the fleet. The floor is 1, so 0 or a negative is a usage error.
   --min-cuda takes 12 or 12.1; any other shape is rejected before the call.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp stock gpu --cloud SECURE --min-count 2
-  rp stock gpu --product SERVERLESS --min-cuda 12.4
+# Show secure-cloud GPUs with at least two in stock
+$ rp stock gpu --cloud SECURE --min-count 2
+
+# Show serverless GPUs with CUDA 12.4 or newer
+$ rp stock gpu --product SERVERLESS --min-cuda 12.4
 ```
 
 **API:** `GET /v2/catalog/gpus  (include=AVAILABILITY)`

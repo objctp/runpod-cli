@@ -209,9 +209,11 @@ _template_update() {
 #   `id=$(rp template create …)` captures just the id.
 #
 # Examples:
-#   rp template create --name torch-base --image runpod/pytorch:2.2.0 \
+# # Save a private template with an env var
+# $ rp template create --name torch-base --image runpod/pytorch:2.2.0 \
 #     --container-disk-gb 20 --env HF_HOME=/workspace/hf
-#   rp template create --name infer --image myrepo/infer:1 --serverless \
+# # Save a serverless template pulled from a registry
+# $ rp template create --name infer --image myrepo/infer:1 --serverless \
 #     --registry reg_abc123
 #
 # API: POST /v2/templates
@@ -258,8 +260,10 @@ _template_update() {
 #   copied its container config at create time and never re-read it.
 #
 # Examples:
-#   rp template update tmpl_abc123 --public true
-#   rp template update tmpl_abc123 --image myrepo/infer:2 --registry reg_xyz
+# # Make a template public
+# $ rp template update tmpl_abc123 --public true
+# # Repoint a template at a new image and registry
+# $ rp template update tmpl_abc123 --image myrepo/infer:2 --registry reg_xyz
 #
 # API: PATCH /v2/templates/{id}
 
@@ -285,8 +289,10 @@ _template_update() {
 #   `rp template list`. Narrow the substring instead.
 #
 # Examples:
-#   rp template search pytorch
-#   rp template search infer --json
+# # Find templates by name fragment
+# $ rp template search pytorch
+# # Return raw JSON matches
+# $ rp template search infer --json
 #
 # API: GET /v2/templates
 

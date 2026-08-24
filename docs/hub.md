@@ -9,7 +9,7 @@ marketplace path. The write half already moved: pass a listing id to
 rp hub <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp hub search`](hub-search.md) — Search Hub listings by keyword.
 - [`rp hub list`](hub-list.md) — Browse all Hub listings, filtered and ordered.

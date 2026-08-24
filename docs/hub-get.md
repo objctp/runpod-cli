@@ -5,19 +5,19 @@ Show one Hub listing: release, image and config.
 rp hub get <listing-id> [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <listing-id>  listing id — from `rp hub search`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --json        print the raw listing object
 ```
 
-## NOTES
+## Notes
   The human view prints the title and repository, the listed release name
   and tag, the built image reference, and the listing's config blob.
   config is the deployment recipe `rp serverless create --hub-id` reads, so

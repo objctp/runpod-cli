@@ -10,6 +10,6 @@ or `rp serverless create --template-id`.
 rp catalog <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp catalog list`](catalog-list.md) — List public catalog templates (id, name, image, flags).

@@ -5,13 +5,13 @@ Set an endpoint's worker bounds and idle timeout in one call.
 rp serverless scale <id> --min N --max N [--idle S]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             endpoint id — from `rp serverless list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --min N          minimum worker count
@@ -20,7 +20,7 @@ rp serverless scale <id> --min N --max N [--idle S]
   --json           print the raw API response
 ```
 
-## NOTES
+## Notes
   At least one of --min/--max/--idle is required.
 
 **API:** `PATCH /v2/serverless/{id}`

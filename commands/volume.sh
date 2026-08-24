@@ -199,8 +199,10 @@ _volume_gpus() {
 #   `id=$(rp volume create …)` captures just the id.
 #
 # Examples:
-#   rp volume create --name models --size 500 --dc EU-RO-1
-#   rp volume create --name fast --size 100 --dc US-KS-2 \
+# # Create a 500 GB volume in the EU-RO-1 datacentre
+# $ rp volume create --name models --size 500 --dc EU-RO-1
+# # Create a high-performance volume in Kansas
+# $ rp volume create --name fast --size 100 --dc US-KS-2 \
 #     --type HIGH_PERFORMANCE
 #
 # API: POST /v2/network-volumes
@@ -228,8 +230,10 @@ _volume_gpus() {
 #   This verb takes an id, not a name; `rp volume list` prints both.
 #
 # Examples:
-#   rp volume update netvol_abc123 --name archive
-#   rp volume update netvol_abc123 --size 1000
+# # Rename the volume
+# $ rp volume update netvol_abc123 --name archive
+# # Grow the volume to 1000 GB
+# $ rp volume update netvol_abc123 --size 1000
 #
 # API: PATCH /v2/network-volumes/{id}
 
@@ -285,8 +289,15 @@ _volume_gpus() {
 #   Progress is the aws CLI's own output, so there is no --json.
 #
 # Examples:
-#   rp volume sync models --source ./checkpoints --prefix runs/2026-08
-#   rp volume sync models --models meta-llama/Llama-3-8B,google/gemma-2b
+# # Upload local checkpoints under a dated prefix
+# $ rp volume sync models --source ./checkpoints --prefix runs/2026-08
+# # Mirror named Hugging Face models into the volume
+# $ rp volume sync models --models meta-llama/Llama-3-8B,google/gemma-2b
+# # Serve the cached model from the same volume on a serverless endpoint
+# $ rp serverless create --name my-endpoint --template <id> \
+#     --network-volume models --gpus-from-volume models \
+#     --workers-min 0 --workers-max 3 --idle 600
+# # workers then load from /models/<owner>/<repo> (volume root + sync prefix)
 #
 # API: GET /v2/network-volumes/{id}, then `aws s3 sync` to s3api-<dc>.runpod.io
 
@@ -312,8 +323,10 @@ _volume_gpus() {
 #   aws rather than with a clear message.
 #
 # Examples:
-#   rp volume ls models
-#   rp volume ls models --path models/meta-llama
+# # List everything stored on the volume
+# $ rp volume ls models
+# # List one model's subtree
+# $ rp volume ls models --path models/meta-llama
 #
 # API: GET /v2/network-volumes/{id}, then `aws s3 ls` on s3api-<dc>.runpod.io
 
@@ -342,8 +355,10 @@ _volume_gpus() {
 #   yields an empty table rather than an error.
 #
 # Examples:
-#   rp volume gpus models
-#   rp volume gpus models --gpu "NVIDIA L4,NVIDIA GeForce RTX 4090"
+# # Show in-stock GPUs at the volume's datacentre
+# $ rp volume gpus models
+# # Restrict the table to two GPU types
+# $ rp volume gpus models --gpu "NVIDIA L4,NVIDIA GeForce RTX 4090"
 #
 # API: GET /v2/catalog/gpus  (include=AVAILABILITY, product=POD,SERVERLESS)
 

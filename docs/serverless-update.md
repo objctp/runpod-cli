@@ -10,13 +10,13 @@ rp serverless update <id> [--workers-min N] [--workers-max N]
                            [--scaler-value V]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             endpoint id — from `rp serverless list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --workers-min N  new minimum worker count
@@ -37,7 +37,7 @@ rp serverless update <id> [--workers-min N] [--workers-max N]
   --json           print the raw API response
 ```
 
-## NOTES
+## Notes
   At least one flag is required; with none, the command exits with a usage
   error rather than sending an empty PATCH.
   A --gpu change re-resolves pool ids from the type names.

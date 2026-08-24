@@ -5,13 +5,13 @@ Remove an ECR access delegation.
 rp registry delegations revoke <id>
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             delegation id — from `rp registry delegations list`
 ```
 
-## NOTES
+## Notes
   Removal is irreversible; images from that repository will then need a stored
   credential to be pulled again.
 

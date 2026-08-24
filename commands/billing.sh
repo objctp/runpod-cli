@@ -89,8 +89,10 @@ _billing() {
 #   which is slow and noisy on a long-lived account.
 #
 # Examples:
-#   rp billing pods --last-n 7 --bucket-size day
-#   rp billing pods pod_abc123 --start 2026-07-01T00:00:00Z
+# # Spend over the last 7 days, bucketed daily
+# $ rp billing pods --last-n 7 --bucket-size day
+# # Spend for one pod from a start date
+# $ rp billing pods pod_abc123 --start 2026-07-01T00:00:00Z
 #
 # API: GET /v2/billing/pods
 
@@ -123,8 +125,10 @@ _billing() {
 #   --bucket-size takes hour, day, week, month or year.
 #
 # Examples:
-#   rp billing serverless --last-n 24 --bucket-size hour
-#   rp billing serverless ep_xyz789 --bucket-size day --json
+# # Spend over the last 24 hours, bucketed hourly
+# $ rp billing serverless --last-n 24 --bucket-size hour
+# # Daily spend for one endpoint as JSON
+# $ rp billing serverless ep_xyz789 --bucket-size day --json
 #
 # API: GET /v2/billing/serverless
 
@@ -154,7 +158,8 @@ _billing() {
 #   --start or --end, and its minimum is 1.
 #
 # Examples:
-#   rp billing public-endpoints --last-n 30 --bucket-size day
+# # Spend for public endpoints over the last 30 days
+# $ rp billing public-endpoints --last-n 30 --bucket-size day
 #
 # API: GET /v2/billing/endpoints
 
@@ -214,7 +219,8 @@ _billing() {
 #   --start or --end, and its minimum is 1.
 #
 # Examples:
-#   rp billing volumes --last-n 12 --bucket-size month
+# # Spend for network volumes over the last year, monthly
+# $ rp billing volumes --last-n 12 --bucket-size month
 #
 # API: GET /v2/billing/network-volumes
 
@@ -242,7 +248,8 @@ _billing() {
 #   --start or --end, and its minimum is 1.
 #
 # Examples:
-#   rp billing all --last-n 6 --bucket-size month
+# # Aggregate spend across everything over 6 months
+# $ rp billing all --last-n 6 --bucket-size month
 #
 # API: GET /v2/billing
 

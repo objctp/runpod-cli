@@ -182,9 +182,11 @@ _cluster_pods() {
 #   still wins, and the template's id is recorded on the cluster.
 #
 # Examples:
-#   rp cluster create --name tr-1 --type TRAINING \
+# # Create a 4-node H100 training cluster
+# $ rp cluster create --name tr-1 --type TRAINING \
 #       --gpu "NVIDIA H100 80GB HBM3" --pod-count 4 --gpu-count 8
-#   rp cluster create --name ray --type RAY --gpu "NVIDIA L4" \
+# # Create a Ray cluster with an attached volume
+# $ rp cluster create --name ray --type RAY --gpu "NVIDIA L4" \
 #       --image runpod/ray:latest --network-volume-id vol_xyz
 #
 # API: POST /v2/clusters

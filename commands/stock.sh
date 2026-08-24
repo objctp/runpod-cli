@@ -91,8 +91,10 @@ _stock_dc() {
 #   --min-cuda takes 12 or 12.1; any other shape is rejected before the call.
 #
 # Examples:
-#   rp stock gpu --cloud SECURE --min-count 2
-#   rp stock gpu --product SERVERLESS --min-cuda 12.4
+# # Show secure-cloud GPUs with at least two in stock
+# $ rp stock gpu --cloud SECURE --min-count 2
+# # Show serverless GPUs with CUDA 12.4 or newer
+# $ rp stock gpu --product SERVERLESS --min-cuda 12.4
 #
 # API: GET /v2/catalog/gpus  (include=AVAILABILITY)
 

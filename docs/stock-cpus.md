@@ -5,13 +5,13 @@ List CPU flavours with price and availability.
 rp stock cpus [--json]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --json  print the raw API response
 ```
 
-## NOTES
+## Notes
   The ID column is the value `rp pod create --cpu-flavor` takes.
   VCPU is the flavour's valid vcpuCount range; --vcpu must be a power of two
   inside it.

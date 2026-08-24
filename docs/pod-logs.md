@@ -6,13 +6,13 @@ rp pod logs <id> [--source container|system] [--tail N]
                    [--since <rfc3339>] [--last-event-id <ts>]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>                      pod id — from `rp pod list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --source container|system restrict the stream; omit for both
@@ -22,7 +22,7 @@ rp pod logs <id> [--source container|system] [--tail N]
   --last-event-id <ts>      SSE reconnect cursor emitted by this endpoint
 ```
 
-## NOTES
+## Notes
   The stream is Server-Sent Events written raw to stdout, so it pipes and
   redirects cleanly and there is no --json. Ctrl-C ends it.
   The three resume flags have a precedence: --last-event-id beats --since,
@@ -31,11 +31,14 @@ rp pod logs <id> [--source container|system] [--tail N]
   container is the container's stdout and stderr; system is the host
   lifecycle log, which is where pull failures and OOM kills appear.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp pod logs pod_abc123 --tail 0
-  rp pod logs pod_abc123 --source system --tail 500
+# Show the full container log from the start
+$ rp pod logs pod_abc123 --tail 0
+
+# Show the last 500 system-log lines
+$ rp pod logs pod_abc123 --source system --tail 500
 ```
 
 **API:** `GET /v2/pods/{id}/logs`

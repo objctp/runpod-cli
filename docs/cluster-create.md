@@ -6,7 +6,7 @@ rp cluster create --name <n> --type <kind> --gpu <type>
                         [--pod-count N] [--gpu-count N] [flags]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --name <n>                        cluster name (required)
@@ -29,7 +29,7 @@ rp cluster create --name <n> --type <kind> --gpu <type>
   --force                           create even when the name is taken
 ```
 
-## NOTES
+## Notes
   A cluster is homogeneous: every pod is identical, so a single --gpu type,
   --gpu-count, and --pod-count describe the whole fleet. --pod-count must be at
   least 2 (a cluster is multi-node by definition).
@@ -44,12 +44,15 @@ rp cluster create --name <n> --type <kind> --gpu <type>
   --template-id seeds the container config as defaults; any explicit flag value
   still wins, and the template's id is recorded on the cluster.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp cluster create --name tr-1 --type TRAINING \
+# Create a 4-node H100 training cluster
+$ rp cluster create --name tr-1 --type TRAINING \
       --gpu "NVIDIA H100 80GB HBM3" --pod-count 4 --gpu-count 8
-  rp cluster create --name ray --type RAY --gpu "NVIDIA L4" \
+
+# Create a Ray cluster with an attached volume
+$ rp cluster create --name ray --type RAY --gpu "NVIDIA L4" \
       --image runpod/ray:latest --network-volume-id vol_xyz
 ```
 

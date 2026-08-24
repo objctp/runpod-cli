@@ -5,13 +5,13 @@ Change a pod's configuration in place, restarting it.
 rp pod update <id> [flags]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>                           pod id — from `rp pod list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --name <n>                     rename the pod
@@ -35,7 +35,7 @@ rp pod update <id> [flags]
   --json                         print the raw API response
 ```
 
-## NOTES
+## Notes
   This resets a running pod. Anything outside /workspace or a network volume
   is wiped, and the CLI prints a reminder before sending the request.
   At least one flag is required; with none, the command exits with a usage
@@ -47,11 +47,14 @@ rp pod update <id> [flags]
   --global-networking takes effect on the next start or restart, not live.
   A locked pod cannot be stopped or restarted until it is unlocked.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp pod update pod_abc123 --name renamed
-  rp pod update pod_abc123 --container-disk-gb 80 --env HF_TOKEN=xxx
+# Rename the pod
+$ rp pod update pod_abc123 --name renamed
+
+# Grow the container disk and set an env var
+$ rp pod update pod_abc123 --container-disk-gb 80 --env HF_TOKEN=xxx
 ```
 
 **API:** `PATCH /v2/pods/{id}`

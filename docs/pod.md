@@ -9,7 +9,7 @@ one network volume, and the choice is fixed at create time.
 rp pod <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp pod create`](pod-create.md) — Create a pod from an image, optionally seeded by a template.
 - [`rp pod list`](pod-list.md) — List your pods as a table: id, name, image, status, cost.

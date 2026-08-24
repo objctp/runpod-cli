@@ -1,4 +1,4 @@
-site_name: rp manual
+site_name: Runpod CLI (rp)
 site_url: https://objctp.github.io/runpod-cli/manual/
 repo_url: https://github.com/objctp/runpod-cli
 docs_dir: .
@@ -34,7 +34,8 @@ markdown_extensions:
 - tables
 - fenced_code
 nav:
-- Home: index.md
+- Manual: index.md
+- How-to: how-to/index.md
 - Account:
   - account: account.md
   - info: account-info.md

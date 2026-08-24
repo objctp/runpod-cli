@@ -17,8 +17,10 @@
 #   The /usr/local/bin/rp symlink step may prompt for sudo.
 #
 # Examples:
-#   rp upgrade
-#   rp upgrade --version 1.2.3
+# # Upgrade to the latest release
+# $ rp upgrade
+# # Upgrade to a pinned version
+# $ rp upgrade --version 1.2.3
 #
 # API: none — downloads and runs the installer from GitHub (RP_UPGRADE_REPO).
 #

@@ -12,7 +12,7 @@ GET/PUT /v2/account/ssh-keys. Use `rp ssh-key` for keys; `rp ssh` is now just
 rp ssh <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp ssh list-keys`](ssh-list-keys.md) — List your registered public keys.
 - [`rp ssh add-key`](ssh-add-key.md) — Add a public key from a file or stdin.

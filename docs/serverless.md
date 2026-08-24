@@ -9,7 +9,7 @@ are submitted on the data plane with `rp serverless run`.
 rp serverless <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp serverless create`](serverless-create.md) — Create a serverless endpoint from a template or a Hub listing.
 - [`rp serverless list`](serverless-list.md) — List your endpoints: id, name, worker bounds and idle timeout.

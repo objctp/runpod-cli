@@ -5,13 +5,13 @@ Delete a registry credential.
 rp registry delete <id>
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             credential id — from `rp registry list`
 ```
 
-## NOTES
+## Notes
   Deletion is irreversible; pods or endpoints still referencing the credential
   will fail to pull.
 

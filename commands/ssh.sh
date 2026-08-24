@@ -85,8 +85,10 @@ _ssh_info() {
 #   outcome is a status line on stderr.
 #
 # Examples:
-#   rp ssh-key add ~/.ssh/id_ed25519.pub
-#   ssh-keygen -y -f ~/.ssh/id_ed25519 | rp ssh-key add -
+# # Add a public key from a file
+# $ rp ssh-key add ~/.ssh/id_ed25519.pub
+# # Pipe a public key straight from ssh-keygen
+# $ ssh-keygen -y -f ~/.ssh/id_ed25519 | rp ssh-key add -
 #
 # API: PUT /v2/account/ssh-keys
 
@@ -111,8 +113,10 @@ _ssh_info() {
 #   --json is accepted and ignored.
 #
 # Examples:
-#   rp ssh-key remove SHA256:2yKPqJ4hTVEnBmvJ5vHJd0LmqUTAqZk0lQbHkbG0kQE
-#   rp ssh-key remove laptop@example.com
+# # Remove a key by its fingerprint
+# $ rp ssh-key remove SHA256:2yKPqJ4hTVEnBmvJ5vHJd0LmqUTAqZk0lQbHkbG0kQE
+# # Remove a key by its comment/email
+# $ rp ssh-key remove laptop@example.com
 #
 # API: PUT /v2/account/ssh-keys
 
@@ -131,8 +135,9 @@ _ssh_info() {
 # Notes:
 #   This is the one verb here that never touches the key set: it reads the pod
 #   over REST API v2 and formats what it finds, so it keeps working even where
-#   the key verbs would not. The line comes from the first runtime port labelled
-#   ssh, or failing that the first TCP port. The login user defaults to `root`
+#   the key verbs would not. The line comes from the first runtime port whose
+#   type is ssh or tcp, in the order the API returns them. The login user
+#   defaults to `root`
 #   (Runpod official images run as root), but images that run as a non-root user
 #   need `--user` set to match, otherwise the printed `ssh` line fails with a
 #   permission error. The --user value is not validated against the pod — the CLI
@@ -140,7 +145,7 @@ _ssh_info() {
 #   actually starts as. A stopped pod has no runtime and so no connection line —
 #   the command says as much rather than failing. Start the pod and ask again. A
 #   running pod exposing no ssh or TCP port prints its runtime ports instead.
-#   Registering a key with `rp ssh add-key` is what makes the address usable;
+#   Registering a key with `rp ssh-key add` is what makes the address usable;
 #   this verb only reports it.
 #
 # API: GET /v2/pods/{id}

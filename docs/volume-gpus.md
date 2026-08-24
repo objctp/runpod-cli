@@ -5,20 +5,20 @@ List GPU types in stock, with the volume's datacentre noted.
 rp volume gpus <name> [--gpu <id,…>] [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <name>        network volume name — from `rp volume list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --gpu <id,…>  restrict the table to these GPU type ids
   --json        print the raw API response
 ```
 
-## NOTES
+## Notes
   The catalogue is account-wide, not per-datacentre: v2 exposes no per-DC
   stock field. The command prints the volume's datacentre for context and
   then the same figures `rp stock gpu` shows, so read the table as "what is
@@ -30,11 +30,14 @@ rp volume gpus <name> [--gpu <id,…>] [--json]
   --gpu filters client-side after the fetch, so an id that matches nothing
   yields an empty table rather than an error.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp volume gpus models
-  rp volume gpus models --gpu "NVIDIA L4,NVIDIA GeForce RTX 4090"
+# Show in-stock GPUs at the volume's datacentre
+$ rp volume gpus models
+
+# Restrict the table to two GPU types
+$ rp volume gpus models --gpu "NVIDIA L4,NVIDIA GeForce RTX 4090"
 ```
 
 **API:** `GET /v2/catalog/gpus  (include=AVAILABILITY, product=POD,SERVERLESS)`

@@ -5,7 +5,7 @@ Create a template from an image and a container config.
 rp template create --name <n> --image <img> [flags]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --name <n>                template name (required)
@@ -29,7 +29,7 @@ rp template create --name <n> --image <img> [flags]
   --force                   create even when a template of this name exists
 ```
 
-## NOTES
+## Notes
   --name and --image are both required, and the CLI checks for both before
   sending the request.
   Create is idempotent by name: without --force, a template already carrying
@@ -47,12 +47,15 @@ rp template create --name <n> --image <img> [flags]
   The new id is printed on stdout and the confirmation goes to stderr, so
   `id=$(rp template create …)` captures just the id.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp template create --name torch-base --image runpod/pytorch:2.2.0 \
+# Save a private template with an env var
+$ rp template create --name torch-base --image runpod/pytorch:2.2.0 \
     --container-disk-gb 20 --env HF_HOME=/workspace/hf
-  rp template create --name infer --image myrepo/infer:1 --serverless \
+
+# Save a serverless template pulled from a registry
+$ rp template create --name infer --image myrepo/infer:1 --serverless \
     --registry reg_abc123
 ```
 

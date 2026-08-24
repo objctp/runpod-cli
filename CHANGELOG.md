@@ -5,6 +5,7 @@
 ### Changed
 
 - Add task-oriented how-to guides
+- Improve example formatting in command reference blocks
 
 ### Fixed
 

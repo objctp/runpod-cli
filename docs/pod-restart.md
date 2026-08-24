@@ -5,13 +5,13 @@ Restart a running pod.
 rp pod restart <id>
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             pod id — from `rp pod list`
 ```
 
-## NOTES
+## Notes
   The container is recreated, so anything written outside /workspace or a
   network volume is lost.
   A locked pod refuses to restart.

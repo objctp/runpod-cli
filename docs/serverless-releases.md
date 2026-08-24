@@ -5,19 +5,19 @@ Show an endpoint's release history and rollout.
 rp serverless releases <id> [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             endpoint id — from `rp serverless list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --json           print the raw envelope (releases + rollout + endpointVersion)
 ```
 
-## NOTES
+## Notes
   Human mode prints the rollout summary (workers on latest / total, percent)
   on stderr, then tables the releases with a per-release field diff.
 

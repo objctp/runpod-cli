@@ -10,7 +10,7 @@ datacentres expose.
 rp volume <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp volume list`](volume-list.md) — List your network volumes as a table: id, name, size, dataCenter.
 - [`rp volume get`](volume-get.md) — Show one network volume's full record.

@@ -1,4 +1,4 @@
-# rp manual
+# Runpod CLI (rp)
 
 Reference for the Runpod CLI (`rp`). Each command has its own page:
 

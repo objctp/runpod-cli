@@ -43,7 +43,7 @@ normalize() {
 
 # Transform `rp doc` text (stdin) into markdown. $1 = heading level for the
 # title line (`rp …`). The usage line is emitted as a fenced block directly
-# under the description (no SYNOPSIS heading, gh-CLI style); fenced blocks for
+# under the description (no SYNOPSIS heading); fenced blocks for
 # Arguments/Options/Examples; prose for Notes; the Verbs: list becomes a
 # COMMANDS bullet list.
 transform() {
@@ -55,13 +55,13 @@ transform() {
       print hashes(hl+1) " " tag
       print "```"; fence=1
     }
-    BEGIN { base="" }
+    BEGIN { base=""; ex_prev_cmd=0 }
     NR==1 && $0 ~ /^rp / {
       base = substr($0, 4)                 # strip leading "rp "
       print hashes(hl) " " $0
       next
     }
-    /^$/ { closefence(); if(cur=="NOTES") print ""; cur=""; next }
+    /^$/ { closefence(); ex_prev_cmd=0; if(cur=="NOTES") print ""; cur=""; next }
     /^Usage:/ {
       closefence(); cur="USAGE"
       print "```"; fence=1
@@ -69,17 +69,17 @@ transform() {
       if (rest != "") print rest
       next
     }
-    /^Arguments:/  { openfence("ARGUMENTS"); next }
-    /^Options:/    { openfence("OPTIONS");   next }
-    /^Examples:/   { openfence("EXAMPLES");  next }
-    /^Notes:/      { closefence(); cur="NOTES"; print hashes(hl+1) " NOTES";     next }
+    /^Arguments:/  { openfence("Arguments"); next }
+    /^Options:/    { openfence("Options");   next }
+    /^Examples:/   { ex_prev_cmd=0; openfence("Examples");  next }
+    /^Notes:/      { closefence(); cur="NOTES"; print hashes(hl+1) " Notes";     next }
     /^API:/ {
       closefence(); cur=""
       line = substr($0, 5); gsub(/^[ \t]+/, "", line)
       printf "\n**API:** `%s`\n\n", line
       next
     }
-    /^Verbs:/ { closefence(); cur="VERBS"; print hashes(hl+1) " COMMANDS"; print ""; next }
+    /^Verbs:/ { closefence(); cur="VERBS"; print hashes(hl+1) " Commands"; print ""; next }
     {
       if (cur == "VERBS") {
         if ($0 ~ /^  [a-z]/) {
@@ -88,6 +88,16 @@ transform() {
           link = base " " v; gsub(/ /, "-", link)
           printf "- [`rp %s %s`](%s.md) — %s\n", base, v, link, rest
         }
+        next
+      }
+      if (cur == "Examples") {
+        # gh-CLI style: each example is a "# comment" one-liner above a
+        # "$ command" line. Blank-separate examples so the block reads like
+        # the gh manual; continuation lines (indented, no "$ ") are printed
+        # verbatim.
+        if ($0 ~ /^# / && ex_prev_cmd) print ""
+        print $0
+        if ($0 ~ /^\$ /) ex_prev_cmd = 1
         next
       }
       if (cur=="USAGE" || cur=="ARGS" || cur=="OPTS" || cur=="EX") { print $0; next }
@@ -138,7 +148,7 @@ gen_command() {
 # Render index.md: one line per command (name + intro summary).
 gen_index() {
   {
-    echo "# rp manual"
+    echo "# Runpod CLI (rp)"
     echo
     echo "Reference for the Runpod CLI (\`rp\`). Each command has its own page:"
     echo

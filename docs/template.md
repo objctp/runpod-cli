@@ -10,7 +10,7 @@ Templates are private until you publish one with --public true.
 rp template <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp template list`](template-list.md) — List your templates as a table: id, name, image, serverless.
 - [`rp template get`](template-get.md) — Show one template's full record, including its container config.

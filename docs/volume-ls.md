@@ -5,19 +5,19 @@ List the objects stored on a network volume.
 rp volume ls <name> [--path <remote-path>]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <name>                network volume name — from `rp volume list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --path <remote-path>  key prefix to list; omit for the volume root
 ```
 
-## NOTES
+## Notes
   This is `aws s3 ls` against the volume's S3 endpoint, so it needs the aws
   CLI and the RUNPOD_S3_ACCESS_KEY / RUNPOD_S3_SECRET_KEY pair. The listing
   is printed verbatim, which is why there is no --json.
@@ -27,11 +27,14 @@ rp volume ls <name> [--path <remote-path>]
   the S3 API beforehand, so a volume outside those datacentres fails inside
   aws rather than with a clear message.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp volume ls models
-  rp volume ls models --path models/meta-llama
+# List everything stored on the volume
+$ rp volume ls models
+
+# List one model's subtree
+$ rp volume ls models --path models/meta-llama
 ```
 
 **API:** `GET /v2/network-volumes/{id}, then `aws s3 ls` on s3api-<dc>.runpod.io`

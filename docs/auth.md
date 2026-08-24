@@ -15,7 +15,7 @@ captures and stores the key you copy from console > Settings > API Keys.
 rp auth <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp auth use`](auth-use.md) — Alias for `rp auth switch <name>` — change the active account.
 - [`rp auth login`](auth-login.md) — Store a Runpod API key as an account (additive — does not replace others).

@@ -5,13 +5,13 @@ Terminate a pod permanently.
 rp pod delete <id>
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             pod id — from `rp pod list`
 ```
 
-## NOTES
+## Notes
   Termination is irreversible and is not the same as `rp pod stop`: a stopped
   pod keeps its disks and can be started again, whilst a terminated one is
   gone.

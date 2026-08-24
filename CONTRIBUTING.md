@@ -216,3 +216,23 @@ Unit tests in `tests/unit/` cover the `lib/` helpers and run without network
 access. Functional tests in `tests/functional/` exercise a command's argument
 parsing and output shaping; live Runpod calls belong behind a flag or a mock so
 `make check` stays hermetic.
+
+## Docs site
+
+The manual in `docs/` is a MkDocs Material site. The markdown pages are
+generated from `rp doc` comments, not hand-written — regenerate them after
+editing command docs with:
+
+```bash
+npm run docs        # scripts/gen-manual.sh: rp doc → docs/<command>.md
+```
+
+Then preview the site locally (the generated markdown is the source MkDocs
+builds from):
+
+```bash
+. .venv/bin/activate        # or: pip install mkdocs-material
+mkdocs serve -f docs/mkdocs.yml
+```
+
+It serves at `http://127.0.0.1:8000` with live reload.

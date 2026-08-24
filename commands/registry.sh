@@ -89,7 +89,7 @@ _registry_create() {
 # Usage: rp registry delegations list [--json]
 #
 # Options:
-#   --json           print the raw API response
+#   --json           print the unwrapped delegations array as JSON
 #
 # Notes:
 #   The table shows each delegation's id, name, repository, tag, AWS region and

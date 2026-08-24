@@ -5,19 +5,19 @@ Search Hub listings by keyword.
 rp hub search <query> [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <query>  search text; quote anything with spaces
 ```
 
-## OPTIONS
+## Options
 
 ```
   --json   print the raw listings array
 ```
 
-## NOTES
+## Notes
   The table shows the listing id, title, owner and type. That id is what
   `rp hub get` and `rp serverless create --hub-id` take.
   Results are capped at 20 and the cap is not exposed as a flag, so narrow
@@ -26,11 +26,14 @@ rp hub search <query> [--json]
   the marketplace's ranking, not a substring match the CLI performs.
   A query matching nothing prints just the header row.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp hub search "stable diffusion"
-  rp hub search whisper
+# Search the Hub for Stable Diffusion listings
+$ rp hub search "stable diffusion"
+
+# Search the Hub for Whisper listings
+$ rp hub search whisper
 ```
 
 **API:** `GraphQL listings(input: { searchQuery, limit })  (NO-V2-EQUIVALENT)`

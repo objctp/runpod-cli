@@ -7,14 +7,14 @@ rp billing volumes [<id>] [--start <rfc3339>] [--end <rfc3339>]
                           [--last-n N] [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>                                    network volume id; omit for every
                                           volume
 ```
 
-## OPTIONS
+## Options
 
 ```
   --start <rfc3339>                       window start, inclusive
@@ -25,7 +25,7 @@ rp billing volumes [<id>] [--start <rfc3339>] [--end <rfc3339>]
   --json                                  print the raw API response
 ```
 
-## NOTES
+## Notes
   <id> is a volume id from `rp volume list`, sent as networkVolumeId. Unlike
   the S3 verbs of `rp volume`, this takes no name and resolves nothing.
   A volume bills for its provisioned capacity whether or not anything mounts
@@ -33,10 +33,11 @@ rp billing volumes [<id>] [--start <rfc3339>] [--end <rfc3339>]
   --last-n counts back from now in whole buckets. It cannot be combined with
   --start or --end, and its minimum is 1.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp billing volumes --last-n 12 --bucket-size month
+# Spend for network volumes over the last year, monthly
+$ rp billing volumes --last-n 12 --bucket-size month
 ```
 
 **API:** `GET /v2/billing/network-volumes`

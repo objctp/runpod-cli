@@ -5,7 +5,7 @@ Store a container-registry credential for pulling private images.
 rp registry create --name <n> --username <u> [--password <p>]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --name <n>                credential name (required)
@@ -13,7 +13,7 @@ rp registry create --name <n> --username <u> [--password <p>]
   --password <p>            registry password; if omitted, prompts interactively
 ```
 
-## NOTES
+## Notes
   --password is visible in process listings (`ps`) and shell history; prefer
   the interactive prompt by omitting it.
   The credential is not idempotent by name, so re-running create adds a second

@@ -7,14 +7,14 @@ rp billing serverless [<id>] [--start <rfc3339>] [--end <rfc3339>]
                              [--last-n N] [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>                                    serverless endpoint id; omit for
                                           every endpoint
 ```
 
-## OPTIONS
+## Options
 
 ```
   --start <rfc3339>                       window start, inclusive
@@ -25,7 +25,7 @@ rp billing serverless [<id>] [--start <rfc3339>] [--end <rfc3339>]
   --json                                  print the raw API response
 ```
 
-## NOTES
+## Notes
   This is spend on your own serverless endpoints. Runpod's hosted public
   endpoint product is billed separately, under
   `rp billing public-endpoints`.
@@ -34,11 +34,14 @@ rp billing serverless [<id>] [--start <rfc3339>] [--end <rfc3339>]
   --start or --end, and its minimum is 1.
   --bucket-size takes hour, day, week, month or year.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp billing serverless --last-n 24 --bucket-size hour
-  rp billing serverless ep_xyz789 --bucket-size day --json
+# Spend over the last 24 hours, bucketed hourly
+$ rp billing serverless --last-n 24 --bucket-size hour
+
+# Daily spend for one endpoint as JSON
+$ rp billing serverless ep_xyz789 --bucket-size day --json
 ```
 
 **API:** `GET /v2/billing/serverless`

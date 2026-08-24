@@ -5,13 +5,13 @@ Rename a network volume, or grow it.
 rp volume update <id> [--name <n>] [--size <gb>] [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>         network volume id — from `rp volume list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --name <n>   rename the volume
@@ -19,7 +19,7 @@ rp volume update <id> [--name <n>] [--size <gb>] [--json]
   --json       print the raw API response
 ```
 
-## NOTES
+## Notes
   At least one of --name or --size is required; with neither, the command
   exits with a usage error rather than sending an empty PATCH.
   Capacity only grows. The API rejects a size below the current one and
@@ -28,11 +28,14 @@ rp volume update <id> [--name <n>] [--size <gb>] [--json]
   the storage tier are both fixed at create.
   This verb takes an id, not a name; `rp volume list` prints both.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp volume update netvol_abc123 --name archive
-  rp volume update netvol_abc123 --size 1000
+# Rename the volume
+$ rp volume update netvol_abc123 --name archive
+
+# Grow the volume to 1000 GB
+$ rp volume update netvol_abc123 --size 1000
 ```
 
 **API:** `PATCH /v2/network-volumes/{id}`

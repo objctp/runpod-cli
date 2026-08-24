@@ -9,7 +9,7 @@ WHOLE key set on PUT, so add/remove are read-modify-write around a lock.
 rp ssh-key <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp ssh-key list`](ssh-key-list.md) — List your registered public keys (API v2 REST plane).
 - [`rp ssh-key add`](ssh-key-add.md) — Add a public key from a file or stdin (API v2 REST plane).

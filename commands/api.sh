@@ -23,10 +23,14 @@
 #   --cursor <c>      opaque offset for the next page (pairs with --limit)
 #
 # Examples:
-#   rp api GET /pods
-#   rp api GET /pods --jq '.pods[] | .id'
-#   rp api POST /pods --body '{"name":"x","image":"y"}'
-#   rp api POST /$id/runsync --plane api --body '@job.json'
+# # List pods
+# $ rp api GET /pods
+# # List just the pod ids
+# $ rp api GET /pods --jq '.pods[] | .id'
+# # Create a pod from a JSON body
+# $ rp api POST /pods --body '{"name":"x","image":"y"}'
+# # Run a sync job from a JSON file on the data plane
+# $ rp api POST /$id/runsync --plane api --body '@job.json'
 #
 # API: raw call over rp::api_call — no single endpoint; the method and path
 #      decide the route (control plane /v2 or data plane /v2).

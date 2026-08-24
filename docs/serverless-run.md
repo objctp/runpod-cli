@@ -6,13 +6,13 @@ rp serverless run <id> --input '<json>' | --input-file <path|->
                     [--sync|--async] [--timeout <s>] [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             endpoint id — from `rp serverless list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --input '<json>'          job input as a JSON string
@@ -23,16 +23,19 @@ rp serverless run <id> --input '<json>' | --input-file <path|->
   --json                    print the raw API response
 ```
 
-## NOTES
+## Notes
   --input and --input-file are mutually exclusive, as are --sync and --async.
   The body is wrapped as { "input": <json> } and POSTed to the endpoint's
   runsync (or run, with --async) route on the data plane.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp serverless run end_abc --input '{"prompt":"hi"}'
-  rp serverless run end_abc --input-file job.json --async
+# Run a synchronous job with inline input
+$ rp serverless run end_abc --input '{"prompt":"hi"}'
+
+# Submit a job from a file and return immediately
+$ rp serverless run end_abc --input-file job.json --async
 ```
 
 **API:** `POST /v2/{id}/runsync  (or /run with --async)`

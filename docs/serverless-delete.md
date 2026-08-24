@@ -5,13 +5,13 @@ Delete a serverless endpoint permanently.
 rp serverless delete <id>
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             endpoint id — from `rp serverless list`
 ```
 
-## NOTES
+## Notes
   Deletion is irreversible; any scaled workers are torn down with it.
 
 **API:** `DELETE /v2/serverless/{id}`

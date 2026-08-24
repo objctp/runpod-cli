@@ -11,14 +11,14 @@ rp api <METHOD> <path> [--body <json>] [--plane rest|api]
               [--jq <filter>] [--limit N] [--cursor <c>]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <METHOD>          HTTP method: GET/POST/PUT/DELETE/... (case-insensitive)
   <path>            REST path under the plane base (a leading / is optional)
 ```
 
-## OPTIONS
+## Options
 
 ```
   --body <json>     request body; prefix with @ to read a file
@@ -28,13 +28,20 @@ rp api <METHOD> <path> [--body <json>] [--plane rest|api]
   --cursor <c>      opaque offset for the next page (pairs with --limit)
 ```
 
-## EXAMPLES
+## Examples
 
 ```
-  rp api GET /pods
-  rp api GET /pods --jq '.pods[] | .id'
-  rp api POST /pods --body '{"name":"x","image":"y"}'
-  rp api POST /$id/runsync --plane api --body '@job.json'
+# List pods
+$ rp api GET /pods
+
+# List just the pod ids
+$ rp api GET /pods --jq '.pods[] | .id'
+
+# Create a pod from a JSON body
+$ rp api POST /pods --body '{"name":"x","image":"y"}'
+
+# Run a sync job from a JSON file on the data plane
+$ rp api POST /$id/runsync --plane api --body '@job.json'
 ```
 
 **API:** `raw call over rp::api_call — no single endpoint; the method and path`

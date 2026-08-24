@@ -5,7 +5,7 @@ List your network volumes as a table: id, name, size, dataCenter.
 rp volume list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --limit N      return at most N volumes
@@ -14,7 +14,7 @@ rp volume list [--json] [--jq <filter>] [--limit N] [--cursor <c>]
   --json         print the raw API response
 ```
 
-## NOTES
+## Notes
   dataCenter is where the volume lives for good. A volume cannot move, so
   anything that mounts it must be scheduled in that same datacentre.
   size is the provisioned capacity in GB, not the space in use. Billing

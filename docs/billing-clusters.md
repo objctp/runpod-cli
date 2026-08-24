@@ -7,13 +7,13 @@ rp billing clusters [<id>] [--start <rfc3339>] [--end <rfc3339>]
                            [--last-n N] [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>                                    cluster id; omit for every cluster
 ```
 
-## OPTIONS
+## Options
 
 ```
   --start <rfc3339>                       window start, inclusive
@@ -24,7 +24,7 @@ rp billing clusters [<id>] [--start <rfc3339>] [--end <rfc3339>]
   --json                                  print the raw API response
 ```
 
-## NOTES
+## Notes
   Instant clusters are multi-node GPU deployments. The CLI has no verb that
   creates or lists them, so the id has to come from the console or from a
   record in an earlier report.

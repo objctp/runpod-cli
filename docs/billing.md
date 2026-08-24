@@ -11,7 +11,7 @@ product, reached as `rp billing public-endpoints`.
 rp billing <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp billing pods`](billing-pods.md) — Report pod spend, optionally for one pod.
 - [`rp billing serverless`](billing-serverless.md) — Report serverless spend, optionally for one endpoint.

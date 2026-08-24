@@ -5,13 +5,13 @@ Change a template's fields in place.
 rp template update <id> [flags]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>                      template id — from `rp template list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --name <n>                rename the template
@@ -33,7 +33,7 @@ rp template update <id> [flags]
   --json                    print the raw API response
 ```
 
-## NOTES
+## Notes
   At least one flag is required; with none, the command exits with a usage
   error rather than sending an empty PATCH.
   Only the flags you pass are sent, so every unmentioned field keeps its
@@ -47,11 +47,14 @@ rp template update <id> [flags]
   Pods and endpoints already built from the template are untouched — they
   copied its container config at create time and never re-read it.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp template update tmpl_abc123 --public true
-  rp template update tmpl_abc123 --image myrepo/infer:2 --registry reg_xyz
+# Make a template public
+$ rp template update tmpl_abc123 --public true
+
+# Repoint a template at a new image and registry
+$ rp template update tmpl_abc123 --image myrepo/infer:2 --registry reg_xyz
 ```
 
 **API:** `PATCH /v2/templates/{id}`

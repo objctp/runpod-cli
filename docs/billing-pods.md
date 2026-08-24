@@ -7,13 +7,13 @@ rp billing pods [<id>] [--start <rfc3339>] [--end <rfc3339>]
                        [--last-n N] [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>                                    pod id; omit for every pod
 ```
 
-## OPTIONS
+## Options
 
 ```
   --start <rfc3339>                       window start, inclusive
@@ -24,7 +24,7 @@ rp billing pods [<id>] [--start <rfc3339>] [--end <rfc3339>]
   --json                                  print the raw API response
 ```
 
-## NOTES
+## Notes
   The response is v2's time-bucketed envelope — a records array plus a
   metadata object — printed whole in both output modes.
   Terminated pods still appear. This is billing history, not an inventory of
@@ -36,11 +36,14 @@ rp billing pods [<id>] [--start <rfc3339>] [--end <rfc3339>]
   Omitting all four window flags returns the account's whole pod history,
   which is slow and noisy on a long-lived account.
 
-## EXAMPLES
+## Examples
 
 ```
-  rp billing pods --last-n 7 --bucket-size day
-  rp billing pods pod_abc123 --start 2026-07-01T00:00:00Z
+# Spend over the last 7 days, bucketed daily
+$ rp billing pods --last-n 7 --bucket-size day
+
+# Spend for one pod from a start date
+$ rp billing pods pod_abc123 --start 2026-07-01T00:00:00Z
 ```
 
 **API:** `GET /v2/billing/pods`

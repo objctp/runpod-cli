@@ -10,7 +10,7 @@ on GraphQL.
 rp stock <verb> [flags]
 ```
 
-## COMMANDS
+## Commands
 
 - [`rp stock gpu`](stock-gpu.md) — List GPU types with price and live availability.
 - [`rp stock cpus`](stock-cpus.md) — List CPU flavours with price and availability.

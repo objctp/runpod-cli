@@ -6,7 +6,7 @@ rp hub list [--category <c>] [--order-by <field>] [--order-dir ASC|DESC]
                     [--owner <owner>] [--limit <n>] [--offset <n>] [--type <t>] [--json]
 ```
 
-## OPTIONS
+## Options
 
 ```
   --category <c>     filter by category
@@ -20,7 +20,7 @@ rp hub list [--category <c>] [--order-by <field>] [--order-dir ASC|DESC]
   --json             print the raw listings array
 ```
 
-## NOTES
+## Notes
   The table shows the listing id, title, owner and type — the same shape as
   `rp hub search`. That id is what `rp hub get` and `rp serverless create
   --hub-id` take.

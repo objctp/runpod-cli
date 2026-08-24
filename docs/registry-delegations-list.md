@@ -5,13 +5,13 @@ List your ECR access delegations.
 rp registry delegations list [--json]
 ```
 
-## OPTIONS
+## Options
 
 ```
-  --json           print the raw API response
+  --json           print the unwrapped delegations array as JSON
 ```
 
-## NOTES
+## Notes
   The table shows each delegation's id, name, repository, tag, AWS region and
   creation time.
 

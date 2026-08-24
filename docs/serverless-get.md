@@ -5,13 +5,13 @@ Show one endpoint's full record and scaling config.
 rp serverless get <id> [--jq <filter>] [--json]
 ```
 
-## ARGUMENTS
+## Arguments
 
 ```
   <id>             endpoint id — from `rp serverless list`
 ```
 
-## OPTIONS
+## Options
 
 ```
   --jq <filter>    jq filter applied to the record
