@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Add task-oriented how-to guides
+
 ### Fixed
 
 - Redirect GitHub Pages root to /manual/
