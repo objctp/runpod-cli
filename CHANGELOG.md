@@ -5,6 +5,7 @@
 ### Added
 
 - Add filters and detail columns to rp stock dc
+- Add DATACENTERS column and --dc filter to rp stock cpus
 
 ### Changed
 

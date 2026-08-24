@@ -36,11 +36,15 @@ _stock_gpu() {
 }
 
 _stock_cpus() {
-  local data
+  local data dc
   data="$(rp::http GET "/catalog/cpus$(rp::query_params include AVAILABILITY product "$RP_DEFAULT_PRODUCT")" | rp::unwrap cpus)"
+  dc="$(rp::args_get dc)"
+  if [[ -n "$dc" ]]; then
+    data="$(printf '%s' "$data" | jq -c --arg dc "${dc^^}" 'map(select(([.dataCenters // [] | .[].id | ascii_upcase] | index($dc))))')"
+  fi
   rp::emit_json_or "$data" rp::table "$data" \
-    --reshape 'map({ID:.id, NAME:.name, GROUP:.group, VCPU:((.vcpu.min|tostring)+"-"+(.vcpu.max|tostring)), RAM_GB_VCPU:(.ramGbPerVcpu//""), SECURE_PRICE_VCPU:(.price.securePerVcpu//""), STOCK:(.availability//"")})' \
-    ID NAME GROUP VCPU RAM_GB_VCPU SECURE_PRICE_VCPU STOCK
+    --reshape 'map({ID:.id, NAME:.name, GROUP:.group, VCPU:((.vcpu.min|tostring)+"-"+(.vcpu.max|tostring)), RAM_GB_VCPU:(.ramGbPerVcpu//""), SECURE_PRICE_VCPU:(.price.securePerVcpu//""), STOCK:(.availability//""), DATACENTERS:((.dataCenters // [] | map(.id) | sort) as $dcs | if ($dcs | length) <= 2 then ($dcs | join(", ")) else (($dcs[0:2] | join(", ")) + " +" + (($dcs | length) - 2 | tostring) + " more") end)})' \
+    ID NAME GROUP VCPU RAM_GB_VCPU SECURE_PRICE_VCPU STOCK DATACENTERS
 }
 
 _stock_dc() {
@@ -125,10 +129,11 @@ _stock_dc() {
 # doc: cpus
 # List CPU flavours with price and availability.
 #
-# Usage: rp stock cpus [--json]
+# Usage: rp stock cpus [--dc <id>] [--json]
 #
 # Options:
-#   --json  print the raw API response
+#   --dc <id>   keep only flavours stocked in this datacentre (case-insensitive)
+#   --json      print the raw API response
 #
 # Notes:
 #   The ID column is the value `rp pod create --cpu-flavor` takes.
@@ -137,7 +142,17 @@ _stock_dc() {
 #   RAM_GB_VCPU is the RAM allotted per vCPU and SECURE_PRICE_VCPU the
 #   secure-cloud hourly rate per vCPU, so both scale with the vCPU count you
 #   ask for.
-#   This verb takes no filters: the product is fixed at POD,SERVERLESS.
+#   This verb takes one optional filter and no others: --dc <id> keeps only
+#   the flavours stocked in that datacentre (case-insensitive). The filter
+#   applies to BOTH the table and --json, so the two views always show the
+#   same flavours.
+#   DATACENTERS lists every datacentre the flavour is stocked in, but the
+#   table column is truncated to the first two ids followed by "+N more"
+#   (e.g. "EU-CZ-1, EU-NL-1 +12 more") to keep the row readable; the full
+#   list is always in --json. Because filtering matches the underlying
+#   dataCenters array, --dc still finds a flavour even when its datacentre
+#   is hidden behind "+N more".
+#   This verb takes no other filters: the product is fixed at POD,SERVERLESS.
 #
 # API: GET /v2/catalog/cpus  (include=AVAILABILITY, product=POD,SERVERLESS)
 
@@ -203,7 +218,7 @@ rp::cmd_stock() {
   cpus) _stock_cpus ;;
   dc) _stock_dc ;;
   -h | --help | help | "")
-    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] | rp stock cpus | rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>]   (dc list via v2; filters apply to both table and --json)"
+    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] | rp stock cpus [--dc <id>] | rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>]   (dc list via v2; filters apply to both table and --json)"
     ;;
   *) rp::usage "unknown stock verb: '$verb'" ;;
   esac

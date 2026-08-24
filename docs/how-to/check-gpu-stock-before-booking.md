@@ -60,9 +60,10 @@ scheduler choose one for you.
 
 - `rp stock gpu` is the aggregate view by construction: its `STOCK` column is
   per-GPU-type availability across the fleet. There is no `--dc` or `--all`
-  flag on either stock command, and no option that sums the `rp stock dc`
+  flag on `rp stock gpu`, and no option that sums the `rp stock dc`
   rows into a fleet total — use `rp stock gpu` directly rather than summing
-  datacentre rows.
+  datacentre rows. (`rp stock cpus --dc` does filter by datacentre, but that
+  is a different verb.)
 - There is no `rp` command that prints one flat cross-DC-per-GPU table, but
   `rp stock dc --json` already carries the datacentre dimension inside
   `gpuAvailability`, so a single call answers "which GPU types are in stock

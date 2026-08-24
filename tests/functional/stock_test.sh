@@ -196,11 +196,34 @@ function test_should_render_table_when_cpus_no_json() {
   rendered="$(<"$OUT")"
   assert_contains "RAM_GB_VCPU" "$rendered"
   assert_contains "SECURE_PRICE_VCPU" "$rendered"
+  assert_contains "DATACENTERS" "$rendered"
   # VCPU is the min-max range; the second flavour has no availability, so STOCK is blank.
   assert_matches "cpu3c-2-4 +Compute-Optimized +Gen 3 +2-32 +2\.5 +0\.04 +MEDIUM" "$rendered"
-  # cpu5c has no availability: its row ends at SECURE_PRICE_VCPU with STOCK blank
+  # cpu5c has no availability and no dataCenters in the fixture: STOCK and
+  # DATACENTERS are both blank, so the row ends "0.05  " (trailing spaces).
   # (line-anchored, since grep -E $ matches end of each rendered row).
   assert_matches "cpu5c +Compute-Optimized +Gen 5 +2-16 +2 +0\.05 *$" "$rendered"
+}
+
+function test_should_filter_cpus_by_dc_in_table() {
+  STOCK_CPU_BODY='{"cpus":[{"id":"cpu3c","name":"Compute-Optimized","group":"CPU3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.03},"availability":"HIGH","dataCenters":[{"id":"EU-CZ-1"},{"id":"US-CA-2"},{"id":"US-MO-2"}]},{"id":"cpu5c","name":"Compute-Optimized","group":"CPU5","vcpu":{"min":2,"max":16},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.05},"availability":"HIGH","dataCenters":[{"id":"EU-RO-1"},{"id":"EUR-IS-1"}]}]}'
+  rp::args_parse --dc US-CA-2
+  _stock_cpus >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "cpu3c" "$rendered"
+  assert_not_contains "cpu5c" "$rendered"
+  # Column is truncated to two ids + "+N more".
+  assert_matches "EU-CZ-1, US-CA-2 \+1 more" "$rendered"
+}
+
+function test_should_filter_cpus_by_dc_in_json() {
+  STOCK_CPU_BODY='{"cpus":[{"id":"cpu3c","name":"Compute-Optimized","group":"CPU3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.03},"availability":"HIGH","dataCenters":[{"id":"EU-CZ-1"},{"id":"US-CA-2"}]},{"id":"cpu5c","name":"Compute-Optimized","group":"CPU5","vcpu":{"min":2,"max":16},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.05},"availability":"HIGH","dataCenters":[{"id":"EU-RO-1"}]}]}'
+  rp::args_parse --dc eu-ro-1 --json
+  _stock_cpus >"$OUT" 2>/dev/null
+  # Case-insensitive match; only cpu5c survives and keeps its full dataCenters array.
+  local expected='[{"id":"cpu5c","name":"Compute-Optimized","group":"CPU5","vcpu":{"min":2,"max":16},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.05},"availability":"HIGH","dataCenters":[{"id":"EU-RO-1"}]}]'
+  assert_equals "$expected" "$(<"$OUT")"
 }
 
 function test_should_return_raw_array_when_dc_json() {
