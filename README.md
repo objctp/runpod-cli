@@ -135,9 +135,6 @@ behind a release:
 - **Catalog stock is account-wide, not per-datacentre** — `rp volume gpus` and
   `--gpus-from-volume` reflect global availability; the volume's own datacentre
   still gates whether provisioning actually succeeds.
-- **REST API v2 is beta** — the control plane defaults to
-  `https://api.runpod.io/v2`; pin a different base (or a staging host) with
-  `RP_REST_BASE`.
 - **`volume sync --models` is a double hop** (HuggingFace → local cache → S3).
   Fine for once-and-rarely fills; use `--source <dir>` for a single hop.
 - **Idempotent creates** — `volume`, `template`, and `serverless` `create` return the

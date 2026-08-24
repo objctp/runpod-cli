@@ -77,5 +77,9 @@ confidence.
   breakdown.
 - `rp stock gpu` is still the right tool when you want the *list* of in-stock
   GPU display names (the `ID` column) to pass to `rp pod create --gpu` or
-  `rp serverless create --gpu`.
+  `rp serverless create --gpu`. It also supports column-level filters that apply
+  to both the table and `--json`: `--cloud SECURE|COMMUNITY`, `--vram-gb N`
+  (or `--vram N`, a minimum VRAM), `--stock <level>`, `--cuda <ver>`, and
+  `--sort <column>`.
+
 - `S3_API` is shown only in the table, not in `--json`.

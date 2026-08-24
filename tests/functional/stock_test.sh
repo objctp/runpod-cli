@@ -16,7 +16,7 @@ function set_up_before_script() {
 
 function set_up() {
   OUT="$(mktemp)"
-  STOCK_GPU_BODY='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"price":{"secure":0.5},"availability":"Medium"}]}'
+  STOCK_GPU_BODY='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":false,"cudaVersions":[{"version":"12.4","available":true},{"version":"12.5","available":false}],"price":{"secure":0.5,"community":0.6},"availability":"Medium"},{"id":"NVIDIA A100 80GB PCIe","name":"A100","memory":80,"secure":true,"community":true,"cudaVersions":[{"version":"12.4","available":true},{"version":"12.5","available":true}],"price":{"secure":1.39,"community":1.19},"availability":"LOW"},{"id":"NVIDIA H100","name":"H100","memory":80,"secure":true,"community":true,"cudaVersions":[{"version":"12.4","available":true},{"version":"12.5","available":true},{"version":"12.8","available":true}],"price":{"secure":2.0,"community":1.8},"availability":"HIGH"},{"id":"unknown","name":"unknown","memory":0,"availability":"NONE"}]}'
   STOCK_CPU_BODY='{"cpus":[{"id":"cpu3c-2-4","name":"Compute-Optimized","group":"Gen 3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":2.5,"price":{"securePerVcpu":0.04,"serverlessPerVcpu":0.03},"availability":"MEDIUM"},{"id":"cpu5c","name":"Compute-Optimized","group":"Gen 5","vcpu":{"min":2,"max":16},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.05,"serverlessPerVcpu":0.04}}]}'
   STOCK_DC_BODY='{"dataCenters":[{"id":"US-KS-2","name":"US Kansas 2","region":"NORTH_AMERICA","globalNetwork":true,"networkVolumeTypes":["STANDARD","HIGH_PERFORMANCE"],"compliance":["SOC_2_TYPE_2"],"gpuAvailability":[{"id":"NVIDIA GeForce RTX 4090","name":"RTX 4090","availability":"HIGH"},{"id":"NVIDIA L4","name":"L4","availability":"NONE"}]},{"id":"EU-RO-1","name":"EU Romania 1","region":"EUROPE","globalNetwork":false,"networkVolumeTypes":["STANDARD"],"compliance":[],"gpuAvailability":[]}]}'
   _RP_S3_DCS=() # bust the cache so each test controls the S3 source
@@ -40,7 +40,8 @@ function tear_down() {
 function test_should_return_raw_body_when_gpu_json() {
   rp::args_parse --json
   _stock_gpu >"$OUT"
-  assert_equals "$(printf '%s' "$STOCK_GPU_BODY" | jq -c '.gpus')" "$(<"$OUT")"
+  # junk rows are stripped from --json too, so expect the filtered array.
+  assert_equals "$(printf '%s' "$STOCK_GPU_BODY" | jq -c '[.gpus[] | select(((.id // "") | ascii_upcase) != "UNKNOWN" and (.memory // 0) > 0)]')" "$(<"$OUT")"
 }
 
 function test_should_render_table_when_gpu_no_json() {
@@ -49,8 +50,81 @@ function test_should_render_table_when_gpu_no_json() {
   local rendered
   rendered="$(<"$OUT")"
   assert_contains "VRAM_GB" "$rendered"
+  assert_contains "CLOUD" "$rendered"
+  assert_contains "COMMUNITY_PRICE" "$rendered"
+  assert_contains "CUDA" "$rendered"
   assert_contains "NVIDIA L4" "$rendered"
   assert_contains "Medium" "$rendered"
+  # secure-only: CLOUD=SECURE, community price dashed out (gated on the boolean,
+  # not on price.community=0.6); CUDA (moved to the end) shows only the available
+  # version (12.5 is available:false), after STOCK.
+  assert_matches "NVIDIA L4 +L4 +24 +SECURE +0\.5 +- +Medium +12\.4" "$rendered"
+  # both tiers: CLOUD lists "SECURE, COMMUNITY" (not "BOTH"), both prices shown,
+  # CUDA after STOCK.
+  assert_matches "NVIDIA A100 80GB PCIe +A100 +80 +SECURE, COMMUNITY +1\.39 +1\.19 +LOW +12\.4, 12\.5" "$rendered"
+  # three available CUDA versions are truncated to two plus "+1 more", after STOCK.
+  assert_matches "NVIDIA H100 +H100 +80 +SECURE, COMMUNITY +2\.0 +1\.8 +HIGH +12\.4, 12\.5 \+1 more" "$rendered"
+  # the junk "unknown" row (id "unknown", 0 VRAM) is stripped from display.
+  assert_not_contains "unknown" "$rendered"
+}
+
+function test_should_filter_gpu_by_vram_gb_as_minimum() {
+  rp::args_parse --vram-gb 24
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # minimum: 24 VRAM keeps the 24-GB L4 and the 80-GB A100/H100.
+  assert_contains "NVIDIA L4" "$rendered"
+  assert_contains "NVIDIA A100 80GB PCIe" "$rendered"
+  assert_contains "NVIDIA H100" "$rendered"
+}
+
+function test_should_accept_vram_alias() {
+  rp::args_parse --vram 80
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "NVIDIA A100 80GB PCIe" "$rendered"
+  assert_not_contains "NVIDIA L4" "$rendered"
+}
+
+function test_should_filter_gpu_by_stock() {
+  rp::args_parse --stock LOW
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "NVIDIA A100 80GB PCIe" "$rendered"
+  assert_not_contains "NVIDIA L4" "$rendered"
+  assert_not_contains "NVIDIA H100" "$rendered"
+}
+
+function test_should_filter_gpu_by_cuda() {
+  rp::args_parse --cuda 12.5
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "NVIDIA A100 80GB PCIe" "$rendered"
+  assert_contains "NVIDIA H100" "$rendered"
+  assert_not_contains "NVIDIA L4" "$rendered"
+}
+
+function test_should_filter_gpu_by_cloud_client_side() {
+  rp::args_parse --cloud COMMUNITY
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # L4 is secure-only, so it must drop under --cloud COMMUNITY.
+  assert_not_contains "NVIDIA L4" "$rendered"
+  assert_contains "NVIDIA A100 80GB PCIe" "$rendered"
+}
+
+function test_should_sort_gpu_by_vram_gb() {
+  rp::args_parse --sort VRAM_GB
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # lowest VRAM first: L4 (24) precedes the two 80s.
+  assert_matches "NVIDIA L4.*NVIDIA A100 80GB PCIe" "$rendered"
 }
 
 function test_should_default_query_unchanged_when_no_flags() {

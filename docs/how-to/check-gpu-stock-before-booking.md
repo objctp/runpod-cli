@@ -72,3 +72,11 @@ scheduler choose one for you.
 - For a network-volume-backed pod, the datacentre is fixed by the volume. Use
   step 3 to confirm the GPU type you want is in stock in that specific DC
   before booking.
+- `rp stock gpu` also takes column-level filters (all apply to both the table
+  and `--json`): `--cloud SECURE|COMMUNITY` keeps only types offered on that
+  tier, `--vram-gb N` / `--vram N` keeps types with at least N GB of VRAM,
+  `--stock NONE|LOW|MEDIUM|HIGH` keeps a single availability level, and
+  `--cuda <ver>` keeps types with that CUDA version available. `--sort <column>`
+  reorders rows by ID, DISPLAY, VRAM_GB, CLOUD, SECURE_PRICE, COMMUNITY_PRICE,
+  STOCK or CUDA.
+
