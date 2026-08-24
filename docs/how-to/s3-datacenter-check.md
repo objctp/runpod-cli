@@ -11,12 +11,13 @@ be reached by the `aws s3 sync` transfer.
 
 ## Steps
 
-1. List datacentres with the S3-API column. `rp stock dc` augments the
-   datacentre table (`DATACENTER`, `NAME`, `REGION`, `GPUS`) with an
-   `S3_API` column:
+1. List datacentres that expose the S3 API. `rp stock dc` prints the
+   datacentre table (`DATACENTER`, `REGION`, `GPUS`, `S3_API`,
+   `GLOBAL_NETWORK`, `NETWORK_VOLUME_TYPES`, `COMPLIANCE`), where `S3_API`
+   marks the S3-capable ones. To list only those directly, pass `--s3`:
 
    ```
-   $ rp stock dc
+   $ rp stock dc --s3
    ```
 
    `S3_API` reads `yes` for datacentres whose network volumes expose the
@@ -42,9 +43,10 @@ be reached by the `aws s3 sync` transfer.
 
 ## Notes
 
-- `S3_API` is shown in the table only, not in `--json`, so you cannot `jq`
-  the S3 status out of the JSON output. For scripting, parse the pretty
-  table.
+- `S3_API` itself is shown in the table only, not in `--json`, so the raw
+  JSON carries no `S3_API` field. For scripting, either parse the pretty
+  table or filter server-side with `rp stock dc --s3 --json`, which prints the
+  raw v2 records for the S3-capable datacentres only.
 - The column uses the same resolver `rp volume create` guards on — a live
   GraphQL `dataCenters { s3apiEnabled }` query with an offline snapshot
   fallback — so the table and the create-time warning agree whenever both

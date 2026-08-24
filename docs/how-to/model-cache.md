@@ -14,7 +14,7 @@ Hub — so cold starts skip the download.
    datacentres `rp volume sync` can reach):
 
    ```
-   $ rp stock dc
+   $ rp stock dc --s3
    ```
 
 2. Create the volume in that datacentre:

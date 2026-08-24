@@ -216,18 +216,21 @@ function test_should_render_columns_and_s3_yes_when_dc_no_json() {
   local rendered
   rendered="$(<"$OUT")"
   assert_contains "DATACENTER" "$rendered"
-  assert_contains "NAME" "$rendered"
   assert_contains "REGION" "$rendered"
+  assert_contains "GLOBAL_NETWORK" "$rendered"
+  assert_contains "COMPLIANCE" "$rendered"
+  assert_contains "NETWORK_VOLUME_TYPES" "$rendered"
   assert_contains "GPUS" "$rendered"
   assert_contains "S3_API" "$rendered"
   assert_contains "US-KS-2" "$rendered"
-  assert_contains "US Kansas 2" "$rendered"
   assert_contains "NORTH_AMERICA" "$rendered"
   assert_contains "yes" "$rendered"
   # GPUS = 1 for US-KS-2 (4090 HIGH; L4 NONE excluded); 0 for EU-RO-1.
-  assert_matches "US-KS-2 +US Kansas 2 +NORTH_AMERICA +1 +yes" "$rendered"
-  # EU-RO-1 is not in the S3 set, so its row ends at GPUS with S3_API blank.
-  assert_matches "EU-RO-1 +EU Romania 1 +EUROPE +0 *$" "$rendered"
+  # S3_API yes, globalNetwork true, SOC_2_TYPE_2 compliance, both volume tiers.
+  assert_matches "US-KS-2 +NORTH_AMERICA +1 +yes +yes +SOC_2_TYPE_2 +STANDARD, HIGH_PERFORMANCE" "$rendered"
+  # EU-RO-1: not in the S3 set, not on global network, no compliance; only the
+  # STANDARD volume tier is advertised.
+  assert_matches "EU-RO-1 +EUROPE +0 +STANDARD *$" "$rendered"
 }
 
 function test_should_render_s3_column_via_fallback_when_graphql_down() {
@@ -238,7 +241,52 @@ function test_should_render_s3_column_via_fallback_when_graphql_down() {
   local rendered
   rendered="$(<"$OUT")"
   # US-KS-2 is in the fallback snapshot, so its S3 column still populates.
-  assert_matches "US-KS-2 +US Kansas 2 +NORTH_AMERICA +1 +yes" "$rendered"
+  assert_matches "US-KS-2 +NORTH_AMERICA +1 +yes +yes +SOC_2_TYPE_2 +STANDARD, HIGH_PERFORMANCE" "$rendered"
+}
+
+function test_should_filter_dc_to_s3_enabled_when_s3_flag() {
+  _s3_dcs() { printf '%s\n' "US-KS-2"; } # control the S3 column without GraphQL
+  rp::args_parse --s3
+  _stock_dc >"$OUT" 2>/dev/null
+  assert_contains "US-KS-2" "$(<"$OUT")"
+  assert_not_contains "EU-RO-1" "$(<"$OUT")"
+}
+
+function test_should_filter_dc_to_global_network_when_global_flag() {
+  rp::args_parse --global-network
+  _stock_dc >"$OUT" 2>/dev/null
+  assert_contains "US-KS-2" "$(<"$OUT")"
+  assert_not_contains "EU-RO-1" "$(<"$OUT")"
+}
+
+function test_should_filter_dc_to_volume_type_when_volume_type_flag() {
+  rp::args_parse --volume-type HIGH_PERFORMANCE
+  _stock_dc >"$OUT" 2>/dev/null
+  assert_contains "US-KS-2" "$(<"$OUT")"
+  assert_not_contains "EU-RO-1" "$(<"$OUT")"
+}
+
+function test_should_filter_dc_to_compliance_when_compliance_flag() {
+  rp::args_parse --compliance SOC_2_TYPE_2
+  _stock_dc >"$OUT" 2>/dev/null
+  assert_contains "US-KS-2" "$(<"$OUT")"
+  assert_not_contains "EU-RO-1" "$(<"$OUT")"
+}
+
+function test_should_and_filters_when_s3_and_global_flags() {
+  _s3_dcs() { printf '%s\n' "US-KS-2"; }
+  rp::args_parse --s3 --global-network
+  _stock_dc >"$OUT" 2>/dev/null
+  assert_contains "US-KS-2" "$(<"$OUT")"
+  assert_not_contains "EU-RO-1" "$(<"$OUT")"
+}
+
+function test_should_filter_dc_json_same_set_as_table_when_s3_flag() {
+  _s3_dcs() { printf '%s\n' "US-KS-2"; }
+  rp::args_parse --s3 --json
+  _stock_dc >"$OUT"
+  # --json emits the raw v2 records for the surviving DC only (no S3_API field).
+  assert_equals "$(printf '%s' "$STOCK_DC_BODY" | jq -c '.dataCenters | map(select(.id=="US-KS-2"))')" "$(<"$OUT")"
 }
 
 function test_should_show_help_when_help_verb_given() {

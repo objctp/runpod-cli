@@ -41,8 +41,9 @@ confidence.
    ```
 
 2. See which datacentres have GPUs in stock. `rp stock dc` returns a table
-   with the `DATACENTER` id, its `NAME`/`REGION`, `GPUS` (how many GPU
-   *types* have any stock there, not how many cards), and `S3_API`:
+   with the `DATACENTER` id, its `REGION`, `GPUS` (how many GPU *types* have
+   any stock there, not how many cards), and the `S3_API`, `GLOBAL_NETWORK`,
+   `NETWORK_VOLUME_TYPES`, and `COMPLIANCE` columns:
 
    ```
    $ rp stock dc

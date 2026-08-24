@@ -15,7 +15,7 @@ name and reading through the S3-compatible API.
 
    ```
    $ rp volume list
-   $ rp stock dc
+   $ rp stock dc --s3
    ```
 
    Only an `S3_API: yes` datacentre can be reached (see

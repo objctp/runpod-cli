@@ -24,9 +24,10 @@ scheduler choose one for you.
    use `--product SERVERLESS` for serverless availability, or
    `--min-cuda 12.1` to filter by CUDA version.
 
-2. See which datacentres have GPU stock. `rp stock dc` prints a table with
-   the `DATACENTER` id, `NAME`/`REGION`, and `GPUS` (how many GPU *types*
-   have any stock there, not how many cards):
+2. See which datacentres have GPU stock. `rp stock dc` prints a table keyed on
+   the `DATACENTER` id, with `REGION` and `GPUS` (how many GPU *types* have
+   any stock there, not how many cards), plus the `S3_API`, `GLOBAL_NETWORK`,
+   `NETWORK_VOLUME_TYPES`, and `COMPLIANCE` columns:
 
    ```
    $ rp stock dc

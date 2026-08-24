@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Add filters and detail columns to rp stock dc
+
 ### Changed
 
 - Add task-oriented how-to guides
