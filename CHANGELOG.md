@@ -7,6 +7,10 @@
 - Add --region filter to dc with abbreviation support
 - Align list table and add key generation + runpodctl import
 
+### Changed
+
+- Make --sort case-insensitive in rp stock gpu
+
 ### Fixed
 
 - Merge secrets on re-login and surface GraphQL errors

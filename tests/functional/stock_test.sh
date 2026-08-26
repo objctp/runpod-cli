@@ -127,6 +127,15 @@ function test_should_sort_gpu_by_vram_gb() {
   assert_matches "NVIDIA L4.*NVIDIA A100 80GB PCIe" "$rendered"
 }
 
+function test_should_accept_vram_alias_for_sort() {
+  rp::args_parse --sort vram
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # --sort vram maps to VRAM_GB: L4 (24) precedes the two 80s.
+  assert_matches "NVIDIA L4.*NVIDIA A100 80GB PCIe" "$rendered"
+}
+
 function test_should_default_query_unchanged_when_no_flags() {
   local cap
   cap="$(mktemp)"

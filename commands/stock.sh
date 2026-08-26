@@ -40,6 +40,10 @@ _stock_gpu() {
   cuda_f="$(rp::args_get cuda)"
   sort="$(rp::args_get sort)"
   if [[ -n "$sort" ]]; then
+    sort="${sort^^}"
+    case "$sort" in
+    VRAM) sort=VRAM_GB ;;
+    esac
     case "$sort" in
     ID | DISPLAY | VRAM_GB | CLOUD | SECURE_PRICE | COMMUNITY_PRICE | STOCK | CUDA) ;;
     *) rp::usage "invalid --sort '$sort' (expected one of ID, DISPLAY, VRAM_GB, CLOUD, SECURE_PRICE, COMMUNITY_PRICE, STOCK, CUDA)" ;;
@@ -153,6 +157,7 @@ _stock_dc() {
 #   --cuda <ver>              keep only types with that CUDA version available
 #   --sort <column>           order rows by ID, DISPLAY, VRAM_GB, CLOUD,
 #                             SECURE_PRICE, COMMUNITY_PRICE, STOCK or CUDA
+#                             (VRAM is accepted as an alias for VRAM_GB)
 #   --json                    print the raw API response
 #
 # Notes:
