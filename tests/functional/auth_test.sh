@@ -65,6 +65,29 @@ function test_login_reads_key_from_stdin_when_piped() {
   assert_file_contains "$RP_CONFIG_HOME/credentials.d/default" "RUNPOD_API_KEY=sk-from-stdin"
 }
 
+function test_relogin_partial_merge_preserves_existing_keys() {
+  # First login stores the API key plus S3 keys.
+  rp::cmd_auth login --api-key sk-default --s3-access-key ak1 --s3-secret-key sk1 </dev/null
+  # A later partial re-login (api-key only) must UPDATE the key yet PRESERVE
+  # the S3 keys already stored — and must not fail because the file now exists.
+  rp::cmd_auth login --api-key sk-rotated </dev/null
+  assert_file_contains "$RP_CONFIG_HOME/credentials.d/default" "RUNPOD_API_KEY=sk-rotated"
+  assert_file_contains "$RP_CONFIG_HOME/credentials.d/default" "RUNPOD_S3_ACCESS_KEY=ak1"
+  assert_file_contains "$RP_CONFIG_HOME/credentials.d/default" "RUNPOD_S3_SECRET_KEY=sk1"
+}
+
+function test_relogin_with_missing_keys_adds_them_without_wiping() {
+  # First login with only the API key (no S3 keys yet).
+  rp::cmd_auth login --api-key sk-default </dev/null
+  # A later re-login supplying the previously-missing S3 keys must add them
+  # while keeping the API key (regression: grep -vE under set -e used to abort
+  # the whole rewrite when the file already existed).
+  rp::cmd_auth login --api-key sk-default --s3-access-key ak2 --s3-secret-key sk2 </dev/null
+  assert_file_contains "$RP_CONFIG_HOME/credentials.d/default" "RUNPOD_API_KEY=sk-default"
+  assert_file_contains "$RP_CONFIG_HOME/credentials.d/default" "RUNPOD_S3_ACCESS_KEY=ak2"
+  assert_file_contains "$RP_CONFIG_HOME/credentials.d/default" "RUNPOD_S3_SECRET_KEY=sk2"
+}
+
 function test_status_reports_active_account_and_source() {
   rp::cmd_auth login --api-key sk-status123 --s3-access-key AKIAx --s3-secret-key SKy </dev/null
   local out

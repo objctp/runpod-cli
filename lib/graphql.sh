@@ -35,8 +35,10 @@ _rp_graphql_emit() {
     rp::die "Runpod GraphQL API has been retired (HTTP 410 Gone). Update 'rp', or use the v2 endpoint if one is available."
   fi
   if ((status >= 400)); then
+    local body
+    body="$(<"$tmp")"
     rm -f -- "$tmp"
-    _rp_exit_for_status "$status" "$label HTTP $status: $(<"$tmp")"
+    _rp_exit_for_status "$status" "$label HTTP $status: $body"
   fi
   local errs
   errs="$(jq -c '.errors // empty' "$tmp" 2>/dev/null || true)"

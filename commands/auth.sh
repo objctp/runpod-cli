@@ -3,9 +3,8 @@
 # Manage Runpod API credentials in a stable per-user store.
 # This store survives any install method — including an npm global install
 # whose files live inside node_modules and are wiped on every `npm upgrade`.
-# Modeled on gh's multi-account support (v2.40.0): one key per account,
-# exactly one "active" account used for API calls, switchable with
-# `rp auth switch`.
+# One key per account, exactly one "active" account used for API calls,
+# switchable with `rp auth switch`.
 #
 # Layout under $RP_CONFIG_HOME:
 #   credentials.d/<name>   one account: RUNPOD_API_KEY (+ optional S3 keys)
@@ -71,6 +70,15 @@ _auth_active_name() {
 
 # Write one account file, preserving any non-credential lines already there, with
 # the dir at 700 and the file at 600.
+# Read a single KEY=VALUE from a credentials file; empty if absent.
+_auth_read_key() {
+  local f="$1" key="$2" line
+  [[ -f "$f" ]] || return 0
+  line="$(grep -E "^${key}=" "$f" 2>/dev/null | tail -1)"
+  [[ -z "$line" ]] && return 0
+  printf '%s' "${line#*=}"
+}
+
 _auth_write_account() {
   local name="$1" ak="$2" sak="$3" ssk="$4"
   local dir="$RP_CREDS_DIR" file tmp
@@ -80,7 +88,18 @@ _auth_write_account() {
   chmod 700 "$dir"
   tmp="$(mktemp)"
   : >"$tmp"
-  [[ -f "$file" ]] && grep -vE "$_AUTH_KEYS" "$file" >>"$tmp" 2>/dev/null
+  # Preserve any non-auth lines (user comments or other vars). `grep -vE`
+  # exits 1 when it matches nothing, which would trip `set -e` and abort the
+  # whole write — so guard with `|| true`.
+  [[ -f "$file" ]] && grep -vE "$_AUTH_KEYS" "$file" >>"$tmp" 2>/dev/null || true
+  # Merge: keep an existing value when the caller didn't supply one, so a
+  # partial login (e.g. `rp auth login --api-key …`) preserves S3 keys set in
+  # a previous call instead of wiping them.
+  if [[ -f "$file" ]]; then
+    [[ -z "$ak" ]] && ak="$(_auth_read_key "$file" RUNPOD_API_KEY)"
+    [[ -z "$sak" ]] && sak="$(_auth_read_key "$file" RUNPOD_S3_ACCESS_KEY)"
+    [[ -z "$ssk" ]] && ssk="$(_auth_read_key "$file" RUNPOD_S3_SECRET_KEY)"
+  fi
   [[ -n "$ak" ]] && printf 'RUNPOD_API_KEY=%s\n' "$ak" >>"$tmp"
   [[ -n "$sak" ]] && printf 'RUNPOD_S3_ACCESS_KEY=%s\n' "$sak" >>"$tmp"
   [[ -n "$ssk" ]] && printf 'RUNPOD_S3_SECRET_KEY=%s\n' "$ssk" >>"$tmp"
@@ -99,7 +118,7 @@ _auth_runpodctl_key() {
   local f="${RUNPODCTL_CONFIG:-$HOME/.runpod/config.toml}"
   [[ -f "$f" ]] || return 0
   local line val
-  line="$(grep -E '^[[:space:]]*apiKey[[:space:]]*=' "$f" 2>/dev/null | head -1)"
+  line="$(grep -iE '^[[:space:]]*apikey[[:space:]]*=' "$f" 2>/dev/null | head -1)"
   [[ -z "$line" ]] && return 0
   val="${line#*=}"
   val="${val#"${val%%[![:space:]]*}"}"
@@ -250,7 +269,7 @@ Manage Runpod API credentials in a stable per-user store
 (${XDG_CONFIG_HOME:-$HOME/.config}/rp by default) that survives any install
 method, including npm global installs. Multiple accounts are supported: each is
 a separate file under credentials.d/, with one marked "active" and used for all
-API calls. gh-style: login is additive, switch changes the active account.
+API calls. Login is additive, switch changes the active account.
 
 Verbs:
   login     store an account (--name <n>, else "default") and mark it active
@@ -298,7 +317,7 @@ EOF
 #   are preserved. The API key is the only auth Runpod supports — no OAuth.
 #
 # doc: logout
-# Remove an account (mirrors gh auth logout).
+# Remove an account.
 # If it was active and other accounts remain, the active account switches to one of the others.
 #
 # Usage: rp auth logout [--name <n>]
