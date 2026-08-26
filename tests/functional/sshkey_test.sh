@@ -48,6 +48,68 @@ function test_list_json_returns_array() {
   rp::http() { :; }
 }
 
+function test_add_generates_key_when_no_input() {
+  local cap sshdir
+  cap="$(mktemp)"
+  _CAP="$cap"
+  sshdir="$(mktemp -d)"
+  RP_CONFIG_HOME="$sshdir"
+  _stub_sshkey_http '{"keys":[]}'
+  # stdin is not a TTY in tests, so the confirm prompt is skipped and a key
+  # pair is generated and registered.
+  rp::cmd_ssh-key add --name genkey --type ed25519 </dev/null >/dev/null 2>&1
+  # A key pair was persisted under RP_CONFIG_HOME/ssh.
+  assert_file_exists "$sshdir/ssh/genkey"
+  assert_file_exists "$sshdir/ssh/genkey.pub"
+  # The generated public key was PUT to the account key set.
+  assert_equals "1" "$(jq -r '.keys | length' "$cap")"
+  rp::http() { :; }
+  rm -f "$cap"
+  rm -rf "$sshdir"
+}
+
+function test_add_from_runpodctl_imports_missing_keys() {
+  local cap rpc sshdir
+  cap="$(mktemp)"
+  _CAP="$cap"
+  sshdir="$(mktemp -d)"
+  RP_CONFIG_HOME="$sshdir"
+  rpc="$(mktemp -d)/.runpod/ssh"
+  mkdir -p "$rpc"
+  printf 'ssh-ed25519 AAAANEW-fromrpc user@rpc\n' >"$rpc/rpckey1.pub"
+  printf 'ssh-rsa AAAAOLD-already server@rpc\n' >"$rpc/rpckey2.pub"
+  printf 'PRIV1' >"$rpc/rpckey1"
+  # Server already holds rpckey2; rpckey1 is new.
+  _stub_sshkey_http '{"keys":["ssh-rsa AAAAOLD-already server@rpc"]}'
+  RUNPODCTL_SSH_DIR="$rpc" rp::cmd_ssh-key add --from-runpodctl </dev/null >/dev/null 2>&1
+  # Exactly one new key was PUT (the existing one is preserved too).
+  assert_equals "2" "$(jq -r '.keys | length' "$cap")"
+  assert_equals "ssh-ed25519 AAAANEW-fromrpc user@rpc" "$(jq -r '.keys[1]' "$cap")"
+  # The private key was copied into rp's store.
+  assert_file_exists "$sshdir/ssh/rpckey1"
+  rp::http() { :; }
+  rm -f "$cap"
+  rm -rf "$sshdir" "$rpc"
+}
+
+function test_add_from_runpodctl_skips_when_all_registered() {
+  local cap rpc sshdir
+  cap="$(mktemp)"
+  _CAP="$cap"
+  sshdir="$(mktemp -d)"
+  RP_CONFIG_HOME="$sshdir"
+  rpc="$(mktemp -d)/.runpod/ssh"
+  mkdir -p "$rpc"
+  printf 'ssh-ed25519 AAAARX x@rpc\n' >"$rpc/only.pub"
+  _stub_sshkey_http '{"keys":["ssh-ed25519 AAAARX x@rpc"]}'
+  RUNPODCTL_SSH_DIR="$rpc" rp::cmd_ssh-key add --from-runpodctl </dev/null >/dev/null 2>&1
+  # Nothing new to register, so no PUT body is written.
+  assert_equals "" "$(cat "$cap")"
+  rp::http() { :; }
+  rm -f "$cap"
+  rm -rf "$sshdir" "$rpc"
+}
+
 function test_add_appends_key_and_puts_full_set() {
   local cap keyfile
   cap="$(mktemp)"

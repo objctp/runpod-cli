@@ -11,6 +11,6 @@ rp ssh-key <verb> [flags]
 
 ## Commands
 
-- [`rp ssh-key list`](ssh-key-list.md) — List your registered public keys (API v2 REST plane).
-- [`rp ssh-key add`](ssh-key-add.md) — Add a public key from a file or stdin (API v2 REST plane).
-- [`rp ssh-key remove`](ssh-key-remove.md) — Remove a registered public key (API v2 REST plane).
+- [`rp ssh-key list`](ssh-key-list.md) — List your registered public keys.
+- [`rp ssh-key add`](ssh-key-add.md) — Add a public key from a file, stdin, or generate a fresh pair.
+- [`rp ssh-key remove`](ssh-key-remove.md) — Remove a registered public key.

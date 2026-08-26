@@ -1,5 +1,5 @@
 # rp ssh-key remove
-Remove a registered public key (API v2 REST plane).
+Remove a registered public key.
 
 ```
 rp ssh-key remove <fingerprint|key>

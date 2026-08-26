@@ -5,6 +5,7 @@
 ### Added
 
 - Add --region filter to dc with abbreviation support
+- Align list table and add key generation + runpodctl import
 
 ### Fixed
 

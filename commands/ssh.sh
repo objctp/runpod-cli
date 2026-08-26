@@ -173,7 +173,8 @@ rp::cmd_ssh() {
     cat <<'EOF'
 Usage: rp ssh <verb>   (key verbs deprecated — use rp ssh-key; ssh is now just info)
   list-keys                     [deprecated] list keys — use: rp ssh-key list
-  add-key <file|->              [deprecated] add a key  — use: rp ssh-key add
+  add-key <file|-> [--key-file <path>] [--key <pub>] [--name <n>] [--type rsa|ed25519] [--force] [--from-runpodctl]
+                              [deprecated] add a key  — use: rp ssh-key add
   remove-key <fingerprint|key>  [deprecated] remove a key — use: rp ssh-key remove
   info <pod-id> [--user <u>]    ssh connection line for a running pod (default user: root)
 EOF

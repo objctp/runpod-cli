@@ -1,5 +1,5 @@
 # rp ssh-key list
-List your registered public keys (API v2 REST plane).
+List your registered public keys.
 
 ```
 rp ssh-key list [--json]
