@@ -3,7 +3,7 @@ List datacentres with GPU stock and S3-API support.
 
 ```
 rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>]
-                    [--compliance <c,…>]
+                    [--compliance <c,…>] [--region <r,…>]
 ```
 
 ## Options
@@ -16,6 +16,10 @@ rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>]
                        network-volume tier (e.g. STANDARD,HIGH_PERFORMANCE)
   --compliance <c,…>   keep only datacentres carrying at least one listed
                        certification (e.g. SOC_2_TYPE_2)
+  --region <r,…>       keep only datacentres in at least one listed region
+                       (e.g. EU,NA,AS) — the REGION column, case-insensitive.
+                       Accepts abbreviations (eg: NA, EU) or the full names
+                       (eg: NORTH_AMERICA, ASIA)
 ```
 
 ## Notes

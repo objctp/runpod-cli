@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Add --region filter to dc with abbreviation support
+
 ### Fixed
 
 - Merge secrets on re-login and surface GraphQL errors

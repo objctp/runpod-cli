@@ -30,7 +30,8 @@
     "runpod-rest",
     "runpod-api-v2",
     "runpod-graphql",
-    "runpod-s3"
+    "runpod-s3",
+    "runpod-cli"
   ],
   "scripts": {
     "changelog": "scripts/changelog.sh unreleased",

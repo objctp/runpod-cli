@@ -370,6 +370,20 @@ function test_should_filter_dc_to_compliance_when_compliance_flag() {
   assert_not_contains "EU-RO-1" "$(<"$OUT")"
 }
 
+function test_should_filter_dc_to_region_when_region_flag() {
+  rp::args_parse --region EUROPE
+  _stock_dc >"$OUT" 2>/dev/null
+  assert_contains "EU-RO-1" "$(<"$OUT")"
+  assert_not_contains "US-KS-2" "$(<"$OUT")"
+}
+
+function test_should_filter_dc_to_region_when_region_abbrev() {
+  rp::args_parse --region EU
+  _stock_dc >"$OUT" 2>/dev/null
+  assert_contains "EU-RO-1" "$(<"$OUT")"
+  assert_not_contains "US-KS-2" "$(<"$OUT")"
+}
+
 function test_should_and_filters_when_s3_and_global_flags() {
   _s3_dcs() { printf '%s\n' "US-KS-2"; }
   rp::args_parse --s3 --global-network

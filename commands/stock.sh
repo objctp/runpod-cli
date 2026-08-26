@@ -90,21 +90,28 @@ _stock_dc() {
   # --compliance are comma-separated allow-lists (keep a DC if it carries at least
   # one listed item, case-insensitive). The SAME filtered set feeds both the
   # --json payload and the reshaped table, so the two views never diverge.
-  local s3f globalf vols comps
+  local s3f globalf vols comps regions
   s3f="$(rp::args_has s3 && printf true || printf false)"
   globalf="$(rp::args_has global-network && printf true || printf false)"
   vols="$(rp::split_csv "$(rp::args_get volume-type)" | jq -R 'select(length>0)' | jq -sc 'map(ascii_upcase)')"
   comps="$(rp::split_csv "$(rp::args_get compliance)" | jq -R 'select(length>0)' | jq -sc 'map(ascii_upcase)')"
+  regions="$(rp::split_csv "$(rp::args_get region)" | jq -R 'select(length>0)' | jq -sc '
+    map(ascii_upcase) |
+    map(. as $t | (
+      {NA:"NORTH_AMERICA", EU:"EUROPE", AS:"ASIA", SA:"SOUTH_AMERICA", ME:"MIDDLE_EAST", OC:"OCEANIA", AF:"AFRICA"}[$t] // $t
+    ))')"
 
   filt="$(printf '%s' "$dcs" | jq -c \
     --argjson s3 "$s3set" --argjson s3f "$s3f" --argjson globalf "$globalf" \
-    --argjson vols "$vols" --argjson comps "$comps" '
+    --argjson vols "$vols" --argjson comps "$comps" --argjson regions "$regions" '
     map(select(
       (.id | ascii_upcase) as $dc |
+      ((.region // "") | ascii_upcase) as $reg |
       (($s3f | not) or ($s3 | index($dc))) and
       (($globalf | not) or .globalNetwork) and
       (($vols | length) == 0 or ((.networkVolumeTypes // []) | map(ascii_upcase) | any(. as $t | $vols | index($t)))) and
-      (($comps | length) == 0 or ((.compliance // []) | map(ascii_upcase) | any(. as $t | $comps | index($t))))
+      (($comps | length) == 0 or ((.compliance // []) | map(ascii_upcase) | any(. as $t | $comps | index($t)))) and
+      (($regions | length) == 0 or ($regions | index($reg)))
     ))')"
 
   # rp::table takes no jq args, so pre-shape (joining the S3 set) then table it.
@@ -212,7 +219,7 @@ _stock_dc() {
 # List datacentres with GPU stock and S3-API support.
 #
 # Usage: rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>]
-#                     [--compliance <c,…>]
+#                     [--compliance <c,…>] [--region <r,…>]
 #
 # Options:
 #   --json          print the raw v2 datacentre records (post-filter)
@@ -222,6 +229,10 @@ _stock_dc() {
 #                        network-volume tier (e.g. STANDARD,HIGH_PERFORMANCE)
 #   --compliance <c,…>   keep only datacentres carrying at least one listed
 #                        certification (e.g. SOC_2_TYPE_2)
+#   --region <r,…>       keep only datacentres in at least one listed region
+#                        (e.g. EU,NA,AS) — the REGION column, case-insensitive.
+#                        Accepts abbreviations (eg: NA, EU) or the full names
+#                        (eg: NORTH_AMERICA, ASIA)
 #
 # Notes:
 #   Filters combine as a logical AND; within a comma list they are OR. All flags
@@ -270,7 +281,7 @@ rp::cmd_stock() {
   cpus) _stock_cpus ;;
   dc) _stock_dc ;;
   -h | --help | help | "")
-    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] | rp stock cpus [--dc <id>] | rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>]   (dc list via v2; filters apply to both table and --json)"
+    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] | rp stock cpus [--dc <id>] | rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>] [--region <r,…>]   (dc list via v2; --region takes EU/NA/AS… or full names; filters apply to both table and --json)"
     ;;
   *) rp::usage "unknown stock verb: '$verb'" ;;
   esac
