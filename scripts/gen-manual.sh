@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Generate a GitHub-CLI-style markdown manual from `rp doc` output.
+# Generate a structured markdown manual from `rp doc` output.
 #
 # Every user-facing command/verb already carries a reference block in its
 # source comments, rendered by `rp doc`. This script reuses that surface so the
-# manual has a full page per command and per verb (gh manual layout):
+# manual has a full page per command and per verb (one page per command/verb):
 #   docs/<command>.md              category page (overview + linked commands)
 #   docs/<command>-<verb>.md      one independent page per verb
 #   docs/<command>-<group>-<subverb>.md   for group verbs (e.g. registry delegations)
@@ -91,9 +91,9 @@ transform() {
         next
       }
       if (cur == "Examples") {
-        # gh-CLI style: each example is a "# comment" one-liner above a
+        # Each example is a "# comment" one-liner above a
         # "$ command" line. Blank-separate examples so the block reads like
-        # the gh manual; continuation lines (indented, no "$ ") are printed
+        # the manual; continuation lines (indented, no "$ ") are printed
         # verbatim.
         if ($0 ~ /^# / && ex_prev_cmd) print ""
         print $0
@@ -114,7 +114,7 @@ verbs_of() { awk '/^Verbs:/{f=1;next} f&&/^  [a-z]/{print $1}' <<<"$1"; }
 # True when $1 (a `rp doc <verb>` dump) is a group verb (owns a Verbs: list).
 is_group() { grep -q '^Verbs:' <<<"$1"; }
 
-# Render one command as a gh-CLI-style tree: docs/<name>.md is the category
+# Render one command: docs/<name>.md is the category
 # page (overview + linked command list); each verb is its own page
 # docs/<name>-<verb>.md. A group verb (one owning sub-verbs, e.g. `registry
 # delegations`) gets its own category page docs/<name>-<verb>.md plus a page

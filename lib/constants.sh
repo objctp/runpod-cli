@@ -71,7 +71,7 @@ RP_DEFAULT_MODEL_CACHE="$RP_ROOT/.cache/models"
 # Per-user config dir for credentials that MUST survive any install method —
 # including an npm global install whose files live inside node_modules and are
 # wiped on every `npm upgrade`. ${XDG_CONFIG_HOME:-$HOME/.config}/rp follows the
-# XDG base-dir spec (gh, git, etc. put their user config here too). `rp auth`
+# XDG base-dir spec (git and other CLI tools put their user config here too). `rp auth`
 # writes the API key here; bin/rp loads it on every invocation, so a key stored
 # once works whether rp came from install.sh, npm, or a source checkout. Override
 # with RP_CONFIG_HOME if you prefer another location.
@@ -79,7 +79,7 @@ RP_CONFIG_HOME="${RP_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/rp}"
 
 # Multi-account credential store, under RP_CONFIG_HOME. One file per account
 # (each mode 600, the dir 700); `active` is a plain file holding the name of the
-# currently-selected account. Mirrors gh's per-host active-account model, minus
+# currently-selected account. Per-host active-account model, minus
 # the keyring (we store plaintext, suited to CI/containers). Login is additive:
 # `rp auth login` adds an account and marks it active rather than replacing.
 RP_CREDS_DIR="$RP_CONFIG_HOME/credentials.d"
