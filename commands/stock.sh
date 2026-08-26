@@ -68,9 +68,33 @@ _stock_gpu() {
     elif $s == "DISPLAY" then (.name // "")
     else (.id // "") end
   )')"
+  # Display-only column hiding: --hide drops named columns from the table view
+  # (it never filters rows or the --json payload). Comma-separated, case-insensitive.
+  local -a cols hide_set kept c h hide_raw
+  cols=(ID DISPLAY VRAM_GB CLOUD SECURE_PRICE COMMUNITY_PRICE STOCK CUDA DATACENTERS)
+  hide_raw="$(rp::args_get hide)"
+  if [[ -n "$hide_raw" ]]; then
+    hide_set=()
+    while IFS= read -r h; do
+      h="${h// /}"
+      [[ -n "$h" ]] || continue
+      h="${h^^}"
+      case "$h" in
+      ID | DISPLAY | VRAM_GB | CLOUD | SECURE_PRICE | COMMUNITY_PRICE | STOCK | CUDA | DATACENTERS) hide_set+=("$h") ;;
+      *) rp::usage "invalid --hide '$h' (expected one of ID, DISPLAY, VRAM_GB, CLOUD, SECURE_PRICE, COMMUNITY_PRICE, STOCK, CUDA, DATACENTERS)" ;;
+      esac
+    done < <(printf '%s\n' "$hide_raw" | tr ',' '\n')
+    kept=()
+    for c in "${cols[@]}"; do
+      [[ " ${hide_set[*]} " == *" $c "* ]] && continue
+      kept+=("$c")
+    done
+    ((${#kept[@]})) || rp::usage "cannot --hide every column"
+    cols=("${kept[@]}")
+  fi
   rp::emit_json_or "$data" rp::table "$data" \
-    --reshape 'map({ID:.id, DISPLAY:.name, VRAM_GB:(.memory//0), CLOUD:(if .secure and .community then "SECURE, COMMUNITY" elif .secure then "SECURE" elif .community then "COMMUNITY" else "-" end), SECURE_PRICE:(if .secure then (.price.secure // "") else "-" end), COMMUNITY_PRICE:(if .community then (.price.community // "") else "-" end), STOCK:(.availability//""), CUDA:((( .cudaVersions // [] ) | map(if type == "object" then (if .available then (.version | tostring) else empty end) else empty end)) as $cv | if ($cv | length) == 0 then "-" elif ($cv | length) <= 2 then ($cv | join(", ")) else (($cv[0:2] | join(", ")) + " +" + (($cv | length) - 2 | tostring) + " more") end)})' \
-    ID DISPLAY VRAM_GB CLOUD SECURE_PRICE COMMUNITY_PRICE STOCK CUDA
+    --reshape 'map({ID:.id, DISPLAY:.name, VRAM_GB:(.memory//0), CLOUD:(if .secure and .community then "SECURE, COMMUNITY" elif .secure then "SECURE" elif .community then "COMMUNITY" else "-" end), SECURE_PRICE:(if .secure then (.price.secure // "") else "-" end), COMMUNITY_PRICE:(if .community then (.price.community // "") else "-" end), STOCK:(.availability//""), CUDA:((( .cudaVersions // [] ) | map(if type == "object" then (if .available then (.version | tostring) else empty end) else empty end)) as $cv | if ($cv | length) == 0 then "-" elif ($cv | length) <= 2 then ($cv | join(", ")) else (($cv[0:2] | join(", ")) + " +" + (($cv | length) - 2 | tostring) + " more") end), DATACENTERS:((.dataCenters // [] | map(select((.availability // "") | ascii_upcase != "NONE")) | map(.id) | sort) as $dcs | if ($dcs | length) == 0 then "-" elif ($dcs | length) <= 2 then ($dcs | join(", ")) else (($dcs[0:2] | join(", ")) + " +" + (($dcs | length) - 2 | tostring) + " more") end)})' \
+    "${cols[@]}"
 }
 
 _stock_cpus() {
@@ -158,6 +182,11 @@ _stock_dc() {
 #   --sort <column>           order rows by ID, DISPLAY, VRAM_GB, CLOUD,
 #                             SECURE_PRICE, COMMUNITY_PRICE, STOCK or CUDA
 #                             (VRAM is accepted as an alias for VRAM_GB)
+#   --hide <cols>             drop columns from the table (display-only; never
+#                             filters rows or --json). Comma-separated,
+#                             case-insensitive: any of ID, DISPLAY, VRAM_GB,
+#                             CLOUD, SECURE_PRICE, COMMUNITY_PRICE, STOCK, CUDA,
+#                             DATACENTERS (e.g. --hide DISPLAY,SECURE_PRICE)
 #   --json                    print the raw API response
 #
 # Notes:
@@ -175,7 +204,14 @@ _stock_dc() {
 #   CUDA lists the available CUDA versions (truncated to two plus "+N more");
 #   a dash means none are advertised. It is the same ceiling --min-cuda filters
 #   against.
+#   DATACENTERS lists the datacentres that offer this GPU with stock
+#   (availability != NONE), sorted by id and truncated to two ids plus "+N
+#   more"; a dash means none are stocked. It is the same per-datacentre
+#   availability the API returns under include=AVAILABILITY, so it already
+#   honours --product, --cloud and --min-count.
 #   --vram-gb / --vram is a minimum: a type with more VRAM than N still passes.
+#   --hide is display-only: it removes columns from the table but leaves the row
+#   set and the --json payload untouched, so it is unrelated to filtering.
 #   All filters and --sort apply to BOTH the table and --json, so the two views
 #   always show the same types.
 #   --min-count is per host: it asks for N of that GPU in one machine, not N
@@ -286,7 +322,7 @@ rp::cmd_stock() {
   cpus) _stock_cpus ;;
   dc) _stock_dc ;;
   -h | --help | help | "")
-    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] | rp stock cpus [--dc <id>] | rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>] [--region <r,…>]   (dc list via v2; --region takes EU/NA/AS… or full names; filters apply to both table and --json)"
+    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] [--hide <cols>] | rp stock cpus [--dc <id>] | rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>] [--region <r,…>]   (dc list via v2; --region takes EU/NA/AS… or full names; filters apply to both table and --json)"
     ;;
   *) rp::usage "unknown stock verb: '$verb'" ;;
   esac

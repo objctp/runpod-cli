@@ -23,6 +23,12 @@ rp stock gpu [--product <p,…>] [--min-count N]
   --cuda <ver>              keep only types with that CUDA version available
   --sort <column>           order rows by ID, DISPLAY, VRAM_GB, CLOUD,
                             SECURE_PRICE, COMMUNITY_PRICE, STOCK or CUDA
+                            (VRAM is accepted as an alias for VRAM_GB)
+  --hide <cols>             drop columns from the table (display-only; never
+                            filters rows or --json). Comma-separated,
+                            case-insensitive: any of ID, DISPLAY, VRAM_GB,
+                            CLOUD, SECURE_PRICE, COMMUNITY_PRICE, STOCK, CUDA,
+                            DATACENTERS (e.g. --hide DISPLAY,SECURE_PRICE)
   --json                    print the raw API response
 ```
 
@@ -41,7 +47,14 @@ rp stock gpu [--product <p,…>] [--min-count N]
   CUDA lists the available CUDA versions (truncated to two plus "+N more");
   a dash means none are advertised. It is the same ceiling --min-cuda filters
   against.
+  DATACENTERS lists the datacentres that offer this GPU with stock
+  (availability != NONE), sorted by id and truncated to two ids plus "+N
+  more"; a dash means none are stocked. It is the same per-datacentre
+  availability the API returns under include=AVAILABILITY, so it already
+  honours --product, --cloud and --min-count.
   --vram-gb / --vram is a minimum: a type with more VRAM than N still passes.
+  --hide is display-only: it removes columns from the table but leaves the row
+  set and the --json payload untouched, so it is unrelated to filtering.
   All filters and --sort apply to BOTH the table and --json, so the two views
   always show the same types.
   --min-count is per host: it asks for N of that GPU in one machine, not N

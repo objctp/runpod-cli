@@ -127,6 +127,29 @@ function test_should_sort_gpu_by_vram_gb() {
   assert_matches "NVIDIA L4.*NVIDIA A100 80GB PCIe" "$rendered"
 }
 
+function test_should_render_datacenters_column() {
+  local body='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":false,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":0.5,"community":0.6},"availability":"Medium","dataCenters":[{"id":"EU-NL-1","name":"EU Netherlands 1","availability":"HIGH"},{"id":"US-KS-2","name":"US Kansas 2","availability":"HIGH"},{"id":"US-UT-1","name":"US Utah 1","availability":"NONE"}]}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::args_parse
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # NONE datacenters are dropped; remaining ids are sorted and shown.
+  assert_contains "EU-NL-1, US-KS-2" "$rendered"
+  assert_not_contains "US-UT-1" "$rendered"
+}
+
+function test_should_show_dash_when_no_datacenters() {
+  local body='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":false,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":0.5,"community":0.6},"availability":"Medium"}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::args_parse
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "NVIDIA L4" "$rendered"
+  assert_contains "DATACENTERS" "$rendered"
+}
+
 function test_should_accept_vram_alias_for_sort() {
   rp::args_parse --sort vram
   _stock_gpu >"$OUT" 2>/dev/null
@@ -134,6 +157,39 @@ function test_should_accept_vram_alias_for_sort() {
   rendered="$(<"$OUT")"
   # --sort vram maps to VRAM_GB: L4 (24) precedes the two 80s.
   assert_matches "NVIDIA L4.*NVIDIA A100 80GB PCIe" "$rendered"
+}
+
+function test_should_hide_columns_from_table() {
+  rp::args_parse --hide DISPLAY,SECURE_PRICE
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_not_contains "DISPLAY" "$rendered"
+  assert_not_contains "SECURE_PRICE" "$rendered"
+  assert_contains "VRAM_GB" "$rendered"
+  assert_contains "DATACENTERS" "$rendered"
+}
+
+function test_should_hide_columns_case_insensitive_and_spaced() {
+  rp::args_parse --hide "display, cuda"
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_not_contains "DISPLAY" "$rendered"
+  assert_not_contains "CUDA" "$rendered"
+  assert_contains "VRAM_GB" "$rendered"
+}
+
+function test_should_error_on_bad_hide_column() {
+  rp::args_parse --hide BOGUS
+  (_stock_gpu >"$OUT" 2>/dev/null)
+  assert_exit_code 2 "$?"
+}
+
+function test_should_error_when_hiding_all_columns() {
+  rp::args_parse --hide ID,DISPLAY,VRAM_GB,CLOUD,SECURE_PRICE,COMMUNITY_PRICE,STOCK,CUDA,DATACENTERS
+  (_stock_gpu >"$OUT" 2>/dev/null)
+  assert_exit_code 2 "$?"
 }
 
 function test_should_default_query_unchanged_when_no_flags() {

@@ -6,6 +6,7 @@
 
 - Add --region filter to dc with abbreviation support
 - Align list table and add key generation + runpodctl import
+- Add DATACENTERS column and --hide flag to rp stock gpu
 
 ### Changed
 
