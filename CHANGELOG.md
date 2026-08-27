@@ -8,6 +8,7 @@
 - Align list table and add key generation + runpodctl import
 - Add DATACENTERS column and --hide flag to rp stock gpu
 - Add lazy new-version availability notice
+- Expand rp stock cpus into a per-instance, price-aware table
 
 ### Changed
 

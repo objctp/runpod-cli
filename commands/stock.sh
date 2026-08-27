@@ -98,15 +98,136 @@ _stock_gpu() {
 }
 
 _stock_cpus() {
-  local data dc
-  data="$(rp::http GET "/catalog/cpus$(rp::query_params include AVAILABILITY product "$RP_DEFAULT_PRODUCT")" | rp::unwrap cpus)"
+  local data dc compact vcpu vcpu_jq product tier show_secure show_serverless
+  compact="$(rp::args_has compact && printf true || printf false)"
+  vcpu="$(rp::args_get vcpu)"
+  if [[ -n "$vcpu" ]]; then
+    vcpu="$(rp::args_get_uint vcpu)"
+    ((vcpu >= 2)) || rp::usage "--vcpu must be >= 2"
+    (((vcpu & (vcpu - 1)) == 0)) || rp::usage "--vcpu must be a power of two (2, 4, 8, …)"
+  fi
+  product="$(rp::args_get product)"
+  if [[ -n "$product" ]]; then
+    # The API is case-sensitive (product=serverless -> HTTP 422), so validate
+    # each comma-separated token then send the uppercased value.
+    local p_upper="${product^^}" tok ok=true
+    local IFS=','
+    for tok in $p_upper; do
+      case "$tok" in POD | SERVERLESS | CLUSTER) ;; *)
+        ok=false
+        break
+        ;;
+      esac
+    done
+    [[ "$ok" == true ]] || rp::usage "invalid --product '$product' (expected POD|SERVERLESS|CLUSTER, comma-separated)"
+    product="$p_upper"
+    case "$p_upper" in
+    SERVERLESS) tier=serverless ;;
+    POD,SERVERLESS | SERVERLESS,POD) tier="" ;;
+    *) tier=secure ;;
+    esac
+  else
+    product="$RP_DEFAULT_PRODUCT"
+    tier=""
+  fi
+  # Which price tier(s) to show. With --product the other tier is irrelevant, so
+  # it is dropped (column and any flavour not offered on that tier).
+  show_secure=true
+  show_serverless=true
+  [[ "$tier" == secure ]] && show_serverless=false
+  [[ "$tier" == serverless ]] && show_secure=false
+
+  data="$(rp::http GET "/catalog/cpus$(rp::query_params include AVAILABILITY product "$product")" | rp::unwrap cpus)"
   dc="$(rp::args_get dc)"
   if [[ -n "$dc" ]]; then
     data="$(printf '%s' "$data" | jq -c --arg dc "${dc^^}" 'map(select(([.dataCenters // [] | .[].id | ascii_upcase] | index($dc))))')"
   fi
-  rp::emit_json_or "$data" rp::table "$data" \
-    --reshape 'map({ID:.id, NAME:.name, GROUP:.group, VCPU:((.vcpu.min|tostring)+"-"+(.vcpu.max|tostring)), RAM_GB_VCPU:(.ramGbPerVcpu//""), SECURE_PRICE_VCPU:(.price.securePerVcpu//""), STOCK:(.availability//""), DATACENTERS:((.dataCenters // [] | map(.id) | sort) as $dcs | if ($dcs | length) <= 2 then ($dcs | join(", ")) else (($dcs[0:2] | join(", ")) + " +" + (($dcs | length) - 2 | tostring) + " more") end)})' \
-    ID NAME GROUP VCPU RAM_GB_VCPU SECURE_PRICE_VCPU STOCK DATACENTERS
+
+  local dc_upper="${dc^^}"
+  local common_reshape='
+    def money($v): (($v * 1000 | round) / 1000 | tostring);
+    def dcq: "'"$dc_upper"'";
+    def keep($raw): (if ($raw == null or $raw == 0) then null else $raw end);
+    def dcs_of: (.dataCenters // []);
+    def stock_of($f): (if (dcq == "") then ($f.availability // "")
+        else ((dcs_of | map(select(.id | ascii_upcase == dcq)) | .[0].availability) // ($f.availability // "")) end);
+    def tier_filter($sr; $sl): (if ('$show_secure' == true and '$show_serverless' == false and $sr == null) then empty
+        elif ('$show_serverless' == true and '$show_secure' == false and $sl == null) then empty
+        else . end);
+  '
+
+  local cols=() full_reshape final
+  if [[ "$compact" == true ]]; then
+    cols=(ID NAME GROUP VCPU RAM_GB_VCPU)
+    [[ "$show_secure" == true ]] && cols+=(SECURE_PRICE_VCPU)
+    [[ "$show_serverless" == true ]] && cols+=(SERVERLESS_PRICE_VCPU)
+    [[ -n "$dc" ]] && cols+=(STOCK)
+    cols+=(DATACENTERS)
+    full_reshape="$common_reshape"'
+        [ .[] | . as $f
+          | (keep($f.price.securePerVcpu // null)) as $sr
+          | (keep($f.price.serverlessPerVcpu // null)) as $sl
+          | (stock_of($f)) as $stock
+          | tier_filter($sr; $sl)
+          | {
+              ID: $f.id,
+              NAME: $f.name,
+              GROUP: $f.group,
+              VCPU: (($f.vcpu.min|tostring)+"-"+($f.vcpu.max|tostring)),
+              RAM_GB_VCPU: ($f.ramGbPerVcpu // ""),
+              SECURE_PRICE_VCPU: (if $sr == null then "-" else (money($sr) + "/vCPU") end),
+              SERVERLESS_PRICE_VCPU: (if $sl == null then "-" else (money($sl) + "/vCPU") end),
+              STOCK: $stock,
+              DATACENTERS: ((dcs_of | map(.id) | sort) as $ids | if ($ids | length) == 0 then "-" elif ($ids | length) <= 2 then ($ids | join(", ")) else (($ids[0:2] | join(", ")) + " +" + (($ids | length) - 2 | tostring) + " more") end)
+            }
+        ]'
+  else
+    # Expanded view (default): one row per power-of-two vCPU size within each
+    # flavour's valid range. RAM_GB and the price column(s) scale with the size
+    # actually chosen by `rp pod create --cpu-flavor <ID> --vcpu <n>`.
+    # STOCK is shown only with --dc (region-accurate); without it the global
+    # aggregate is omitted to keep the table focused on reservable instances.
+    vcpu_jq="${vcpu:-null}"
+    cols=(FLAVOUR NAME GROUP VCPU RAM_GB)
+    [[ "$show_secure" == true ]] && cols+=(SECURE_PRICE)
+    [[ "$show_serverless" == true ]] && cols+=(SERVERLESS_PRICE)
+    [[ -n "$dc" ]] && cols+=(STOCK)
+    cols+=(DATACENTERS)
+    full_reshape="$common_reshape"'
+      [ .[] | . as $f
+        | (keep($f.price.securePerVcpu // null)) as $sr
+        | (keep($f.price.serverlessPerVcpu // null)) as $sl
+        | (stock_of($f)) as $stock
+        | tier_filter($sr; $sl)
+        | ([2,4,8,16,32,64] | map(select(. >= ($f.vcpu.min // 2) and . <= ($f.vcpu.max // 32)))) as $sz
+        | $sz[] as $s
+        | {
+            FLAVOUR: $f.id,
+            NAME: $f.name,
+            GROUP: $f.group,
+            VCPU: $s,
+            RAM_GB: ($s * ($f.ramGbPerVcpu // 0)),
+            SECURE_PRICE: (if $sr == null then "-" else (money($s * $sr) + " (" + money($sr) + "/vCPU)") end),
+            SERVERLESS_PRICE: (if $sl == null then "-" else (money($s * $sl) + " (" + money($sl) + "/vCPU)") end),
+            STOCK: $stock,
+            DATACENTERS: ((dcs_of | map(.id) | sort) as $ids | if ($ids | length) == 0 then "-" elif ($ids | length) <= 2 then ($ids | join(", ")) else (($ids[0:2] | join(", ")) + " +" + (($ids | length) - 2 | tostring) + " more") end)
+          }
+      ]
+      | (if ('"$vcpu_jq"' != null) then map(select(.VCPU == '"$vcpu_jq"')) else . end)'
+  fi
+
+  # --json prints the raw flavour objects unchanged.
+  if rp::args_has json; then
+    printf '%s\n' "$data"
+    return 0
+  fi
+  # A filtered-out set would otherwise render as a bare header; say so instead.
+  final="$(printf '%s' "$data" | jq -c "$full_reshape")" || return 1
+  if [[ "$(printf '%s' "$final" | jq 'length')" -eq 0 ]]; then
+    rp::info "no CPU instances match the current filters (--dc/--product/--vcpu); try widening them"
+    return 0
+  fi
+  rp::table "$final" --reshape '.' "${cols[@]}"
 }
 
 _stock_dc() {
@@ -227,34 +348,49 @@ _stock_dc() {
 # API: GET /v2/catalog/gpus  (include=AVAILABILITY)
 
 # doc: cpus
-# List CPU flavours with price and availability.
+# List reservable CPU instances with price and availability.
 #
-# Usage: rp stock cpus [--dc <id>] [--json]
+# Usage: rp stock cpus [--dc <id>] [--vcpu N] [--product POD|SERVERLESS|CLUSTER] [--compact] [--json]
 #
 # Options:
-#   --dc <id>   keep only flavours stocked in this datacentre (case-insensitive)
-#   --json      print the raw API response
+#   --dc <id>       keep only flavours stocked in this datacentre (case-insensitive)
+#   --vcpu N        keep only instances of N vCPUs (a power of two, minimum 2)
+#   --product <p>   POD, SERVERLESS or CLUSTER; show only that tier's price column
+#                   and drop flavours not offered on it (default: POD,SERVERLESS,
+#                   both columns)
+#   --compact       show one row per flavour (the old vcpu-range table) instead of
+#                   one row per power-of-two size
+#   --json          print the raw API response (the flavour objects, not expanded)
 #
 # Notes:
-#   The ID column is the value `rp pod create --cpu-flavor` takes.
-#   VCPU is the flavour's valid vcpuCount range; --vcpu must be a power of two
-#   inside it.
-#   RAM_GB_VCPU is the RAM allotted per vCPU and SECURE_PRICE_VCPU the
-#   secure-cloud hourly rate per vCPU, so both scale with the vCPU count you
-#   ask for.
-#   This verb takes one optional filter and no others: --dc <id> keeps only
-#   the flavours stocked in that datacentre (case-insensitive). The filter
-#   applies to BOTH the table and --json, so the two views always show the
-#   same flavours.
+#   By default this verb EXPANDS each flavour into one row per deployable size:
+#   every power-of-two vCPU count inside the flavour's valid range (2, 4, 8,
+#   16, 32, …). That is exactly the set `rp pod create --cpu-flavor <ID>
+#   --vcpu <n>` accepts, so each row is a real instance you can reserve.
+#   FLAVOUR is the flavour id `rp pod create --cpu-flavor` takes; VCPU and
+#   RAM_GB are that instance's size and total RAM (= VCPU × RAM_GB_VCPU).
+#   SECURE_PRICE and SERVERLESS_PRICE are the hourly rates for that instance
+#   size: the total (VCPU × per-vCPU rate) with the per-vCPU rate in
+#   parentheses. With --product the OTHER tier's column is dropped entirely, and
+#   any flavour not offered on that product (e.g. Memory-Optimized on
+#   SERVERLESS, whose serverless price is 0) is omitted from the table. A dash
+#   in the remaining price column means that tier is not offered.
+#   STOCK is shown only with --dc: it then reflects that datacentre's own
+#   availability (region-accurate). Without --dc the column is hidden, since the
+#   flavour-level value is only a global "available somewhere" aggregate.
+#   --vcpu N narrows the expanded rows to one size (validated: power of two,
+#   >= 2); --compact collapses back to one row per flavour (VCPU shown as a
+#   min-max range, RAM_GB_VCPU and the tier price as per-vCPU values).
 #   DATACENTERS lists every datacentre the flavour is stocked in, but the
 #   table column is truncated to the first two ids followed by "+N more"
 #   (e.g. "EU-CZ-1, EU-NL-1 +12 more") to keep the row readable; the full
 #   list is always in --json. Because filtering matches the underlying
 #   dataCenters array, --dc still finds a flavour even when its datacentre
 #   is hidden behind "+N more".
-#   This verb takes no other filters: the product is fixed at POD,SERVERLESS.
+#   --dc and --product apply to BOTH the table and --json so the two views
+#   always show the same flavours.
 #
-# API: GET /v2/catalog/cpus  (include=AVAILABILITY, product=POD,SERVERLESS)
+# API: GET /v2/catalog/cpus  (include=AVAILABILITY, product=<selected>)
 
 # doc: dc
 # List datacentres with GPU stock and S3-API support.
@@ -322,7 +458,7 @@ rp::cmd_stock() {
   cpus) _stock_cpus ;;
   dc) _stock_dc ;;
   -h | --help | help | "")
-    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] [--hide <cols>] | rp stock cpus [--dc <id>] | rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>] [--region <r,…>]   (dc list via v2; --region takes EU/NA/AS… or full names; filters apply to both table and --json)"
+    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] [--hide <cols>] | rp stock cpus [--dc <id>] [--vcpu N] [--product POD|SERVERLESS|CLUSTER] [--compact] | rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>] [--region <r,…>]   (dc list via v2; --region takes EU/NA/AS… or full names; filters apply to both table and --json)"
     ;;
   *) rp::usage "unknown stock verb: '$verb'" ;;
   esac

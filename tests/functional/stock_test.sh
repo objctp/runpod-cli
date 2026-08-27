@@ -328,20 +328,130 @@ function test_should_return_raw_array_when_cpus_json() {
   assert_equals "$(printf '%s' "$STOCK_CPU_BODY" | jq -c '.cpus')" "$(<"$OUT")"
 }
 
-function test_should_render_table_when_cpus_no_json() {
+function test_should_render_expanded_table_when_cpus_no_json() {
   rp::args_parse
+  _stock_cpus >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "FLAVOUR" "$rendered"
+  assert_contains "RAM_GB" "$rendered"
+  assert_contains "SECURE_PRICE" "$rendered"
+  assert_contains "SERVERLESS_PRICE" "$rendered"
+  assert_contains "DATACENTERS" "$rendered"
+  # Default view expands each flavour into one row per power-of-two size.
+  # cpu3c-2-4 (range 2-32) yields five sizes; cpu5c (range 2-16) yields four.
+  assert_equals "5" "$(grep -c "cpu3c-2-4" <<<"$rendered")"
+  assert_equals "4" "$(grep -c "cpu5c" <<<"$rendered")"
+  # Prices scale with the size: 2 vCPU = 0.08 (0.04/vCPU) secure,
+  # 0.06 (0.03/vCPU) serverless; the 32-vCPU ceiling totals 1.28.
+  assert_contains "0.08 (0.04/vCPU)" "$rendered"
+  assert_contains "0.06 (0.03/vCPU)" "$rendered"
+  assert_contains "1.28 (0.04/vCPU)" "$rendered"
+  # cpu5c has no availability/datacenters in the fixture: its 16-vCPU row ends
+  # with "--" (STOCK and DATACENTERS both dash out).
+  assert_contains "0.8 (0.05/vCPU)" "$rendered"
+}
+
+function test_should_filter_cpus_by_vcpu() {
+  rp::args_parse --vcpu 8
+  _stock_cpus >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # Only the 8-vCPU instances survive: one row each for cpu3c-2-4 and cpu5c.
+  assert_equals "1" "$(grep -c "cpu3c-2-4" <<<"$rendered")"
+  assert_equals "1" "$(grep -c "cpu5c" <<<"$rendered")"
+  assert_contains "0.32 (0.04/vCPU)" "$rendered"
+  # cpu5c 8-vCPU secure = 8 × 0.05 = 0.4.
+  assert_contains "0.4 (0.05/vCPU)" "$rendered"
+}
+
+function test_should_reject_non_power_of_two_vcpu() {
+  rp::args_parse --vcpu 3
+  (_stock_cpus >"$OUT" 2>/dev/null)
+  assert_exit_code 2
+}
+
+function test_should_render_compact_table_when_cpus_compact() {
+  rp::args_parse --compact
   _stock_cpus >"$OUT" 2>/dev/null
   local rendered
   rendered="$(<"$OUT")"
   assert_contains "RAM_GB_VCPU" "$rendered"
   assert_contains "SECURE_PRICE_VCPU" "$rendered"
-  assert_contains "DATACENTERS" "$rendered"
-  # VCPU is the min-max range; the second flavour has no availability, so STOCK is blank.
-  assert_matches "cpu3c-2-4 +Compute-Optimized +Gen 3 +2-32 +2\.5 +0\.04 +MEDIUM" "$rendered"
-  # cpu5c has no availability and no dataCenters in the fixture: STOCK and
-  # DATACENTERS are both blank, so the row ends "0.05  " (trailing spaces).
-  # (line-anchored, since grep -E $ matches end of each rendered row).
-  assert_matches "cpu5c +Compute-Optimized +Gen 5 +2-16 +2 +0\.05 *$" "$rendered"
+  assert_contains "2-32" "$rendered"
+  # Compact = one row per flavour: cpu3c-2-4 appears exactly once.
+  assert_equals "1" "$(grep -c "cpu3c-2-4" <<<"$rendered")"
+}
+
+function test_should_dash_out_zero_serverless_price() {
+  STOCK_CPU_BODY='{"cpus":[{"id":"cpu3m","name":"Memory-Optimized","group":"CPU3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":8,"price":{"securePerVcpu":0.055,"serverlessPerVcpu":0},"availability":"HIGH","dataCenters":[{"id":"EU-RO-1"}]}]}'
+  rp::args_parse
+  _stock_cpus >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # Secure tier is offered; serverless (price 0) is not, so it dashes out.
+  assert_contains "0.11 (0.055/vCPU)" "$rendered"
+  assert_contains "SERVERLESS_PRICE" "$rendered"
+  assert_not_contains "0 (0/vCPU)" "$rendered"
+  # serverless dashes out as "-": it sits right after the secure price cell.
+  assert_contains "0.11 (0.055/vCPU)  -" "$rendered"
+}
+
+function test_should_scope_stock_to_dc() {
+  STOCK_CPU_BODY='{"cpus":[{"id":"cpu3c","name":"Compute-Optimized","group":"CPU3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.03},"availability":"HIGH","dataCenters":[{"id":"EU-RO-1","availability":"NONE"},{"id":"US-CA-2","availability":"HIGH"}]}]}'
+  rp::args_parse --dc EU-RO-1
+  _stock_cpus >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # Without --dc the flavour reads HIGH (global aggregate); scoped to EU-RO-1
+  # (which is NONE there) the STOCK column must reflect that datacentre.
+  assert_contains "NONE" "$rendered"
+  assert_not_contains "HIGH" "$rendered"
+}
+
+function test_should_show_only_serverless_price_with_product_serverless() {
+  STOCK_CPU_BODY='{"cpus":[{"id":"cpu3c","name":"Compute-Optimized","group":"CPU3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.03,"serverlessPerVcpu":0.036},"availability":"HIGH","dataCenters":[{"id":"EU-RO-1"}]},{"id":"cpu3m","name":"Memory-Optimized","group":"CPU3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":8,"price":{"securePerVcpu":0.055,"serverlessPerVcpu":0},"availability":"HIGH","dataCenters":[{"id":"EU-RO-1"}]}]}'
+  rp::args_parse --product SERVERLESS
+  _stock_cpus >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "SERVERLESS_PRICE" "$rendered"
+  assert_not_contains "SECURE_PRICE" "$rendered"
+  # Memory-Optimized is not offered on serverless (price 0) -> dropped.
+  assert_not_contains "cpu3m" "$rendered"
+  assert_contains "cpu3c" "$rendered"
+  # No --dc, so the STOCK column is hidden.
+  assert_not_contains "STOCK" "$rendered"
+}
+
+function test_should_show_only_secure_price_with_product_pod() {
+  STOCK_CPU_BODY='{"cpus":[{"id":"cpu3c","name":"Compute-Optimized","group":"CPU3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.03,"serverlessPerVcpu":0.036},"availability":"HIGH","dataCenters":[{"id":"EU-RO-1"}]},{"id":"cpu3m","name":"Memory-Optimized","group":"CPU3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":8,"price":{"securePerVcpu":0.055,"serverlessPerVcpu":0},"availability":"HIGH","dataCenters":[{"id":"EU-RO-1"}]}]}'
+  rp::args_parse --product POD
+  _stock_cpus >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "SECURE_PRICE" "$rendered"
+  assert_not_contains "SERVERLESS_PRICE" "$rendered"
+  # POD offers Memory-Optimized, so it stays.
+  assert_contains "cpu3m" "$rendered"
+}
+
+function test_should_reject_invalid_product() {
+  rp::args_parse --product FOO
+  (_stock_cpus >"$OUT" 2>/dev/null)
+  assert_exit_code 2
+}
+
+function test_should_hint_when_no_instances_match() {
+  STOCK_CPU_BODY='{"cpus":[{"id":"cpu3c","name":"Compute-Optimized","group":"CPU3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.03,"serverlessPerVcpu":0},"availability":"HIGH","dataCenters":[{"id":"EU-RO-1"}]}]}'
+  rp::args_parse --product SERVERLESS
+  _stock_cpus >"$OUT" 2>&1
+  local rendered
+  rendered="$(<"$OUT")"
+  # Memory-Optimized-style flavour (serverless price 0) is dropped for SERVERLESS,
+  # leaving nothing: a hint replaces the bare header.
+  assert_contains "no CPU instances match" "$rendered"
+  assert_not_contains "FLAVOUR" "$rendered"
 }
 
 function test_should_filter_cpus_by_dc_in_table() {
