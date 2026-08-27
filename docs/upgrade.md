@@ -18,6 +18,10 @@ rp upgrade [--version <x.y.z>]
 
 ## Notes
   The /usr/local/bin/rp symlink step may prompt for sudo.
+  rp also checks for a newer release once a day and prints a one-line notice
+  when one is available — naming the right command for your install method:
+  `rp upgrade`, `npm update -g runpod-cli`, or `brew upgrade runpod-cli`.
+  Set RP_NO_UPDATE_CHECK=1 to disable the check.
 
 ## Examples
 

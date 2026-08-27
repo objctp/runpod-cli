@@ -35,6 +35,10 @@ The installer verifies a SHA-256 checksum before extracting. Update later with
 `rp upgrade` (or re-run the one-liner); pin a version with
 `curl ... | bash -s -- --version 0.1.0`.
 
+`rp` also checks for a newer release once a day and prints a one-line notice when
+one is available (it names the right command for your install method). Set
+`RP_NO_UPDATE_CHECK=1` to disable the check.
+
 > macOS ships Bash 3.2, but `rp` needs Bash 5+. The installer detects this and
 > refuses with the fix (`brew install bash`, then restart your shell).
 

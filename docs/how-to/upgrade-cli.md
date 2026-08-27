@@ -49,3 +49,7 @@ pinned tag — straight from the terminal, without cloning the repository.
   `install.sh` to serve its own tarballs.
 - The only accepted options are `--version <x.y.z>` and `--help`. There is no
   `--check`, `--yes`, or `--force` flag.
+- rp checks for a newer release automatically once per day (cached under
+  `$RP_CONFIG_HOME`) and prints a short notice when one exists — naming the right
+  command for your install method (`rp upgrade`, `npm update -g runpod-cli`, or
+  `brew upgrade runpod-cli`). Set `RP_NO_UPDATE_CHECK=1` to silence it.

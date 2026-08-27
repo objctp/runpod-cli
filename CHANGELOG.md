@@ -12,6 +12,7 @@
 ### Changed
 
 - Make --sort case-insensitive in rp stock gpu
+- Reflect automatic update check in rp docs and README
 
 ### Fixed
 
