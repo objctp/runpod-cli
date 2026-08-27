@@ -139,6 +139,8 @@ Meta:
   doc        show command / library documentation (rp doc [filter])
   version / --version / -v   print the installed version
   upgrade [--version X]      update rp in place (re-runs the installer)
+  (rp checks for a newer release daily and prints a one-line notice; set
+   RP_NO_UPDATE_CHECK=1 to disable it)
 
 Examples:
   rp _ping
@@ -173,6 +175,10 @@ rp::version() {
 }
 
 rp::main() {
+  # Lazy, non-blocking "new version available" notice (skips version/upgrade/help
+  # internally, and only prints to a TTY). Reads/refreshes a daily cache; the
+  # network fetch itself runs in the background so it never slows this command.
+  rp::update_check "${1:-}"
   local resource="${1:-}"
   case "$resource" in
   "" | -h | --help | help)
