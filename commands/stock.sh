@@ -12,7 +12,7 @@
 #
 
 _stock_gpu() {
-  local product cloud cuda count q data vram stock_f cuda_f sort
+  local product cloud cuda count q data vram stock_f cuda_f sort dc
   product="$(rp::args_get product "$RP_DEFAULT_PRODUCT")"
   product="${product^^}"
   cloud="$(rp::args_get cloud)"
@@ -39,6 +39,10 @@ _stock_gpu() {
   fi
   cuda_f="$(rp::args_get cuda)"
   sort="$(rp::args_get sort)"
+  # --dc is a bare datacentre id; resolve it case-insensitively against each
+  # GPU's dataCenters (the same array that feeds the DATACENTERS column).
+  dc="$(rp::args_get dc)"
+  [[ -z "$dc" ]] || dc="${dc^^}"
   if [[ -n "$sort" ]]; then
     sort="${sort^^}"
     case "$sort" in
@@ -55,14 +59,19 @@ _stock_gpu() {
   data="$(printf '%s' "$data" | jq -c 'map(select(((.id // "") | ascii_upcase) != "UNKNOWN" and (.memory // 0) > 0))')"
   # --cloud filters rows (the API leaves the full set, so do it here).
   [[ -z "$cloud" ]] || data="$(printf '%s' "$data" | jq -c --arg c "$cloud" 'map(select(if $c == "SECURE" then .secure else .community end))')"
+  # --dc filters rows to GPUs offered in that datacentre (id match, any
+  # availability — the same presence test `rp stock cpus --dc` uses).
+  [[ -z "$dc" ]] || data="$(printf '%s' "$data" | jq -c --arg dc "$dc" 'map(select(([.dataCenters // [] | .[].id | ascii_upcase] | index($dc))))')"
   [[ -z "$vram" ]] || data="$(printf '%s' "$data" | jq -c --argjson v "$vram" 'map(select(.memory >= $v))')"
-  [[ -z "$stock_f" ]] || data="$(printf '%s' "$data" | jq -c --arg s "$stock_f" 'map(select((.availability // "") | ascii_upcase == $s))')"
+  # --stock compares the region-accurate availability when --dc is set, else the
+  # global aggregate (mirrors how the STOCK column is computed below).
+  [[ -z "$stock_f" ]] || data="$(printf '%s' "$data" | jq -c --arg s "$stock_f" --arg dcq "$dc" 'map(select((if $dcq == "" then (.availability // "") else ((.dataCenters // [] | map(select(.id | ascii_upcase == $dcq)) | .[0].availability) // "") end) | ascii_upcase == $s))')"
   [[ -z "$cuda_f" ]] || data="$(printf '%s' "$data" | jq -c --arg c "$cuda_f" 'map(select(([.cudaVersions // [] | .[] | select(type == "object" and (.available // false))] | map(.version)) | index($c)))')"
-  [[ -z "$sort" ]] || data="$(printf '%s' "$data" | jq -c --arg s "$sort" 'sort_by(
+  [[ -z "$sort" ]] || data="$(printf '%s' "$data" | jq -c --arg s "$sort" --arg dcq "$dc" 'sort_by(
     if $s == "VRAM_GB" then (.memory // 0)
     elif $s == "SECURE_PRICE" then (.price.secure // 0)
     elif $s == "COMMUNITY_PRICE" then (.price.community // 0)
-    elif $s == "STOCK" then ({NONE:0,LOW:1,MEDIUM:2,HIGH:3}[.availability] // 0)
+    elif $s == "STOCK" then ({NONE:0,LOW:1,MEDIUM:2,HIGH:3}[(if $dcq == "" then (.availability // "") else ((.dataCenters // [] | map(select(.id | ascii_upcase == $dcq)) | .[0].availability) // "") end)] // 0)
     elif $s == "CUDA" then (([.cudaVersions // [] | .[] | select(type == "object" and (.available // false))] | map(.version | tostring | split(".") | map(tonumber))) | if length == 0 then [0] else max end)
     elif $s == "CLOUD" then (if .secure and .community then "SECURE, COMMUNITY" elif .secure then "SECURE" elif .community then "COMMUNITY" else "-" end)
     elif $s == "DISPLAY" then (.name // "")
@@ -71,7 +80,18 @@ _stock_gpu() {
   # Display-only column hiding: --hide drops named columns from the table view
   # (it never filters rows or the --json payload). Comma-separated, case-insensitive.
   local -a cols hide_set kept c h hide_raw
-  cols=(ID DISPLAY VRAM_GB CLOUD SECURE_PRICE COMMUNITY_PRICE STOCK CUDA DATACENTERS)
+  cols=(ID DISPLAY VRAM_GB)
+  # --cloud implies the opposite tier's price column carries only dashes, so
+  # drop it (mirrors --product hiding the other tier in `rp stock cpus`). The
+  # CLOUD column is then constant for every row, so drop it too.
+  [[ -z "$cloud" ]] && cols+=(CLOUD)
+  [[ "$cloud" != COMMUNITY ]] && cols+=(SECURE_PRICE)
+  [[ "$cloud" != SECURE ]] && cols+=(COMMUNITY_PRICE)
+  # STOCK is region-accurate only with --dc (the GPU-level .availability is a
+  # cross-datacentre aggregate, misleading without a scope) — hide it otherwise,
+  # exactly as `rp stock cpus` hides STOCK without --dc.
+  [[ -n "$dc" ]] && cols+=(STOCK)
+  cols+=(CUDA DATACENTERS)
   hide_raw="$(rp::args_get hide)"
   if [[ -n "$hide_raw" ]]; then
     hide_set=()
@@ -92,8 +112,34 @@ _stock_gpu() {
     ((${#kept[@]})) || rp::usage "cannot --hide every column"
     cols=("${kept[@]}")
   fi
+  # A filtered-out set would otherwise render as a bare header; say so instead
+  # (mirrors `rp stock cpus`). --json still prints the (possibly empty) array.
+  if rp::args_has json; then
+    printf '%s\n' "$data"
+    return 0
+  fi
+  if [[ "$(printf '%s' "$data" | jq 'length')" -eq 0 ]]; then
+    # Name only the filters actually supplied, so the hint never claims you
+    # used flags you didn't.
+    local fl=""
+    rp::args_has cloud && fl+=" --cloud"
+    rp::args_has dc && fl+=" --dc"
+    rp::args_has product && fl+=" --product"
+    rp::args_has min-count && fl+=" --min-count"
+    rp::args_has vram-gb && fl+=" --vram-gb"
+    rp::args_has vram && fl+=" --vram"
+    rp::args_has min-cuda && fl+=" --min-cuda"
+    rp::args_has stock && fl+=" --stock"
+    rp::args_has cuda && fl+=" --cuda"
+    if [[ -n "$fl" ]]; then
+      rp::info "no GPU types match the current filters ($fl); try widening them"
+    else
+      rp::info "no GPU types match; try widening them"
+    fi
+    return 0
+  fi
   rp::emit_json_or "$data" rp::table "$data" \
-    --reshape 'map({ID:.id, DISPLAY:.name, VRAM_GB:(.memory//0), CLOUD:(if .secure and .community then "SECURE, COMMUNITY" elif .secure then "SECURE" elif .community then "COMMUNITY" else "-" end), SECURE_PRICE:(if .secure then (.price.secure // "") else "-" end), COMMUNITY_PRICE:(if .community then (.price.community // "") else "-" end), STOCK:(.availability//""), CUDA:((( .cudaVersions // [] ) | map(if type == "object" then (if .available then (.version | tostring) else empty end) else empty end)) as $cv | if ($cv | length) == 0 then "-" elif ($cv | length) <= 2 then ($cv | join(", ")) else (($cv[0:2] | join(", ")) + " +" + (($cv | length) - 2 | tostring) + " more") end), DATACENTERS:((.dataCenters // [] | map(select((.availability // "") | ascii_upcase != "NONE")) | map(.id) | sort) as $dcs | if ($dcs | length) == 0 then "-" elif ($dcs | length) <= 2 then ($dcs | join(", ")) else (($dcs[0:2] | join(", ")) + " +" + (($dcs | length) - 2 | tostring) + " more") end)})' \
+    --reshape 'map({ID:.id, DISPLAY:.name, VRAM_GB:(.memory//0), CLOUD:(if .secure and .community then "SECURE, COMMUNITY" elif .secure then "SECURE" elif .community then "COMMUNITY" else "-" end), SECURE_PRICE:(if .secure then (.price.secure // "") else "-" end), COMMUNITY_PRICE:(if .community then (.price.community // "") else "-" end), STOCK:(if ("'"$dc"'" == "") then (.availability // "") else ((.dataCenters // [] | map(select(.id | ascii_upcase == "'"$dc"'")) | .[0].availability) // "") end), CUDA:((( .cudaVersions // [] ) | map(if type == "object" then (if .available then (.version | tostring) else empty end) else empty end)) as $cv | if ($cv | length) == 0 then "-" elif ($cv | length) <= 2 then ($cv | join(", ")) else (($cv[0:2] | join(", ")) + " +" + (($cv | length) - 2 | tostring) + " more") end), DATACENTERS:((.dataCenters // [] | map(select((.availability // "") | ascii_upcase != "NONE")) | map(.id) | sort) as $dcs | (if ("'"$dc"'" == "") then $dcs else ($dcs - ["'"$dc"'"]) end) as $odcs | if ($odcs | length) == 0 then "-" elif ($odcs | length) <= 2 then ($odcs | join(", ")) else (($odcs[0:2] | join(", ")) + " +" + (($odcs | length) - 2 | tostring) + " more") end)})' \
     "${cols[@]}"
 }
 
@@ -178,7 +224,7 @@ _stock_cpus() {
               SECURE_PRICE_VCPU: (if $sr == null then "-" else (money($sr) + "/vCPU") end),
               SERVERLESS_PRICE_VCPU: (if $sl == null then "-" else (money($sl) + "/vCPU") end),
               STOCK: $stock,
-              DATACENTERS: ((dcs_of | map(.id) | sort) as $ids | if ($ids | length) == 0 then "-" elif ($ids | length) <= 2 then ($ids | join(", ")) else (($ids[0:2] | join(", ")) + " +" + (($ids | length) - 2 | tostring) + " more") end)
+              DATACENTERS: ((dcs_of | map(.id) | sort) as $ids | (if (dcq == "") then $ids else ($ids - [dcq]) end) as $ids2 | if ($ids2 | length) == 0 then "-" elif ($ids2 | length) <= 2 then ($ids2 | join(", ")) else (($ids2[0:2] | join(", ")) + " +" + (($ids2 | length) - 2 | tostring) + " more") end)
             }
         ]'
   else
@@ -210,7 +256,7 @@ _stock_cpus() {
             SECURE_PRICE: (if $sr == null then "-" else (money($s * $sr) + " (" + money($sr) + "/vCPU)") end),
             SERVERLESS_PRICE: (if $sl == null then "-" else (money($s * $sl) + " (" + money($sl) + "/vCPU)") end),
             STOCK: $stock,
-            DATACENTERS: ((dcs_of | map(.id) | sort) as $ids | if ($ids | length) == 0 then "-" elif ($ids | length) <= 2 then ($ids | join(", ")) else (($ids[0:2] | join(", ")) + " +" + (($ids | length) - 2 | tostring) + " more") end)
+            DATACENTERS: ((dcs_of | map(.id) | sort) as $ids | (if (dcq == "") then $ids else ($ids - [dcq]) end) as $ids2 | if ($ids2 | length) == 0 then "-" elif ($ids2 | length) <= 2 then ($ids2 | join(", ")) else (($ids2[0:2] | join(", ")) + " +" + (($ids2 | length) - 2 | tostring) + " more") end)
           }
       ]
       | (if ('"$vcpu_jq"' != null) then map(select(.VCPU == '"$vcpu_jq"')) else . end)'
@@ -224,7 +270,17 @@ _stock_cpus() {
   # A filtered-out set would otherwise render as a bare header; say so instead.
   final="$(printf '%s' "$data" | jq -c "$full_reshape")" || return 1
   if [[ "$(printf '%s' "$final" | jq 'length')" -eq 0 ]]; then
-    rp::info "no CPU instances match the current filters (--dc/--product/--vcpu); try widening them"
+    # Name only the filters actually supplied, so the hint never claims you
+    # used flags you didn't.
+    local fl=""
+    rp::args_has dc && fl+=" --dc"
+    rp::args_has product && fl+=" --product"
+    rp::args_has vcpu && fl+=" --vcpu"
+    if [[ -n "$fl" ]]; then
+      rp::info "no CPU instances match the current filters ($fl); try widening them"
+    else
+      rp::info "no CPU instances match; try widening them"
+    fi
     return 0
   fi
   rp::table "$final" --reshape '.' "${cols[@]}"
@@ -274,6 +330,28 @@ _stock_dc() {
       GPUS:          ((.gpuAvailability // []) | map(select(.availability != "NONE")) | length),
       S3_API:        (if ($s3 | index($dc)) then "yes" else "" end)
     }) | sort_by(.DATACENTER)')"
+  # A filtered-out set would otherwise render as a bare header; say so instead
+  # (mirrors `rp stock gpu`/`rp stock cpus`). --json still prints the (empty) array.
+  if rp::args_has json; then
+    printf '%s\n' "$filt"
+    return 0
+  fi
+  if [[ "$(printf '%s' "$filt" | jq 'length')" -eq 0 ]]; then
+    # Name only the filters actually supplied, so the hint never claims you
+    # used flags you didn't.
+    local fl=""
+    rp::args_has s3 && fl+=" --s3"
+    rp::args_has global-network && fl+=" --global-network"
+    rp::args_has volume-type && fl+=" --volume-type"
+    rp::args_has compliance && fl+=" --compliance"
+    rp::args_has region && fl+=" --region"
+    if [[ -n "$fl" ]]; then
+      rp::info "no datacentres match the current filters ($fl); try widening them"
+    else
+      rp::info "no datacentres match; try widening them"
+    fi
+    return 0
+  fi
   rp::emit_json_or "$filt" rp::table "$shaped" DATACENTER REGION GPUS S3_API GLOBAL_NETWORK COMPLIANCE NETWORK_VOLUME_TYPES
 }
 
@@ -285,7 +363,7 @@ _stock_dc() {
 # List GPU types with price and live availability.
 #
 # Usage: rp stock gpu [--product <p,…>] [--min-count N]
-#                     [--cloud SECURE|COMMUNITY] [--min-cuda <ver>]
+#                     [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>]
 #                     [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH]
 #                     [--cuda <ver>] [--sort <column>] [--json]
 #
@@ -294,7 +372,12 @@ _stock_dc() {
 #                             (default: POD,SERVERLESS)
 #   --min-count N             only types with at least N GPUs free on one host
 #                             (minimum 1)
-#   --cloud SECURE|COMMUNITY  keep only types offered on that tier
+#   --cloud SECURE|COMMUNITY  keep only types offered on that tier; also drops
+#                             the opposite tier's price column (SECURE hides
+#                             COMMUNITY_PRICE, and vice versa)
+#   --dc <id>                 keep only types offered in this datacentre
+#                             (case-insensitive); also makes STOCK region-accurate
+#                             for that datacentre instead of a cross-DC aggregate
 #   --min-cuda <ver>          minimum CUDA version, major or major.minor
 #   --vram-gb N               keep only types with at least N GB of VRAM
 #                             (--vram is accepted as an alias)
@@ -314,14 +397,18 @@ _stock_dc() {
 #   The ID column is the value `rp pod create --gpu` and
 #   `rp serverless create --gpu` take. Ids are display names containing
 #   spaces, so quote them.
-#   STOCK is availability for the product and cloud you asked about, so one
-#   card can read differently under --product POD and --product SERVERLESS.
+#   STOCK is shown only with --dc, and is that datacentre's own availability
+#   (region-accurate). The DATACENTERS column always carries the per-datacentre
+#   breakdown.
 #   CLOUD lists the tiers a type is offered on: "SECURE, COMMUNITY" when both,
-#   or just "SECURE" / "COMMUNITY"; a dash means neither.
+#   or just "SECURE" / "COMMUNITY"; a dash means neither. With --cloud the
+#   column is omitted, since every shown row is on that tier.
 #   SECURE_PRICE and COMMUNITY_PRICE are the per-GPU hourly rates for each
 #   tier; a dash ("-") means that tier is not offered (gated on the
 #   secure/community flags, not on the price value — the API can return a
-#   non-zero price for an unoffered tier).
+#   non-zero price for an unoffered tier). With --cloud these columns are
+#   pruned: --cloud SECURE shows only SECURE_PRICE, --cloud COMMUNITY only
+#   COMMUNITY_PRICE, and the other (all-dash) column is omitted.
 #   CUDA lists the available CUDA versions (truncated to two plus "+N more");
 #   a dash means none are advertised. It is the same ceiling --min-cuda filters
 #   against.
@@ -329,7 +416,8 @@ _stock_dc() {
 #   (availability != NONE), sorted by id and truncated to two ids plus "+N
 #   more"; a dash means none are stocked. It is the same per-datacentre
 #   availability the API returns under include=AVAILABILITY, so it already
-#   honours --product, --cloud and --min-count.
+#   honours --product, --cloud and --min-count. With --dc the requested
+#   datacentre is omitted from the list (you already scoped to it).
 #   --vram-gb / --vram is a minimum: a type with more VRAM than N still passes.
 #   --hide is display-only: it removes columns from the table but leaves the row
 #   set and the --json payload untouched, so it is unrelated to filtering.
@@ -386,7 +474,8 @@ _stock_dc() {
 #   (e.g. "EU-CZ-1, EU-NL-1 +12 more") to keep the row readable; the full
 #   list is always in --json. Because filtering matches the underlying
 #   dataCenters array, --dc still finds a flavour even when its datacentre
-#   is hidden behind "+N more".
+#   is hidden behind "+N more". With --dc the requested datacentre is omitted
+#   from the list (you already scoped to it).
 #   --dc and --product apply to BOTH the table and --json so the two views
 #   always show the same flavours.
 #
@@ -458,7 +547,7 @@ rp::cmd_stock() {
   cpus) _stock_cpus ;;
   dc) _stock_dc ;;
   -h | --help | help | "")
-    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] [--hide <cols>] | rp stock cpus [--dc <id>] [--vcpu N] [--product POD|SERVERLESS|CLUSTER] [--compact] | rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>] [--region <r,…>]   (dc list via v2; --region takes EU/NA/AS… or full names; filters apply to both table and --json)"
+    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] [--hide <cols>] | rp stock cpus [--dc <id>] [--vcpu N] [--product POD|SERVERLESS|CLUSTER] [--compact] | rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>] [--region <r,…>]   (dc list via v2; --region takes EU/NA/AS… or full names; filters apply to both table and --json)"
     ;;
   *) rp::usage "unknown stock verb: '$verb'" ;;
   esac

@@ -3,7 +3,7 @@ List GPU types with price and live availability.
 
 ```
 rp stock gpu [--product <p,…>] [--min-count N]
-                    [--cloud SECURE|COMMUNITY] [--min-cuda <ver>]
+                    [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>]
                     [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH]
                     [--cuda <ver>] [--sort <column>] [--json]
 ```
@@ -15,7 +15,12 @@ rp stock gpu [--product <p,…>] [--min-count N]
                             (default: POD,SERVERLESS)
   --min-count N             only types with at least N GPUs free on one host
                             (minimum 1)
-  --cloud SECURE|COMMUNITY  keep only types offered on that tier
+  --cloud SECURE|COMMUNITY  keep only types offered on that tier; also drops
+                            the opposite tier's price column (SECURE hides
+                            COMMUNITY_PRICE, and vice versa)
+  --dc <id>                 keep only types offered in this datacentre
+                            (case-insensitive); also makes STOCK region-accurate
+                            for that datacentre instead of a cross-DC aggregate
   --min-cuda <ver>          minimum CUDA version, major or major.minor
   --vram-gb N               keep only types with at least N GB of VRAM
                             (--vram is accepted as an alias)
@@ -36,14 +41,18 @@ rp stock gpu [--product <p,…>] [--min-count N]
   The ID column is the value `rp pod create --gpu` and
   `rp serverless create --gpu` take. Ids are display names containing
   spaces, so quote them.
-  STOCK is availability for the product and cloud you asked about, so one
-  card can read differently under --product POD and --product SERVERLESS.
+  STOCK is shown only with --dc, and is that datacentre's own availability
+  (region-accurate). The DATACENTERS column always carries the per-datacentre
+  breakdown.
   CLOUD lists the tiers a type is offered on: "SECURE, COMMUNITY" when both,
-  or just "SECURE" / "COMMUNITY"; a dash means neither.
+  or just "SECURE" / "COMMUNITY"; a dash means neither. With --cloud the
+  column is omitted, since every shown row is on that tier.
   SECURE_PRICE and COMMUNITY_PRICE are the per-GPU hourly rates for each
   tier; a dash ("-") means that tier is not offered (gated on the
   secure/community flags, not on the price value — the API can return a
-  non-zero price for an unoffered tier).
+  non-zero price for an unoffered tier). With --cloud these columns are
+  pruned: --cloud SECURE shows only SECURE_PRICE, --cloud COMMUNITY only
+  COMMUNITY_PRICE, and the other (all-dash) column is omitted.
   CUDA lists the available CUDA versions (truncated to two plus "+N more");
   a dash means none are advertised. It is the same ceiling --min-cuda filters
   against.
@@ -51,7 +60,8 @@ rp stock gpu [--product <p,…>] [--min-count N]
   (availability != NONE), sorted by id and truncated to two ids plus "+N
   more"; a dash means none are stocked. It is the same per-datacentre
   availability the API returns under include=AVAILABILITY, so it already
-  honours --product, --cloud and --min-count.
+  honours --product, --cloud and --min-count. With --dc the requested
+  datacentre is omitted from the list (you already scoped to it).
   --vram-gb / --vram is a minimum: a type with more VRAM than N still passes.
   --hide is display-only: it removes columns from the table but leaves the row
   set and the --json payload untouched, so it is unrelated to filtering.

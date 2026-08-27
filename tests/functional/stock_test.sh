@@ -54,16 +54,20 @@ function test_should_render_table_when_gpu_no_json() {
   assert_contains "COMMUNITY_PRICE" "$rendered"
   assert_contains "CUDA" "$rendered"
   assert_contains "NVIDIA L4" "$rendered"
-  assert_contains "Medium" "$rendered"
+  # Without --dc the STOCK column is hidden (cross-DC aggregate is misleading),
+  # so none of its values appear and CUDA sits right after the price columns.
+  assert_not_contains "STOCK" "$rendered"
+  assert_not_contains "Medium" "$rendered"
   # secure-only: CLOUD=SECURE, community price dashed out (gated on the boolean,
   # not on price.community=0.6); CUDA (moved to the end) shows only the available
-  # version (12.5 is available:false), after STOCK.
-  assert_matches "NVIDIA L4 +L4 +24 +SECURE +0\.5 +- +Medium +12\.4" "$rendered"
+  # version (12.5 is available:false), right after the price columns.
+  assert_matches "NVIDIA L4 +L4 +24 +SECURE +0\.5 +- +12\.4" "$rendered"
   # both tiers: CLOUD lists "SECURE, COMMUNITY" (not "BOTH"), both prices shown,
-  # CUDA after STOCK.
-  assert_matches "NVIDIA A100 80GB PCIe +A100 +80 +SECURE, COMMUNITY +1\.39 +1\.19 +LOW +12\.4, 12\.5" "$rendered"
-  # three available CUDA versions are truncated to two plus "+1 more", after STOCK.
-  assert_matches "NVIDIA H100 +H100 +80 +SECURE, COMMUNITY +2\.0 +1\.8 +HIGH +12\.4, 12\.5 \+1 more" "$rendered"
+  # CUDA after the price columns.
+  assert_matches "NVIDIA A100 80GB PCIe +A100 +80 +SECURE, COMMUNITY +1\.39 +1\.19 +12\.4, 12\.5" "$rendered"
+  # three available CUDA versions are truncated to two plus "+1 more", after the
+  # price columns.
+  assert_matches "NVIDIA H100 +H100 +80 +SECURE, COMMUNITY +2\.0 +1\.8 +12\.4, 12\.5 \+1 more" "$rendered"
   # the junk "unknown" row (id "unknown", 0 VRAM) is stripped from display.
   assert_not_contains "unknown" "$rendered"
 }
@@ -118,6 +122,171 @@ function test_should_filter_gpu_by_cloud_client_side() {
   assert_contains "NVIDIA A100 80GB PCIe" "$rendered"
 }
 
+function test_should_drop_community_price_column_when_cloud_secure() {
+  rp::args_parse --cloud SECURE
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "SECURE_PRICE" "$rendered"
+  assert_not_contains "COMMUNITY_PRICE" "$rendered"
+  # Rows still render; the L4 (secure-only) appears.
+  assert_contains "NVIDIA L4" "$rendered"
+}
+
+function test_should_drop_secure_price_column_when_cloud_community() {
+  rp::args_parse --cloud COMMUNITY
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_not_contains "SECURE_PRICE" "$rendered"
+  assert_contains "COMMUNITY_PRICE" "$rendered"
+  # L4 is secure-only, so it is filtered out too.
+  assert_not_contains "NVIDIA L4" "$rendered"
+}
+
+function test_should_hide_cloud_column_when_cloud_given() {
+  rp::args_parse --cloud SECURE
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # With --cloud the CLOUD column is constant for every row, so it is dropped.
+  assert_not_contains "CLOUD" "$rendered"
+  # SECURE_PRICE remains (COMMUNITY_PRICE is dropped).
+  assert_contains "SECURE_PRICE" "$rendered"
+  assert_not_contains "COMMUNITY_PRICE" "$rendered"
+}
+
+function test_should_show_cloud_column_when_no_cloud() {
+  rp::args_parse
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "CLOUD" "$rendered"
+}
+
+function test_should_show_both_price_columns_when_no_cloud() {
+  rp::args_parse
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "SECURE_PRICE" "$rendered"
+  assert_contains "COMMUNITY_PRICE" "$rendered"
+}
+
+function test_should_hide_stock_column_when_no_dc() {
+  # A DC-bearing body proves STOCK is intentionally suppressed without --dc, not
+  # merely absent because the fixture lacks data.
+  local body='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":false,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":0.5,"community":0.6},"availability":"Medium","dataCenters":[{"id":"EU-NL-1","availability":"HIGH"}]}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::args_parse
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_not_contains "STOCK" "$rendered"
+  assert_contains "DATACENTERS" "$rendered"
+}
+
+function test_should_filter_gpu_by_dc() {
+  local body='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":false,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":0.5,"community":0.6},"availability":"Medium","dataCenters":[{"id":"EU-NL-1","availability":"HIGH"},{"id":"US-KS-2","availability":"NONE"}]},{"id":"NVIDIA A100 80GB PCIe","name":"A100","memory":80,"secure":true,"community":true,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":1.39,"community":1.19},"availability":"LOW","dataCenters":[{"id":"EU-NL-1","availability":"LOW"}]}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::args_parse --dc US-KS-2
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # Only L4 lists US-KS-2, so A100 must drop.
+  assert_contains "NVIDIA L4" "$rendered"
+  assert_not_contains "NVIDIA A100 80GB PCIe" "$rendered"
+}
+
+function test_should_filter_gpu_by_dc_case_insensitive() {
+  local body='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":false,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":0.5,"community":0.6},"availability":"Medium","dataCenters":[{"id":"EU-NL-1","availability":"HIGH"}]}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::args_parse --dc eu-nl-1
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "NVIDIA L4" "$rendered"
+}
+
+function test_should_show_region_accurate_stock_with_dc() {
+  local body='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":false,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":0.5,"community":0.6},"availability":"Medium","dataCenters":[{"id":"EU-NL-1","availability":"HIGH"},{"id":"US-KS-2","availability":"NONE"}]},{"id":"NVIDIA A100 80GB PCIe","name":"A100","memory":80,"secure":true,"community":true,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":1.39,"community":1.19},"availability":"LOW","dataCenters":[{"id":"EU-NL-1","availability":"LOW"}]}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::args_parse --dc EU-NL-1
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # STOCK column appears and reflects the datacentre's own availability, not the
+  # GPU-level aggregate (L4 global=Medium but EU-NL-1=HIGH; A100 global=LOW).
+  assert_contains "STOCK" "$rendered"
+  assert_matches "NVIDIA L4 +L4 +24 +SECURE +0\.5 +- +HIGH" "$rendered"
+  assert_matches "NVIDIA A100 80GB PCIe +A100 +80 +SECURE, COMMUNITY +1\.39 +1\.19 +LOW" "$rendered"
+}
+
+function test_should_strip_requested_dc_from_datacenters_column() {
+  local body='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":false,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":0.5,"community":0.6},"availability":"Medium","dataCenters":[{"id":"EU-NL-1","availability":"HIGH"},{"id":"US-KS-2","availability":"HIGH"},{"id":"US-UT-1","availability":"NONE"}]}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::args_parse --dc EU-NL-1
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # The requested DC is omitted; only the other in-stock DC remains listed.
+  assert_contains "US-KS-2" "$rendered"
+  assert_not_contains "EU-NL-1" "$rendered"
+  assert_not_contains "US-UT-1" "$rendered"
+}
+
+function test_should_dash_datacenters_when_dc_is_only_one() {
+  local body='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":false,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":0.5,"community":0.6},"availability":"Medium","dataCenters":[{"id":"EU-NL-1","availability":"HIGH"}]}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::args_parse --dc EU-NL-1
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_not_contains "EU-NL-1" "$rendered"
+  # Only datacentre is the requested one, so the column dashes out.
+  assert_matches "NVIDIA L4 +L4 +24 +SECURE +0\.5 +- +HIGH +12\.4 +-" "$rendered"
+}
+
+function test_should_filter_gpu_by_stock_with_dc_region_accurate() {
+  local body='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":false,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":0.5,"community":0.6},"availability":"Medium","dataCenters":[{"id":"EU-NL-1","availability":"HIGH"},{"id":"US-KS-2","availability":"NONE"}]},{"id":"NVIDIA A100 80GB PCIe","name":"A100","memory":80,"secure":true,"community":true,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":1.39,"community":1.19},"availability":"LOW","dataCenters":[{"id":"EU-NL-1","availability":"LOW"}]}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::args_parse --dc EU-NL-1 --stock HIGH
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # --stock compares the datacentre's availability: only L4 is HIGH in EU-NL-1.
+  assert_contains "NVIDIA L4" "$rendered"
+  assert_not_contains "NVIDIA A100 80GB PCIe" "$rendered"
+}
+
+function test_should_sort_gpu_by_stock_when_dc_given() {
+  local body='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":false,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":0.5,"community":0.6},"availability":"Medium","dataCenters":[{"id":"EU-NL-1","availability":"HIGH"}]},{"id":"NVIDIA A100 80GB PCIe","name":"A100","memory":80,"secure":true,"community":true,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":1.39,"community":1.19},"availability":"LOW","dataCenters":[{"id":"EU-NL-1","availability":"LOW"}]}]}'
+  rp::http() { printf '%s' "$body"; }
+  rp::args_parse --dc EU-NL-1 --sort STOCK
+  _stock_gpu >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  # LOW (A100) precedes HIGH (L4) when sorting STOCK ascending within the DC.
+  assert_matches "NVIDIA A100 80GB PCIe.*NVIDIA L4" "$rendered"
+}
+
+function test_should_hint_when_no_gpus_match() {
+  # The default fixture has no dataCenters, so any --dc drops every row.
+  rp::args_parse --dc NOWHERE-1
+  _stock_gpu >"$OUT" 2>&1
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "no GPU types match" "$rendered"
+  # No bare header when there is nothing to show.
+  assert_not_contains "ID" "$rendered"
+}
+
+function test_should_print_empty_array_when_no_gpus_match_json() {
+  rp::args_parse --dc NOWHERE-1 --json
+  _stock_gpu >"$OUT" 2>/dev/null
+  assert_equals "[]" "$(<"$OUT")"
+}
+
 function test_should_sort_gpu_by_vram_gb() {
   rp::args_parse --sort VRAM_GB
   _stock_gpu >"$OUT" 2>/dev/null
@@ -148,6 +317,15 @@ function test_should_show_dash_when_no_datacenters() {
   rendered="$(<"$OUT")"
   assert_contains "NVIDIA L4" "$rendered"
   assert_contains "DATACENTERS" "$rendered"
+}
+
+function test_should_not_emit_jq_errors_with_dc_cloud_and_stock() {
+  local body='{"gpus":[{"id":"NVIDIA L4","name":"L4","memory":24,"secure":true,"community":true,"cudaVersions":[{"version":"12.4","available":true}],"price":{"secure":0.5,"community":0.6},"availability":"Medium","dataCenters":[{"id":"EUR-IS-1","availability":"HIGH"}]}]}'
+  rp::http() { printf '%s' "$body"; }
+  local err
+  rp::args_parse --product serverless --dc eur-is-1 --cloud community --stock HIGH
+  err="$(_stock_gpu 2>&1 >/dev/null)"
+  assert_equals "" "$err"
 }
 
 function test_should_accept_vram_alias_for_sort() {
@@ -462,8 +640,10 @@ function test_should_filter_cpus_by_dc_in_table() {
   rendered="$(<"$OUT")"
   assert_contains "cpu3c" "$rendered"
   assert_not_contains "cpu5c" "$rendered"
-  # Column is truncated to two ids + "+N more".
-  assert_matches "EU-CZ-1, US-CA-2 \+1 more" "$rendered"
+  # The requested --dc is stripped from the DATACENTERS list (was EU-CZ-1,
+  # US-CA-2, US-MO-2); the remaining two are shown in full, no "+N more".
+  assert_matches "EU-CZ-1, US-MO-2" "$rendered"
+  assert_not_contains "US-CA-2" "$rendered"
 }
 
 function test_should_filter_cpus_by_dc_in_json() {
@@ -565,6 +745,22 @@ function test_should_and_filters_when_s3_and_global_flags() {
   _stock_dc >"$OUT" 2>/dev/null
   assert_contains "US-KS-2" "$(<"$OUT")"
   assert_not_contains "EU-RO-1" "$(<"$OUT")"
+}
+
+function test_should_hint_when_no_datacenters_match() {
+  # No datacentre in the fixture lies in ASIA.
+  rp::args_parse --region AS
+  _stock_dc >"$OUT" 2>&1
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "no datacentres match" "$rendered"
+  assert_not_contains "DATACENTER" "$rendered"
+}
+
+function test_should_print_empty_array_when_no_datacenters_match_json() {
+  rp::args_parse --region AS --json
+  _stock_dc >"$OUT" 2>/dev/null
+  assert_equals "[]" "$(<"$OUT")"
 }
 
 function test_should_filter_dc_json_same_set_as_table_when_s3_flag() {

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Make rp stock gpu cloud- and datacentre-aware
+
 ## [1.4.0] - 2026-08-27
 
 ### Added

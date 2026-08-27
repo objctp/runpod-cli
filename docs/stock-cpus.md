@@ -42,7 +42,8 @@ rp stock cpus [--dc <id>] [--vcpu N] [--product POD|SERVERLESS|CLUSTER] [--compa
   (e.g. "EU-CZ-1, EU-NL-1 +12 more") to keep the row readable; the full
   list is always in --json. Because filtering matches the underlying
   dataCenters array, --dc still finds a flavour even when its datacentre
-  is hidden behind "+N more".
+  is hidden behind "+N more". With --dc the requested datacentre is omitted
+  from the list (you already scoped to it).
   --dc and --product apply to BOTH the table and --json so the two views
   always show the same flavours.
 
