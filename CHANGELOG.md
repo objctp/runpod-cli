@@ -18,6 +18,7 @@
 ### Fixed
 
 - Merge secrets on re-login and surface GraphQL errors
+- Resolve shellcheck SC2015 in auth file write
 
 ## [1.3.0] - 2026-08-24
 

@@ -91,7 +91,9 @@ _auth_write_account() {
   # Preserve any non-auth lines (user comments or other vars). `grep -vE`
   # exits 1 when it matches nothing, which would trip `set -e` and abort the
   # whole write — so guard with `|| true`.
-  [[ -f "$file" ]] && grep -vE "$_AUTH_KEYS" "$file" >>"$tmp" 2>/dev/null || true
+  if [[ -f "$file" ]]; then
+    grep -vE "$_AUTH_KEYS" "$file" >>"$tmp" 2>/dev/null || true
+  fi
   # Merge: keep an existing value when the caller didn't supply one, so a
   # partial login (e.g. `rp auth login --api-key …`) preserves S3 keys set in
   # a previous call instead of wiping them.
