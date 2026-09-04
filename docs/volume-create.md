@@ -27,6 +27,11 @@ rp volume create --name <n> --size <gb> --dc <id>
   Only some datacentres expose the S3 API. Creating in one that does not is
   allowed but prints a warning, because `rp volume sync` and `rp volume ls`
   will not work there. `rp stock dc` marks the ones that do.
+  Likewise, only some datacentres list the HIGH_PERFORMANCE tier. Creating
+  with --type HIGH_PERFORMANCE in one that does not is allowed but prints a
+  warning, because the request may fail; `rp stock dc --volume-type
+  HIGH_PERFORMANCE` marks the ones that do. When the catalog is unreachable
+  the check stays silent — the API remains the authority on capability.
   --type is matched case-insensitively and checked locally; anything other
   than STANDARD or HIGH_PERFORMANCE is a usage error. The tier is immutable,
   so `rp volume update` cannot change it later.

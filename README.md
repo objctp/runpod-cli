@@ -136,6 +136,10 @@ behind a release:
 - **S3 fill needs an S3-API-supported datacentre** — `rp stock dc` reads the
   `s3apiEnabled` flag live, so its S3 column is always current; `rp volume create`
   warns if `--dc` is not S3-capable (and `volume sync` refuses).
+- **High-performance volumes need a tier-capable datacentre** — `rp volume
+  create --type HIGH_PERFORMANCE` warns when the datacentre's
+  `networkVolumeTypes` does not list the tier; `rp stock dc --volume-type
+  HIGH_PERFORMANCE` marks the ones that do.
 - **Catalog stock is account-wide, not per-datacentre** — `rp volume gpus` and
   `--gpus-from-volume` reflect global availability; the volume's own datacentre
   still gates whether provisioning actually succeeds.

@@ -15,6 +15,10 @@ function set_up_before_script() {
   # _volume_create calls rp::warn_unless_s3_dc -> live S3-DC query; stub it so
   # the create tests make no network calls (falls back to the static snapshot).
   _s3_dcs_live() { :; }
+  # _volume_create calls rp::warn_unless_hp_dc -> single-DC v2 catalog GET for
+  # the HIGH_PERFORMANCE tier; stub it "unknown" (non-zero) so the default
+  # create tests stay silent. Tier tests override it below.
+  _hp_dc_tiers() { return 1; }
   # S3 seam doubles (C6/B4): capture argv of the external `aws` / `huggingface-cli`
   # binaries so the region/endpoint derivation in lib/s3.sh is exercised end-to-end.
   export RUNPOD_S3_ACCESS_KEY=test-access-key
@@ -165,6 +169,68 @@ function test_create_bad_type_exits_without_http() {
   assert_equals "" "$(cat "$marker")"
   rp::http() { :; }
   rm -f "$marker"
+}
+
+# The HP tier guard rides _hp_dc_tiers (stubbed "unknown" in set_up); these
+# tests override it with a canned catalog record. A DC lacking the tier warns
+# but never blocks the POST — the API stays the authority.
+function test_create_warns_when_dc_lacks_high_performance_tier() {
+  local marker err
+  marker="$(mktemp)"
+  _hp_dc_tiers() { printf '%s' '["STANDARD"]'; }
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[]'
+    else
+      printf '%s' "$3" >"$marker"
+      printf '{"id":"new1"}'
+    fi
+  }
+  rp::args_parse --name n --size 10 --dc EU-RO-1 --type HIGH_PERFORMANCE
+  err="$(_volume_create 2>&1 >/dev/null)"
+  assert_contains "does not list the HIGH_PERFORMANCE volume tier" "$err"
+  assert_equals "HIGH_PERFORMANCE" "$(printf '%s' "$(<"$marker")" | jq -r '.type')"
+  _hp_dc_tiers() { return 1; }
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
+function test_create_stays_silent_when_dc_lists_high_performance_tier() {
+  local err
+  _hp_dc_tiers() { printf '%s' '["STANDARD","HIGH_PERFORMANCE"]'; }
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then printf '[]'; else printf '{"id":"new1"}'; fi
+  }
+  rp::args_parse --name n --size 10 --dc US-KS-2 --type HIGH_PERFORMANCE
+  err="$(_volume_create 2>&1 >/dev/null)"
+  assert_not_contains "HIGH_PERFORMANCE volume tier" "$err"
+  _hp_dc_tiers() { return 1; }
+  rp::http() { :; }
+}
+
+function test_create_stays_silent_when_hp_tier_unknown() {
+  local err
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then printf '[]'; else printf '{"id":"new1"}'; fi
+  }
+  rp::args_parse --name n --size 10 --dc US-KS-2 --type HIGH_PERFORMANCE
+  err="$(_volume_create 2>&1 >/dev/null)"
+  assert_not_contains "HIGH_PERFORMANCE volume tier" "$err"
+  rp::http() { :; }
+}
+
+function test_create_ignores_hp_guard_for_standard_type() {
+  local calls
+  calls="$(mktemp)"
+  rp::http() {
+    printf '%s\n' "$1 $2" >>"$calls"
+    if [[ "$1" == "GET" ]]; then printf '[]'; else printf '{"id":"new1"}'; fi
+  }
+  rp::args_parse --name n --size 10 --dc EU-RO-1 --type STANDARD
+  _volume_create >/dev/null 2>&1
+  assert_not_contains "datacenters" "$(<"$calls")"
+  rp::http() { :; }
+  rm -f "$calls"
 }
 
 function test_should_show_help_when_help_flag_follows_verb() {

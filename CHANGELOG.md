@@ -8,6 +8,7 @@
 - Add batch sub-resource with 9 verbs
 - Add pods add to scale out a running cluster
 - Add worker affinity flags to rp serverless run
+- Warn when a high-performance volume targets an incapable datacentre
 
 ## [1.4.0] - 2026-08-27
 

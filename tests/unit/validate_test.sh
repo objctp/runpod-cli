@@ -5,11 +5,15 @@ function set_up_before_script() {
   local _opts
   _opts=$(shopt -po errexit nounset pipefail 2>/dev/null || true)
   # Drop guards so the real modules (re)define; the S3 live check routes through
-  # lib/graphql.sh's rp::graphql_soft over lib/transport.sh's curl seam.
-  unset _RP_TRANSPORT _RP_GRAPHQL _RP_VALIDATE
+  # lib/graphql.sh's rp::graphql_soft over lib/transport.sh's curl seam, the HP
+  # check through lib/http.sh's rp::http_soft on the same seam (auth.sh supplies
+  # rp::auth_header, which _curl_json needs once an API key is set).
+  unset _RP_TRANSPORT _RP_GRAPHQL _RP_HTTP _RP_AUTH _RP_VALIDATE
   source "$RP_ROOT/lib/common.sh"
   source "$RP_ROOT/lib/transport.sh"
+  source "$RP_ROOT/lib/auth.sh"
   source "$RP_ROOT/lib/graphql.sh"
+  source "$RP_ROOT/lib/http.sh"
   source "$RP_ROOT/lib/validate.sh"
   eval "$_opts"
 }
@@ -95,5 +99,85 @@ function test_should_fall_back_when_live_query_fails() {
 # rp::warn_unless_s3_dc registers coverage.
 function test_should_stay_silent_when_s3_capable_main_shell() {
   rp::warn_unless_s3_dc EU-RO-1 >/dev/null 2>&1
+  assert_successful_code "$?"
+}
+
+# --- high-performance tier guard (v2 catalog: GET /catalog/datacenters/{id}) ---
+# The curl double's response knobs (GQL_STATUS/GQL_BODY) serve both planes: the
+# S3 tests drive them through rp::graphql_soft, the HP tests through the
+# rp::http_soft REST seam.
+
+function test_should_pass_when_dc_lists_high_performance_tier() {
+  GQL_STATUS=200
+  GQL_BODY='{"id":"US-KS-2","networkVolumeTypes":["STANDARD","HIGH_PERFORMANCE"]}'
+  rp::is_hp_dc US-KS-2
+  assert_successful_code "$?"
+}
+
+function test_should_pass_when_dc_lists_high_performance_tier_case_insensitive() {
+  GQL_STATUS=200
+  GQL_BODY='{"id":"US-KS-2","networkVolumeTypes":["STANDARD","HIGH_PERFORMANCE"]}'
+  rp::is_hp_dc us-ks-2
+  assert_successful_code "$?"
+}
+
+function test_should_fail_when_dc_lacks_high_performance_tier() {
+  GQL_STATUS=200
+  GQL_BODY='{"id":"EU-RO-1","networkVolumeTypes":["STANDARD"]}'
+  rp::is_hp_dc EU-RO-1
+  assert_general_error "$?"
+}
+
+function test_should_fail_when_tiers_field_is_absent() {
+  GQL_STATUS=200
+  GQL_BODY='{"id":"EU-RO-1"}'
+  rp::is_hp_dc EU-RO-1
+  assert_general_error "$?"
+}
+
+function test_should_fail_when_catalog_unreachable() {
+  GQL_STATUS=000
+  rp::is_hp_dc US-KS-2
+  assert_general_error "$?"
+}
+
+function test_should_fail_when_catalog_returns_404() {
+  GQL_STATUS=404
+  GQL_BODY='{"error":"not found"}'
+  rp::is_hp_dc US-XX-9
+  assert_general_error "$?"
+}
+
+function test_should_warn_when_dc_lacks_high_performance_tier() {
+  GQL_STATUS=200
+  GQL_BODY='{"id":"EU-RO-1","networkVolumeTypes":["STANDARD"]}'
+  local err
+  err="$(rp::warn_unless_hp_dc EU-RO-1 2>&1 >/dev/null)"
+  assert_contains "does not list the HIGH_PERFORMANCE volume tier" "$err"
+}
+
+function test_should_stay_silent_when_dc_lists_high_performance_tier() {
+  GQL_STATUS=200
+  GQL_BODY='{"id":"US-KS-2","networkVolumeTypes":["STANDARD","HIGH_PERFORMANCE"]}'
+  local err
+  err="$(rp::warn_unless_hp_dc US-KS-2 2>&1 >/dev/null)"
+  assert_empty "$err"
+}
+
+# Unknown capability (catalog unreachable) stays silent: no offline fallback
+# list exists for the HP tier, so the guard must not guess.
+function test_should_stay_silent_when_catalog_unreachable() {
+  GQL_STATUS=000
+  local err
+  err="$(rp::warn_unless_hp_dc US-KS-2 2>&1 >/dev/null)"
+  assert_empty "$err"
+}
+
+# main-shell call (bashunit skips lines run inside $(...)) so
+# rp::warn_unless_hp_dc registers coverage.
+function test_should_warn_when_dc_lacks_hp_tier_main_shell() {
+  GQL_STATUS=200
+  GQL_BODY='{"id":"EU-RO-1","networkVolumeTypes":["STANDARD"]}'
+  rp::warn_unless_hp_dc EU-RO-1 >/dev/null 2>&1
   assert_successful_code "$?"
 }

@@ -33,6 +33,10 @@ _volume_create() {
   *) rp::usage "usage: rp volume create --type must be STANDARD or HIGH_PERFORMANCE (got: '$vtype')" ;;
   esac
   rp::warn_unless_s3_dc "$dc"
+  # An explicit HIGH_PERFORMANCE tier is opt-in: warn (never block) when the
+  # DC's v2 catalog record does not list it — the tier is immutable after
+  # create, so a rejection is only discoverable now.
+  [[ "$vtype" == HIGH_PERFORMANCE ]] && rp::warn_unless_hp_dc "$dc"
   local body='{}'
   rp::obj_set body name "$(rp::json_str "$name")"
   rp::obj_set body size "$size"
@@ -190,6 +194,11 @@ _volume_gpus() {
 #   Only some datacentres expose the S3 API. Creating in one that does not is
 #   allowed but prints a warning, because `rp volume sync` and `rp volume ls`
 #   will not work there. `rp stock dc` marks the ones that do.
+#   Likewise, only some datacentres list the HIGH_PERFORMANCE tier. Creating
+#   with --type HIGH_PERFORMANCE in one that does not is allowed but prints a
+#   warning, because the request may fail; `rp stock dc --volume-type
+#   HIGH_PERFORMANCE` marks the ones that do. When the catalog is unreachable
+#   the check stays silent — the API remains the authority on capability.
 #   --type is matched case-insensitively and checked locally; anything other
 #   than STANDARD or HIGH_PERFORMANCE is a usage error. The tier is immutable,
 #   so `rp volume update` cannot change it later.
@@ -379,7 +388,7 @@ rp::cmd_volume() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp volume <verb> [flags]
-  create --name <n> --size <gb> --dc <id> (alias: --data-center-ids) [--type STANDARD|HIGH_PERFORMANCE]   (idempotent by name; warns if DC is not S3-capable; tier is immutable)
+  create --name <n> --size <gb> --dc <id> (alias: --data-center-ids) [--type STANDARD|HIGH_PERFORMANCE]   (idempotent by name; warns if DC is not S3-capable or lacks HIGH_PERFORMANCE; tier is immutable)
   list | get <id> | update <id> [--name <n>] [--size <gb>] | delete <id>
   sync <name> --source <dir> | --models <owner/repo>,...  [--prefix models]
   ls <name> [--path <remote-path>]
