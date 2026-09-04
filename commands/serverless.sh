@@ -886,9 +886,471 @@ _serverless_logs() {
 #
 # API: GET /{id}/health
 
+# ---------------------------------------------------------------------------
+# Batch sub-resource (BETA): endpoint-scoped bulk inference on the control
+# plane. Every batch is addressed by id; work starts only after an explicit
+# finalize; completion is inferred when completed + failed equals the total.
+
+### :::: documentation (rp doc serverless batch) :::: #############################
+
+# doc: batch
+# Submit large sets of inference requests to an endpoint as one managed batch (beta).
+#
+# Usage: rp serverless batch <verb> [flags]
+#
+# Notes:
+#   A batch is endpoint-scoped and rides the control plane (unlike `run`,
+#   which targets the data plane). Lifecycle: DRAFT → FINALIZED →
+#   FAILED|CANCELLED — work starts only after `finalize`, there is no
+#   RUNNING/COMPLETED status, and completion is inferred when completed +
+#   failed counts equal the total. Batch workers are isolated from /run
+#   traffic, so a batch never delays interactive jobs. Batches are addressed
+#   by id (display names are not unique). Sub-verbs: list, create, add,
+#   remove, finalize, cancel, get, requests, update.
+#
+# API: /v2/{endpoint_id}/batch
+
+# doc: batch list
+# List an endpoint's batches, newest first (beta).
+#
+# Usage: rp serverless batch list <endpoint> [--json]
+#
+# Arguments:
+#   <endpoint>       endpoint id — from `rp serverless list`
+#
+# Options:
+#   --json           print the raw API response
+#
+# Notes:
+#   The table shows each batch's id, name, status and request counts (total,
+#   completed, failed, in flight). A batch that is still processing reports
+#   FINALIZED — there is no RUNNING or COMPLETED status.
+#
+# API: GET /v2/{endpoint_id}/batch
+
+# doc: batch create
+# Create a new DRAFT batch (beta).
+#
+# Usage: rp serverless batch create <endpoint> [--input '<json>']… [--input-file <path|->] [--json]
+#
+# Arguments:
+#   <endpoint>       endpoint id — from `rp serverless list`
+#
+# Options:
+#   --input '<json>' one request's input object; repeatable, each occurrence
+#                    appends one request (must be a single JSON value)
+#   --input-file <path|->
+#                    a JSON array of input objects; `-` reads stdin. Combined
+#                    with --input, file items come first
+#   --json           print the raw API response
+#
+# Notes:
+#   The request body is a top-level JSON array; without --input/--input-file an
+#   empty array is sent. The new batch id is printed on stdout (confirmation on
+#   stderr), so the id composes into add/finalize. The batch stays DRAFT —
+#   nothing processes until `batch finalize`.
+#
+# Examples:
+# # Create a batch with two requests
+# $ rp serverless batch create end_abc --input '{"text":"a"}' --input '{"text":"b"}'
+#
+# API: POST /v2/{endpoint_id}/batch
+
+# doc: batch add
+# Append requests to a DRAFT batch (beta).
+#
+# Usage: rp serverless batch add <endpoint> <batchId> [--input '<json>']… [--input-file <path|->]
+#
+# Arguments:
+#   <endpoint>       endpoint id
+#   <batchId>        batch id — printed by `batch create`
+#
+# Options:
+#   --input '<json>' one request's input object; repeatable
+#   --input-file <path|->
+#                    a JSON array of input objects; `-` reads stdin; items
+#                    precede --input values in the envelope
+#
+# Notes:
+#   The API wraps the array as {"requests":[…]} and caps one call at 10 MiB —
+#   oversized payloads are rejected locally before the POST; split them across
+#   multiple add calls (each add is a visible billing/progress boundary, so the
+#   CLI never chunks silently). Only DRAFT batches accept requests.
+#
+# API: POST /v2/{endpoint_id}/batch/{batch_id}/requests
+
+# doc: batch remove
+# Remove one request from a DRAFT batch (beta).
+#
+# Usage: rp serverless batch remove <endpoint> <batchId> <requestId>
+#
+# Arguments:
+#   <endpoint>       endpoint id
+#   <batchId>        batch id
+#   <requestId>      child request id — from `batch requests`
+#
+# Notes:
+#   Only DRAFT batches accept removals; after finalize the request set is
+#   locked.
+#
+# API: DELETE /v2/{endpoint_id}/batch/{batch_id}/requests/{request_id}
+
+# doc: batch finalize
+# Lock a DRAFT batch and make it eligible for execution (beta).
+#
+# Usage: rp serverless batch finalize <endpoint> <batchId>
+#
+# Arguments:
+#   <endpoint>       endpoint id
+#   <batchId>        batch id
+#
+# Notes:
+#   Finalize is the only door to execution — a DRAFT batch never processes.
+#   After it, requests can no longer be added or removed; the batch stays
+#   FINALIZED while it works.
+#
+# API: POST /v2/{endpoint_id}/batch/{batch_id}/finalize
+
+# doc: batch cancel
+# Cancel a batch (beta).
+#
+# Usage: rp serverless batch cancel <endpoint> <batchId>
+#
+# Arguments:
+#   <endpoint>       endpoint id
+#   <batchId>        batch id
+#
+# Notes:
+#   Queued requests are cancelled immediately and are not billed; in-flight
+#   requests finish and bill normally. The batch reaches CANCELLED once the
+#   in-flight work has drained. No confirmation prompt (house style).
+#
+# API: POST /v2/{endpoint_id}/batch/{batch_id}/cancel
+
+# doc: batch get
+# Show a batch's progress summary (beta).
+#
+# Usage: rp serverless batch get <endpoint> <batchId> [--wait] [--interval <s>] [--timeout <s>] [--json]
+#
+# Arguments:
+#   <endpoint>       endpoint id
+#   <batchId>        batch id
+#
+# Options:
+#   --wait           poll until the counts reconcile (completed + failed =
+#                    total) or the batch reaches a terminal state
+#   --interval <s>   seconds between polls (default 5)
+#   --timeout <s>    cap the wait (default: none — batches are multi-hour by
+#                    design; Ctrl-C or this flag ends the wait)
+#   --json           print the raw API response
+#
+# Notes:
+#   The API has no RUNNING/COMPLETED status: progress is the counts. With
+#   --wait, headlines print to stderr only when the done-count changes, so
+#   --json stdout and pipes stay clean. Exit code: 0 on completion regardless
+#   of how many child requests failed (failures are data — see `batch
+#   requests`); 1 when the batch itself reaches FAILED or CANCELLED; non-zero
+#   when --timeout expires.
+#
+# Examples:
+# # Wait for a batch to finish, checking every 30s
+# $ rp serverless batch get end_abc b_01j9abc --wait --interval 30
+#
+# API: GET /v2/{endpoint_id}/batch/{batch_id}
+
+# doc: batch requests
+# List a batch's child requests with per-request status and results (beta).
+#
+# Usage: rp serverless batch requests <endpoint> <batchId> [--status completed|failed|in-progress|queued] [--limit N] [--cursor N] [--json]
+#
+# Arguments:
+#   <endpoint>       endpoint id
+#   <batchId>        batch id
+#
+# Options:
+#   --status <s>     client-side filter (completed|failed|in-progress|queued);
+#                    --status completed is the results view
+#   --limit <n>      page size (server-side)
+#   --cursor <n>     server-side offset for the next page
+#   --json           print the raw paginated envelope (incl. total/hasMore)
+#
+# Notes:
+#   Pagination is server-side (offset/limit); each child carries a status and
+#   either an output or an error message from the handler. A failed child does
+#   not fail the batch.
+#
+# API: GET /v2/{endpoint_id}/batch/{batch_id}/requests
+
+# doc: batch update
+# Rename a batch (beta).
+#
+# Usage: rp serverless batch update <endpoint> <batchId> --name <n>
+#
+# Arguments:
+#   <endpoint>       endpoint id
+#   <batchId>        batch id
+#
+# Options:
+#   --name <n>       new display name (required)
+#
+# Notes:
+#   The name is a display label only; batches are always addressed by id.
+#
+# API: PUT /v2/{endpoint_id}/batch/{batch_id}
+
+# Table of an endpoint's batches, newest first; --json passes the raw envelope.
+_serverless_batch_list() {
+  local ep
+  rp::require_pos ep "usage: rp serverless batch list <endpoint> [--json]"
+  rp::require_id ep "$ep" "endpoint id"
+  local body
+  body="$(rp::http GET "/serverless/$ep/batch")"
+  local arr
+  arr="$(rp::unwrap batches "$body")"
+  rp::emit_json_or "$body" rp::table "$arr" --reshape \
+    'map({id, name, status,
+          total:(.requestTotal // 0), completed:(.requestCompleted // 0),
+          failed:(.requestFailed // 0), running:(.requestInProgress // 0)})' \
+    id name status total completed failed running
+}
+
+# Assemble the batch request array from --input-file (a JSON array of inputs;
+# `-` reads stdin) and repeatable --input values — file items first, then flag
+# values. Assigns the top-level JSON array of {"input":…} objects to the
+# nameref in $1. Runs in the main shell so rp::usage exits the caller; never
+# call it inside command substitution. The add verb wraps the array into the
+# API's {"requests":[…]} envelope; create POSTs it bare.
+_serverless_batch_inputs() {
+  local -n inputs_out="$1"
+  local file input items line wrapped
+  file="$(rp::args_get input-file)"
+  input="$(rp::args_get input)"
+  items="[]"
+  if [[ -n "$file" ]]; then
+    if [[ "$file" == - ]]; then
+      items="$(cat)"
+    else
+      [[ -r "$file" ]] || rp::usage "cannot read --input-file '$file'"
+      items="$(<"$file")"
+    fi
+    printf '%s' "$items" | jq -e 'type == "array"' >/dev/null 2>&1 ||
+      rp::usage "--input-file must hold a JSON array of request inputs"
+    items="$(printf '%s' "$items" | jq -c 'map({input: .})')" ||
+      rp::usage "--input-file is not valid JSON"
+  fi
+  local extra="[]"
+  local -a elems=()
+  if [[ -n "$input" ]]; then
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      wrapped="$(printf '%s' "$line" | jq -c '{input: .}' 2>/dev/null)" ||
+        rp::usage "--input is not valid JSON: $line"
+      elems+=("$wrapped")
+    done <<<"$input"
+    if ((${#elems[@]})); then
+      extra="$(printf '%s\n' "${elems[@]}" | jq -sc .)"
+    fi
+  fi
+  # shellcheck disable=SC2034 # nameref assignment lands in the caller's variable
+  inputs_out="$(printf '%s %s' "$items" "$extra" | jq -sc '.[0] + .[1]')" ||
+    rp::usage "could not assemble batch requests from --input-file/--input"
+}
+
+# Create a new DRAFT batch on an endpoint. The request body is a top-level JSON
+# array (empty without --input/--input-file). Prints the new batch id on stdout
+# (confirmation on stderr), so `rp serverless batch create e1 …` composes into
+# add/finalize.
+_serverless_batch_create() {
+  local ep
+  rp::require_pos ep "usage: rp serverless batch create <endpoint> [--input '<json>']… [--input-file <path|->] [--json]"
+  rp::require_id ep "$ep" "endpoint id"
+  local body
+  _serverless_batch_inputs body
+  local res id
+  res="$(rp::http POST "/serverless/$ep/batch" "$body")"
+  id="$(printf '%s' "$res" | jq -r '.id // empty')"
+  [[ -n "$id" ]] || rp::die "batch create returned no id: $res"
+  rp::ok "created batch: $id (DRAFT — finalize to start processing)"
+  printf '%s\n' "$id"
+}
+
+# Append requests to a DRAFT batch. The API wraps the array as
+# {"requests":[…]} and caps one call at RP_BATCH_APPEND_MAX — the guard fires
+# before the POST so an oversized batch is split by the user (each add is a
+# visible billing/progress boundary), never silently chunked.
+_serverless_batch_add() {
+  local ep batch
+  rp::require_pos ep "usage: rp serverless batch add <endpoint> <batchId> [--input '<json>']… [--input-file <path|->]"
+  rp::require_id ep "$ep" "endpoint id"
+  rp::require_pos_at 1 batch "usage: rp serverless batch add <endpoint> <batchId> [--input '<json>']… [--input-file <path|->]"
+  rp::require_id batch "$batch" "batch id"
+  local arr
+  _serverless_batch_inputs arr
+  local body
+  body="$(printf '%s' "$arr" | jq -c '{requests: .}')" || rp::usage "could not wrap batch requests"
+  local size
+  size="$(printf '%s' "$body" | wc -c | tr -d ' ')"
+  ((size <= RP_BATCH_APPEND_MAX)) ||
+    rp::usage "batch request payload is $((size / 1048576)) MiB — the API caps one add call at 10 MiB; split into multiple 'rp serverless batch add' calls"
+  local res
+  res="$(rp::http POST "/serverless/$ep/batch/$batch/requests" "$body")"
+  local added
+  added="$(printf '%s' "$res" | jq -r '.added // empty')"
+  rp::ok "added ${added:-} request(s) to batch $batch"
+}
+
+# Shared tail for the single-batch mutation verbs: both positionals, POST a
+# sub-path, confirm on stderr. Finalize locks a DRAFT batch (the only door to
+# execution); cancel drops queued requests unbilled and lets in-flight drain.
+_serverless_batch_simple_post() {
+  local ep batch path label
+  ep="${1}" batch="${2}" path="${3}" label="${4}"
+  rp::require_id ep "$ep" "endpoint id"
+  rp::require_id batch "$batch" "batch id"
+  rp::http POST "/serverless/$ep/batch/$batch/$path" '{}' >/dev/null
+  rp::ok "$label batch $batch"
+}
+
+_serverless_batch_finalize() {
+  local ep batch
+  rp::require_pos ep "usage: rp serverless batch finalize <endpoint> <batchId>"
+  rp::require_pos_at 1 batch "usage: rp serverless batch finalize <endpoint> <batchId>"
+  _serverless_batch_simple_post "$ep" "$batch" "finalize" "finalized"
+}
+
+_serverless_batch_cancel() {
+  local ep batch
+  rp::require_pos ep "usage: rp serverless batch cancel <endpoint> <batchId>"
+  rp::require_pos_at 1 batch "usage: rp serverless batch cancel <endpoint> <batchId>"
+  _serverless_batch_simple_post "$ep" "$batch" "cancel" "cancelled"
+}
+
+# Remove one child request from a DRAFT batch (impossible after finalize).
+_serverless_batch_remove() {
+  local ep batch req
+  rp::require_pos ep "usage: rp serverless batch remove <endpoint> <batchId> <requestId>"
+  rp::require_pos_at 1 batch "usage: rp serverless batch remove <endpoint> <batchId> <requestId>"
+  rp::require_pos_at 2 req "usage: rp serverless batch remove <endpoint> <batchId> <requestId>"
+  rp::require_id ep "$ep" "endpoint id"
+  rp::require_id batch "$batch" "batch id"
+  rp::require_id req "$req" "request id"
+  rp::http DELETE "/serverless/$ep/batch/$batch/requests/$req" '{}' >/dev/null
+  rp::ok "removed request $req from batch $batch"
+}
+
+# One-shot or --wait batch summary. The API has no RUNNING/COMPLETED status —
+# progress is the counts, and the batch is finished when completed + failed
+# equals total. Human mode: headline on stderr; --json: raw envelope on stdout.
+# --wait owns the fetching (one GET per poll); the final headline is the last
+# progress line, so it is not printed twice.
+_serverless_batch_get() {
+  local ep batch
+  rp::require_pos ep "usage: rp serverless batch get <endpoint> <batchId> [--wait] [--interval <s>] [--timeout <s>] [--json]"
+  rp::require_pos_at 1 batch "usage: rp serverless batch get <endpoint> <batchId> [--wait] [--interval <s>] [--timeout <s>] [--json]"
+  rp::require_id ep "$ep" "endpoint id"
+  rp::require_id batch "$batch" "batch id"
+  local body
+  if rp::args_has wait; then
+    local wrc=0
+    _serverless_batch_poll "$ep" "$batch" body || wrc=$?
+    rp::args_has json && printf '%s\n' "$body"
+    return "$wrc"
+  fi
+  body="$(rp::http GET "/serverless/$ep/batch/$batch")"
+  rp::emit_json_or "$body" _serverless_batch_headline "$body"
+}
+
+# Poll a batch until its counts reconcile (or a terminal state arrives).
+# Progress headlines go to stderr only when the done-count changes, so --json
+# stdout and pipes stay clean. No default cap — batches are multi-hour by
+# design; --timeout <s> adds one, and expiry dies non-zero. The exit mapping
+# is the command's: 0 on completion (request failures are data, not failure),
+# 1 on batch-level FAILED/CANCELLED.
+_serverless_batch_poll() {
+  local ep="$1" batch="$2"
+  local -n poll_body="$3"
+  local interval timeout deadline last_done=-1 done_now
+  interval="$(rp::args_get_uint interval 5)"
+  timeout="$(rp::args_get_uint timeout)"
+  deadline=0
+  ((timeout > 0)) && deadline=$((SECONDS + timeout))
+  while :; do
+    poll_body="$(rp::http GET "/serverless/$ep/batch/$batch")"
+    done_now="$(printf '%s' "$poll_body" | jq -r '((.requestCompleted // 0) + (.requestFailed // 0))')"
+    [[ "$done_now" != "$last_done" ]] && {
+      _serverless_batch_headline "$poll_body"
+      last_done="$done_now"
+    }
+    if [[ "$(printf '%s' "$poll_body" | jq -r '.status // ""')" == FAILED || "$(printf '%s' "$poll_body" | jq -r '.status // ""')" == CANCELLED ]]; then
+      return 1
+    fi
+    printf '%s' "$poll_body" | jq -e '((.requestCompleted // 0) + (.requestFailed // 0)) >= (.requestTotal // 0)' >/dev/null && return 0
+    ((deadline > 0)) && ((SECONDS >= deadline)) &&
+      rp::die "wait timed out after ${timeout}s — batch still processing (rerun the same command to resume)"
+    ((interval > 0)) && sleep "$interval"
+  done
+}
+
+_serverless_batch_headline() {
+  rp::info "$(printf '%s' "$1" | jq -r '"batch \(.id // "?") [\(.status // "?")]  done=\(.requestCompleted // 0)/\(.requestTotal // 0) inFlight=\(.requestInProgress // 0) failed=\(.requestFailed // 0)"')"
+}
+
+# Paginated child-request listing. Pagination is SERVER-side here (offset/limit
+# query params), so --limit/--cursor forward to the API — the contract
+# lib/paginate.sh names for when server pagination lands. --status filters
+# client-side (the API documents no status param): --status completed is the
+# "give me my results" view.
+_serverless_batch_requests() {
+  local ep batch status q
+  rp::require_pos ep "usage: rp serverless batch requests <endpoint> <batchId> [--status completed|failed|in-progress|queued] [--limit N] [--cursor N] [--json]"
+  rp::require_pos_at 1 batch "usage: rp serverless batch requests <endpoint> <batchId> [--status completed|failed|in-progress|queued] [--limit N] [--cursor N] [--json]"
+  rp::require_id ep "$ep" "endpoint id"
+  rp::require_id batch "$batch" "batch id"
+  local limit cursor
+  limit="$(rp::args_get_uint limit)"
+  cursor="$(rp::args_get_uint cursor)"
+  q="$(rp::query_params offset "$cursor" limit "$limit")"
+  status="$(rp::args_get status)"
+  case "$status" in
+  '' | completed | failed | in-progress | queued) ;;
+  *) rp::usage "invalid --status '$status' (expected completed|failed|in-progress|queued)" ;;
+  esac
+  local body
+  body="$(rp::http GET "/serverless/$ep/batch/$batch/requests$q")"
+  if ! rp::args_has json; then
+    local arr
+    arr="$(rp::unwrap requests "$body")"
+    [[ -n "$status" ]] &&
+      arr="$(printf '%s' "$arr" | jq -c --arg s "$status" 'map(select(.status == ($s | ascii_upcase | sub("-", "_"; "g"))))')"
+    rp::table "$arr" id status error
+    return
+  fi
+  printf '%s\n' "$body"
+}
+
+# Update batch attributes — display name only today (the cluster-rename
+# precedent: single mutable field, verb reads as rename).
+_serverless_batch_update() {
+  local ep batch name
+  rp::require_pos ep "usage: rp serverless batch update <endpoint> <batchId> --name <n>"
+  rp::require_pos_at 1 batch "usage: rp serverless batch update <endpoint> <batchId> --name <n>"
+  rp::require_id ep "$ep" "endpoint id"
+  rp::require_id batch "$batch" "batch id"
+  name="$(rp::args_get name)"
+  [[ -n "$name" ]] || rp::usage "rp serverless batch update needs --name <n>"
+  local obj res
+  obj="$(jq -cn --arg name "$name" '{name: $name}')"
+  res="$(rp::http PUT "/serverless/$ep/batch/$batch" "$obj")"
+  rp::ok "renamed batch $batch to '$name'"
+}
+
 rp::cmd_serverless() {
   local verb="${1:-help}"
   shift || true
+  if [[ "$verb" == "batch" ]]; then
+    _serverless_batch "$@"
+    return
+  fi
   rp::args_parse "$@"
   rp::args_has help && verb=help
   case "$verb" in
@@ -921,10 +1383,46 @@ Usage: rp serverless <verb> [flags]
   workers <id>        live worker ids/states/placement (+ status histogram, --json for full envelope)
   releases <id>       release history newest-first (+ rollout summary; per-release diff column)
   logs <id> --worker <id>   live worker log stream (--worker id from `workers`; same source/tail/since/last-event-id flags)
-  status <id> <jobId>     data-plane job status: GET /{id}/status/{jobId} (exit 0 COMPLETED, 1 FAILED|CANCELLED|TIMED_OUT)
-  health <id>          data-plane health: GET /{id}/health (worker + job counts; --json for full envelope)
+   status <id> <jobId>     data-plane job status: GET /{id}/status/{jobId} (exit 0 COMPLETED, 1 FAILED|CANCELLED|TIMED_OUT)
+   health <id>          data-plane health: GET /{id}/health (worker + job counts; --json for full envelope)
+   batch <verb> <…>     endpoint-scoped bulk inference (beta): rp serverless batch --help
 EOF
     ;;
   *) rp::usage "unknown serverless verb: '$verb'" ;;
+  esac
+}
+
+# Sub-resource dispatcher: `rp serverless batch <verb> [args]`. Explicit verbs
+# only — a bare `rp serverless batch` prints the verb help, mirroring
+# `registry delegations`.
+_serverless_batch() {
+  local sub="${1:-help}"
+  shift || true
+  rp::args_parse "$@"
+  rp::args_has help && sub=help
+  case "$sub" in
+  list) _serverless_batch_list ;;
+  create) _serverless_batch_create ;;
+  add) _serverless_batch_add ;;
+  finalize) _serverless_batch_finalize ;;
+  cancel) _serverless_batch_cancel ;;
+  remove) _serverless_batch_remove ;;
+  get) _serverless_batch_get ;;
+  requests) _serverless_batch_requests ;;
+  update) _serverless_batch_update ;;
+  -h | --help | help)
+    cat <<'EOF'
+Usage: rp serverless batch <verb> [flags]   (beta)
+  list <endpoint>              batches for an endpoint, newest first (--json for raw)
+  create <endpoint> [--input '<json>']… [--input-file <path|->]   new DRAFT batch (id on stdout)
+  add <endpoint> <batchId> [--input '<json>']… [--input-file <path|->]   append requests (DRAFT only; 10 MiB per call)
+  remove <endpoint> <batchId> <requestId>   drop one request (DRAFT only)
+  finalize <endpoint> <batchId>   lock the batch — requests start processing only after this
+  cancel <endpoint> <batchId>     drop queued (unbilled) requests; in-flight ones finish and bill
+  requests <endpoint> <batchId> [--status completed|failed|in-progress|queued] [--limit N] [--cursor N]   child requests, server-paginated (--status completed = results view)
+  update <endpoint> <batchId> --name <n>    rename a batch
+EOF
+    ;;
+  *) rp::usage "unknown batch verb: '$sub' (see: rp serverless batch --help)" ;;
   esac
 }

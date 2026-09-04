@@ -11,6 +11,7 @@ rp serverless <verb> [flags]
 
 ## Commands
 
+- [`rp serverless batch`](serverless-batch.md) — Submit large sets of inference requests to an endpoint as one managed batch (beta).
 - [`rp serverless create`](serverless-create.md) — Create a serverless endpoint from a template or a Hub listing.
 - [`rp serverless list`](serverless-list.md) — List your endpoints: id, name, worker bounds and idle timeout.
 - [`rp serverless get`](serverless-get.md) — Show one endpoint's full record and scaling config.

@@ -5,6 +5,7 @@
 ### Added
 
 - Make rp stock gpu cloud- and datacentre-aware
+- Add batch sub-resource with 9 verbs
 
 ## [1.4.0] - 2026-08-27
 

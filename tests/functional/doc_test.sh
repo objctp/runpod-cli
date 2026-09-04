@@ -104,3 +104,23 @@ function test_registry_delegations_subverbs_documented() {
     _assert_headers "$body"
   done
 }
+
+# The serverless batch group follows the registry delegations convention: a
+# group guard before the `case "$sub" in` block, so rp::doc_subverbs finds the
+# sub-verbs and `rp doc serverless batch <verb>` resolves per verb.
+function test_serverless_batch_subverbs_documented() {
+  local f="$RP_ROOT/commands/serverless.sh" sv body first
+  local subs
+  subs="$(rp::doc_subverbs "$f" batch)"
+  assert_contains "list" "$subs"
+  assert_contains "finalize" "$subs"
+  assert_contains "requests" "$subs"
+  for sv in $subs; do
+    body="$(rp::doc_verb_marker "$f" "batch $sv")"
+    assert_not_empty "$body" || continue
+    first="$(printf '%s\n' "$body" | awk 'NF{print;exit}')"
+    _assert_summary_shape "$first"
+    assert_contains "Usage:" "$body"
+    _assert_headers "$body"
+  done
+}

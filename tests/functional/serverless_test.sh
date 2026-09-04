@@ -874,3 +874,627 @@ function test_should_route_status_and_health_verbs() {
   rp::http_api() { :; }
   rm -f "$cap"
 }
+
+# --- batch sub-resource (control-plane REST) --------------------------------
+
+# Bare `batch` prints the verb help; each verb routes to its control-plane
+# method+path under /serverless/{ep}/batch.
+function test_should_route_batch_verbs_on_control_plane() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    case "$1 $2" in
+    'GET /serverless/e1/batch') printf '{"batches":[{"id":"b1","status":"FINALIZED","requestTotal":10,"requestInProgress":2,"requestCompleted":7,"requestFailed":1}]}' ;;
+    'GET /serverless/e1/batch/b1') printf '{"id":"b1","status":"FINALIZED","requestTotal":10,"requestInProgress":2,"requestCompleted":7,"requestFailed":1}' ;;
+    'POST /serverless/e1/batch') printf '{"id":"b1","status":"DRAFT"}' ;;
+    'POST /serverless/e1/batch/b1/requests') printf '{"id":"b1"}' ;;
+    'POST /serverless/e1/batch/b1/finalize') printf '{"id":"b1","status":"FINALIZED"}' ;;
+    'POST /serverless/e1/batch/b1/cancel') printf '{"id":"b1","status":"CANCELLED"}' ;;
+    'PUT /serverless/e1/batch/b1') printf '{"id":"b1","name":"renamed"}' ;;
+    'DELETE /serverless/e1/batch/b1/requests/r1') printf '{"id":"r1"}' ;;
+    *) printf '{}' ;;
+    esac
+  }
+  rp::cmd_serverless batch >/tmp/b_help 2>/dev/null
+  assert_contains "Usage: rp serverless batch" "$(<"/tmp/b_help")"
+  rp::cmd_serverless batch list e1 >/dev/null 2>&1
+  assert_contains "GET /serverless/e1/batch" "$(<"$cap")"
+  rp::cmd_serverless batch get e1 b1 >/dev/null 2>&1
+  assert_contains "GET /serverless/e1/batch/b1" "$(<"$cap")"
+  rp::cmd_serverless batch create e1 >/dev/null 2>&1
+  assert_contains "POST /serverless/e1/batch" "$(<"$cap")"
+  rp::cmd_serverless batch add e1 b1 --input '{"t":1}' >/dev/null 2>&1
+  assert_contains "POST /serverless/e1/batch/b1/requests" "$(<"$cap")"
+  rp::cmd_serverless batch finalize e1 b1 >/dev/null 2>&1
+  assert_contains "POST /serverless/e1/batch/b1/finalize" "$(<"$cap")"
+  rp::cmd_serverless batch cancel e1 b1 >/dev/null 2>&1
+  assert_contains "POST /serverless/e1/batch/b1/cancel" "$(<"$cap")"
+  rp::cmd_serverless batch update e1 b1 --name renamed >/dev/null 2>&1
+  assert_contains "PUT /serverless/e1/batch/b1" "$(<"$cap")"
+  rp::cmd_serverless batch remove e1 b1 r1 >/dev/null 2>&1
+  assert_contains "DELETE /serverless/e1/batch/b1/requests/r1" "$(<"$cap")"
+  rp::http() { :; }
+  rm -f "$cap" /tmp/b_help
+}
+
+# create sends a top-level array: --input values become {input} elements, and
+# with no input flags the body is [].
+function test_should_send_top_level_array_on_batch_create() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$cap"
+    printf '{"id":"b1","status":"DRAFT"}'
+  }
+  rp::args_parse e1 --input '{"t":1}' --input '{"t":2}'
+  _serverless_batch_create 2>/dev/null
+  assert_equals '2' "$(jq -r 'length' "$cap")"
+  assert_equals '1' "$(jq -r '.[0].input.t' "$cap")"
+  rp::args_parse e1
+  _serverless_batch_create 2>/dev/null
+  assert_equals '0' "$(jq -r 'length' "$cap")"
+  rp::http() { :; }
+  rm -f "$cap"
+}
+
+# add wraps into the {"requests":[...]} envelope the append endpoint expects.
+function test_should_wrap_requests_envelope_on_batch_add() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$cap"
+    printf '{"id":"b1"}'
+  }
+  rp::args_parse e1 b1 --input '{"t":1}'
+  _serverless_batch_add 2>/dev/null
+  assert_equals '1' "$(jq -r '.requests | length' "$cap")"
+  assert_equals '1' "$(jq -r '.requests[0].input.t' "$cap")"
+  rp::http() { :; }
+  rm -f "$cap"
+}
+
+# --input-file may hold an array of inputs; combined with --input the file
+# comes first and every element lands as {input: ...}.
+function test_should_merge_input_file_first_on_batch_add() {
+  local infile cap
+  infile="$(mktemp)"
+  cap="$(mktemp)"
+  printf '[{"from":"file"}]' >"$infile"
+  rp::http() {
+    printf '%s' "${3:-}" >"$cap"
+    printf '{"id":"b1"}'
+  }
+  rp::args_parse e1 b1 --input-file "$infile" --input '{"from":"flag"}'
+  _serverless_batch_add 2>/dev/null
+  assert_equals '2' "$(jq -r '.requests | length' "$cap")"
+  assert_equals 'file' "$(jq -r '.requests[0].input.from' "$cap")"
+  assert_equals 'flag' "$(jq -r '.requests[1].input.from' "$cap")"
+  rp::http() { :; }
+  rm -f "$infile" "$cap"
+}
+
+# Invalid JSON in --input or a non-array --input-file dies locally (exit 2),
+# before any HTTP call.
+function test_should_exit_usage_on_invalid_batch_inputs() {
+  rp::http() { :; }
+  rp::args_parse e1 --input 'not-json{'
+  (_serverless_batch_create >/dev/null 2>&1)
+  assert_exit_code 2
+  printf '{"not":"an-array"}' >/tmp/b_file
+  rp::args_parse e1 b1 --input-file /tmp/b_file
+  (_serverless_batch_add >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+  rm -f /tmp/b_file
+}
+
+# A payload past the 10 MiB append cap errors before the POST.
+function test_should_error_before_post_when_batch_add_exceeds_10mib() {
+  local marker infile pad
+  marker="$(mktemp)"
+  infile="$(mktemp)"
+  pad="$(mktemp)"
+  head -c 6000000 /dev/zero | tr '\0' 'x' >"$pad"
+  jq -c -n --rawfile p "$pad" '[{input:{pad:$p}},{input:{pad:$p}}]' >"$infile"
+  rp::http() {
+    printf 'POSTED' >>"$marker"
+    printf '{"id":"b1"}'
+  }
+  rp::args_parse e1 b1 --input-file "$infile"
+  (_serverless_batch_add >/dev/null 2>&1)
+  assert_exit_code 2
+  assert_equals "" "$(cat "$marker")"
+  rp::http() { :; }
+  rm -f "$marker" "$infile" "$pad"
+}
+
+# Missing operands exit usage: list/get/add/finalize/cancel/update/remove and
+# create all require their positional ids (create: the endpoint).
+function test_should_exit_usage_when_batch_operands_missing() {
+  rp::http() { :; }
+  local verb
+  for verb in list get create; do
+    (rp::cmd_serverless batch "$verb" >/dev/null 2>&1)
+    assert_exit_code 2 "batch $verb with no endpoint should exit 2"
+  done
+  for verb in add finalize cancel update; do
+    (rp::cmd_serverless batch "$verb" e1 >/dev/null 2>&1)
+    assert_exit_code 2 "batch $verb without a batch id should exit 2"
+  done
+  (rp::cmd_serverless batch remove e1 b1 >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+# Human list renders a table from the batches envelope; --json passes the raw
+# envelope through.
+function test_should_render_batch_list_table_and_raw_json() {
+  rp::http() {
+    printf '{"batches":[{"id":"b1","name":"nightly","status":"FINALIZED","requestTotal":10,"requestInProgress":2,"requestCompleted":7,"requestFailed":1}]}'
+  }
+  local out
+  out="$(rp::cmd_serverless batch list e1 2>/dev/null)"
+  assert_contains "b1" "$out"
+  assert_contains "FINALIZED" "$out"
+  out="$(rp::cmd_serverless batch list e1 --json 2>/dev/null)"
+  assert_contains '"batches"' "$out"
+  rp::http() { :; }
+}
+
+# get prints the progress headline (stderr for humans, empty under --json).
+function test_should_print_progress_headline_on_batch_get() {
+  rp::http() { printf '{"id":"b1","status":"FINALIZED","requestTotal":1000,"requestInProgress":8,"requestCompleted":244,"requestFailed":6}'; }
+  local out err
+  err="$(rp::cmd_serverless batch get e1 b1 2>&1 >/dev/null)"
+  assert_contains "244/1000" "$err"
+  assert_contains "failed=6" "$err"
+  out="$(rp::cmd_serverless batch get e1 b1 --json 2>/dev/null)"
+  assert_contains '"requestTotal":1000' "$out"
+  rp::http() { :; }
+}
+
+# get --wait polls until completed+failed equals the total; the double returns
+# an in-flight summary then a reconciled one, and the final exit is 0.
+function test_should_poll_until_counts_reconcile_on_batch_get_wait() {
+  local cc
+  cc="$(mktemp)"
+  printf '0' >"$cc"
+  rp::http() {
+    local c
+    c="$(cat "$cc")"
+    c=$((c + 1))
+    printf '%s' "$c" >"$cc"
+    if ((c == 1)); then
+      printf '{"id":"b1","status":"FINALIZED","requestTotal":10,"requestInProgress":2,"requestCompleted":7,"requestFailed":1}'
+    else
+      printf '{"id":"b1","status":"FINALIZED","requestTotal":10,"requestInProgress":0,"requestCompleted":10,"requestFailed":0}'
+    fi
+  }
+  local rc
+  rp::args_parse e1 b1 --wait --interval 0
+  _serverless_batch_get >/dev/null 2>&1
+  rc=$?
+  assert_equals 0 "$rc"
+  assert_equals 2 "$(cat "$cc")"
+  rp::http() { :; }
+  rm -f "$cc"
+}
+
+# get --wait exits 1 when the batch itself reaches a terminal failure state.
+function test_should_exit_1_on_terminal_batch_state_in_wait() {
+  local cc
+  cc="$(mktemp)"
+  printf '0' >"$cc"
+  rp::http() {
+    local c
+    c="$(cat "$cc")"
+    c=$((c + 1))
+    printf '%s' "$c" >"$cc"
+    if ((c == 1)); then
+      printf '{"id":"b1","status":"FINALIZED","requestTotal":10,"requestInProgress":2,"requestCompleted":7,"requestFailed":1}'
+    else
+      printf '{"id":"b1","status":"CANCELLED","requestTotal":10,"requestInProgress":1,"requestCompleted":7,"requestFailed":1}'
+    fi
+  }
+  local rc
+  rp::args_parse e1 b1 --wait --interval 0
+  (_serverless_batch_get >/dev/null 2>&1)
+  rc=$?
+  assert_equals 1 "$rc"
+  rp::http() { :; }
+  rm -f "$cc"
+}
+
+# requests pages through child requests; --status filters client-side, and
+# offset/limit compose onto the query string.
+function test_should_page_and_filter_batch_requests() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    printf '{"requests":[{"id":"r1","status":"COMPLETED","output":{"ok":true}},{"id":"r2","status":"FAILED","error":"boom"}],"total":2,"offset":0,"limit":50,"hasMore":false}'
+  }
+  local out
+  out="$(rp::cmd_serverless batch requests e1 b1 2>/dev/null)"
+  assert_contains "r1" "$out"
+  assert_contains "r2" "$out"
+  rp::cmd_serverless batch requests e1 b1 --status failed --cursor 10 --limit 5 >/dev/null 2>&1
+  assert_contains "offset=10" "$(<"$cap")"
+  assert_contains "limit=5" "$(<"$cap")"
+  out="$(rp::cmd_serverless batch requests e1 b1 --status failed 2>/dev/null)"
+  assert_contains "r2" "$out"
+  assert_not_contains "r1" "$out"
+  rp::http() { :; }
+  rm -f "$cap"
+}
+
+# create prints the new batch id on stdout and the confirmation on stderr.
+function test_should_print_batch_id_on_create_and_confirmation_on_stderr() {
+  rp::http() { printf '{"id":"b9","status":"DRAFT"}'; }
+  rp::args_parse e1
+  local out err
+  out="$(_serverless_batch_create 2>/tmp/b_err)"
+  err="$(cat /tmp/b_err)"
+  assert_equals "b9" "$out"
+  assert_contains "b9" "$err"
+  rp::http() { :; }
+  rm -f /tmp/b_err
+}
+
+# ---------------------------------------------------------------------------
+# Batch sub-resource (BETA): endpoint-scoped bulk inference on the control plane.
+
+# rp serverless batch list e1 — control-plane GET /serverless/e1/batch.
+function test_should_route_batch_list_to_endpoint_scoped_get() {
+  local cap out
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    printf '{"batches":[{"id":"b1","status":"FINALIZED","requestTotal":10,"requestCompleted":4,"requestFailed":1,"requestInProgress":2}]}'
+  }
+  out="$(rp::cmd_serverless batch list e1 2>/dev/null)"
+  assert_equals "GET /serverless/e1/batch" "$(<"$cap")"
+  assert_contains "b1" "$out"
+  rp::http() { :; }
+  rm -f "$cap"
+}
+
+# Bare `rp serverless batch` prints the verb help (the registry delegations
+# convention: explicit verbs only, no implicit list).
+function test_should_show_batch_help_when_bare_batch_given() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::cmd_serverless batch >"$tmp" 2>/dev/null
+  assert_contains "Usage: rp serverless batch" "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
+# rp serverless batch create e1 with no input flags — POSTs a top-level empty
+# array and prints the new batch id on stdout.
+function test_should_post_empty_array_on_bare_batch_create() {
+  local cap_f body_f out
+  cap_f="$(mktemp)"
+  body_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap_f"
+    printf '%s' "${3:-}" >"$body_f"
+    printf '{"id":"b-new","status":"DRAFT"}'
+  }
+  out="$(rp::cmd_serverless batch create e1 2>/dev/null)"
+  assert_equals "POST /serverless/e1/batch" "$(<"$cap_f")"
+  assert_equals "[]" "$(<"$body_f")"
+  assert_equals "b-new" "$out"
+  rp::http() { :; }
+  rm -f "$cap_f" "$body_f"
+}
+
+# Each repeatable --input becomes one {"input":...} element of the array.
+function test_should_wrap_repeatable_inputs_into_array_on_create() {
+  local body_f
+  body_f="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body_f"
+    printf '{"id":"b-new","status":"DRAFT"}'
+  }
+  rp::cmd_serverless batch create e1 --input '{"text":"a"}' --input '{"text":"b"}' >/dev/null 2>&1
+  assert_equals '2' "$(jq 'length' "$body_f")"
+  assert_equals 'a' "$(jq -r '.[0].input.text' "$body_f")"
+  assert_equals 'b' "$(jq -r '.[1].input.text' "$body_f")"
+  rp::http() { :; }
+  rm -f "$body_f"
+}
+
+# rp serverless batch add e1 b1 --input … — wraps into the {"requests":[…]}
+# envelope the append endpoint expects.
+function test_should_wrap_inputs_in_requests_envelope_on_add() {
+  local body_f
+  body_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$body_f.path"
+    printf '%s' "${3:-}" >"$body_f"
+    printf '{"added":2}'
+  }
+  rp::cmd_serverless batch add e1 b1 --input '{"text":"a"}' --input '{"text":"b"}' >/dev/null 2>&1
+  assert_equals "POST /serverless/e1/batch/b1/requests" "$(<"$body_f.path")"
+  assert_equals '2' "$(jq '.requests | length' "$body_f")"
+  assert_equals 'a' "$(jq -r '.requests[0].input.text' "$body_f")"
+  rp::http() { :; }
+  rm -f "$body_f" "$body_f.path"
+}
+
+# --input-file (array of inputs) merges before repeatable --input values.
+function test_should_merge_input_file_before_repeatable_inputs_on_add() {
+  local body_f infile
+  body_f="$(mktemp)"
+  infile="$(mktemp)"
+  printf '[{"text":"f1"},{"text":"f2"}]' >"$infile"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body_f"
+    printf '{"added":3}'
+  }
+  rp::cmd_serverless batch add e1 b1 --input-file "$infile" --input '{"text":"i1"}' >/dev/null 2>&1
+  assert_equals '3' "$(jq '.requests | length' "$body_f")"
+  assert_equals 'f1' "$(jq -r '.requests[0].input.text' "$body_f")"
+  assert_equals 'i1' "$(jq -r '.requests[2].input.text' "$body_f")"
+  rp::http() { :; }
+  rm -f "$body_f" "$infile"
+}
+
+# --input-file may be - (stdin), like rp serverless run --input-file -.
+function test_should_read_add_inputs_from_stdin_when_input_file_is_dash() {
+  local body_f
+  body_f="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body_f"
+    printf '{"added":1}'
+  }
+  printf '[{"text":"s"}]' | rp::cmd_serverless batch add e1 b1 --input-file - >/dev/null 2>&1
+  assert_equals '1' "$(jq '.requests | length' "$body_f")"
+  assert_equals 's' "$(jq -r '.requests[0].input.text' "$body_f")"
+  rp::http() { :; }
+  rm -f "$body_f"
+}
+
+# Invalid --input JSON dies locally (exit 2) before any POST.
+function test_should_exit_usage_before_post_when_add_input_is_invalid_json() {
+  local cap_f
+  cap_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >>"$cap_f"
+    printf '{}'
+  }
+  (rp::cmd_serverless batch add e1 b1 --input 'not-json{' >/dev/null 2>&1)
+  assert_exit_code 2
+  assert_equals "" "$(<"$cap_f")"
+  rp::http() { :; }
+  rm -f "$cap_f"
+}
+
+# A payload over the API's 10 MiB append limit dies locally, before the POST,
+# with guidance to split into multiple add calls.
+function test_should_exit_usage_before_post_when_add_payload_exceeds_10mib() {
+  local cap_f big infile
+  cap_f="$(mktemp)"
+  big="$(printf 'x%.0s' $(seq 1 2000000))" # ~2MB per input, three inputs > 6MB… padded below
+  infile="$(mktemp)"
+  jq -cn --arg pad "$big" '[{input:{pad:$pad}},{input:{pad:$pad}},{input:{pad:$pad}},{input:{pad:$pad}},{input:{pad:$pad}},{input:{pad:$pad}}]' >"$infile"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >>"$cap_f"
+    printf '{}'
+  }
+  (rp::cmd_serverless batch add e1 b1 --input-file "$infile" >/dev/null 2>&1)
+  assert_exit_code 2
+  assert_equals "" "$(<"$cap_f")"
+  rp::http() { :; }
+  rm -f "$cap_f" "$infile"
+}
+
+# finalize locks a DRAFT batch: POST /serverless/{ep}/batch/{id}/finalize.
+function test_should_post_finalize_path_on_finalize() {
+  local cap_f
+  cap_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap_f"
+    printf '{"id":"b1","status":"FINALIZED"}'
+  }
+  rp::cmd_serverless batch finalize e1 b1 >/dev/null 2>&1
+  assert_equals "POST /serverless/e1/batch/b1/finalize" "$(<"$cap_f")"
+  rp::http() { :; }
+  rm -f "$cap_f"
+}
+
+# cancel stops a batch: POST /serverless/{ep}/batch/{id}/cancel (no prompt,
+# per house style).
+function test_should_post_cancel_path_on_cancel() {
+  local cap_f
+  cap_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap_f"
+    printf '{"id":"b1","status":"CANCELLED"}'
+  }
+  rp::cmd_serverless batch cancel e1 b1 >/dev/null 2>&1
+  assert_equals "POST /serverless/e1/batch/b1/cancel" "$(<"$cap_f")"
+  rp::http() { :; }
+  rm -f "$cap_f"
+}
+
+# remove drops one request from a DRAFT batch: DELETE .../requests/{reqId}.
+function test_should_delete_request_path_on_remove() {
+  local cap_f
+  cap_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap_f"
+    printf '{}'
+  }
+  rp::cmd_serverless batch remove e1 b1 r1 >/dev/null 2>&1
+  assert_equals "DELETE /serverless/e1/batch/b1/requests/r1" "$(<"$cap_f")"
+  rp::http() { :; }
+  rm -f "$cap_f"
+}
+
+# finalize requires both the endpoint id and the batch id.
+function test_should_exit_usage_when_finalize_missing_batch_id() {
+  rp::http() { :; }
+  (rp::cmd_serverless batch finalize e1 >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+# rp serverless batch get e1 b1 — GET summary; human mode prints a progress
+# headline to stderr (counts; completion inferred from completed+failed=total).
+function test_should_print_batch_summary_headline_on_get() {
+  local cap_f err
+  cap_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap_f"
+    printf '{"id":"b1","endpointId":"e1","status":"FINALIZED","requestTotal":1000,"requestInProgress":8,"requestCompleted":244,"requestFailed":6,"createdAt":1783584000000}'
+  }
+  rp::cmd_serverless batch get e1 b1 >/dev/null 2>/tmp/bget_err
+  err="$(cat /tmp/bget_err)"
+  assert_equals "GET /serverless/e1/batch/b1" "$(<"$cap_f")"
+  assert_contains "FINALIZED" "$err"
+  assert_contains "244/1000" "$err"
+  assert_contains "failed=6" "$err"
+  rp::http() { :; }
+  rm -f "$cap_f" /tmp/bget_err
+}
+
+# get --json emits the raw envelope verbatim and nothing on stderr.
+function test_should_emit_raw_envelope_on_batch_get_json() {
+  local envelope='{"id":"b1","status":"FINALIZED","requestTotal":1000,"requestCompleted":244,"requestFailed":6}'
+  rp::http() { printf '%s' "$envelope"; }
+  local out err
+  out="$(rp::cmd_serverless batch get e1 b1 --json 2>/tmp/bget_err)"
+  err="$(cat /tmp/bget_err)"
+  assert_equals "$envelope" "$out"
+  assert_equals "" "$err"
+  rp::http() { :; }
+  rm -f /tmp/bget_err
+}
+
+# rp serverless batch requests e1 b1 — server-paginated child listing:
+# GET /serverless/{ep}/batch/{id}/requests, table of id/status/error.
+function test_should_get_paginated_requests_path_and_table() {
+  local cap_f out
+  cap_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap_f"
+    printf '{"requests":[{"id":"r1","status":"COMPLETED","output":{"ok":true}},{"id":"r2","status":"FAILED","error":"timeout exceeded"}],"total":1000,"offset":0,"limit":50,"hasMore":true}'
+  }
+  out="$(rp::cmd_serverless batch requests e1 b1 2>/dev/null)"
+  assert_equals "GET /serverless/e1/batch/b1/requests" "$(<"$cap_f")"
+  assert_contains "r1" "$out"
+  assert_contains "COMPLETED" "$out"
+  assert_contains "timeout exceeded" "$out"
+  rp::http() { :; }
+  rm -f "$cap_f"
+}
+
+# --limit/--cursor forward as the server's limit/offset query params (the
+# contract lib/paginate.sh documents for when server pagination exists).
+function test_should_forward_limit_and_cursor_as_query_params_on_requests() {
+  local cap_f
+  cap_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap_f"
+    printf '{"requests":[],"total":0,"offset":50,"limit":25,"hasMore":false}'
+  }
+  rp::cmd_serverless batch requests e1 b1 --limit 25 --cursor 50 >/dev/null 2>&1
+  assert_equals "GET /serverless/e1/batch/b1/requests?offset=50&limit=25" "$(<"$cap_f")"
+  rp::http() { :; }
+  rm -f "$cap_f"
+}
+
+# --status filters client-side (the API documents no status query param), so
+# `--status completed` is the "give me my results" view.
+function test_should_filter_requests_by_status_client_side() {
+  local out
+  rp::http() {
+    printf '{"requests":[{"id":"r1","status":"COMPLETED"},{"id":"r2","status":"FAILED","error":"boom"}],"total":2,"offset":0,"limit":50,"hasMore":false}'
+  }
+  out="$(rp::cmd_serverless batch requests e1 b1 --status completed 2>/dev/null)"
+  assert_contains "r1" "$out"
+  assert_not_contains "r2" "$out"
+  rp::http() { :; }
+}
+
+# requests --json passes the raw envelope through.
+function test_should_emit_raw_envelope_on_batch_requests_json() {
+  local envelope='{"requests":[{"id":"r1","status":"COMPLETED"}],"total":1,"offset":0,"limit":50,"hasMore":false}'
+  rp::http() { printf '%s' "$envelope"; }
+  local out
+  out="$(rp::cmd_serverless batch requests e1 b1 --json 2>/dev/null)"
+  assert_equals "$envelope" "$out"
+  rp::http() { :; }
+}
+
+# update renames a batch: PUT /serverless/{ep}/batch/{id} with the name field.
+function test_should_put_name_on_batch_update() {
+  local cap_f body_f
+  cap_f="$(mktemp)"
+  body_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap_f"
+    printf '%s' "${3:-}" >"$body_f"
+    printf '{"id":"b1","name":"nightly-embeddings"}'
+  }
+  rp::cmd_serverless batch update e1 b1 --name nightly-embeddings >/dev/null 2>&1
+  assert_equals "PUT /serverless/e1/batch/b1" "$(<"$cap_f")"
+  assert_equals "nightly-embeddings" "$(jq -r '.name' "$body_f")"
+  rp::http() { :; }
+  rm -f "$cap_f" "$body_f"
+}
+
+# --wait polls until completed+failed equals total; progress headlines hit
+# stderr only when the done-count changes; exit 0 even with failed requests
+# (request failures are data, surfaced via `requests`).
+function test_should_wait_until_counts_reconcile_on_get_wait() {
+  local cap_f err rc
+  cap_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap_f"
+    local n
+    local n prev
+    prev="$(cat "$cap_f.cnt" 2>/dev/null || true)"
+    n=$((${prev:-0} + 1))
+    printf '%s' "$n" >"$cap_f.cnt"
+    if ((n < 2)); then
+      printf '{"id":"b1","status":"FINALIZED","requestTotal":10,"requestCompleted":4,"requestFailed":0,"requestInProgress":6}'
+    else
+      printf '{"id":"b1","status":"FINALIZED","requestTotal":10,"requestCompleted":9,"requestFailed":1,"requestInProgress":0}'
+    fi
+  }
+  rp::cmd_serverless batch get e1 b1 --wait --interval 0 >/dev/null 2>/tmp/bwait_err
+  rc=$?
+  err="$(cat /tmp/bwait_err)"
+  assert_equals 0 "$rc"
+  assert_contains "done=4/10" "$err"
+  assert_contains "done=9/10" "$err"
+  rp::http() { :; }
+  rm -f "$cap_f" "$cap_f.cnt" /tmp/bwait_err
+}
+
+# A batch that lands in terminal FAILED exits 1 (distinct from per-request
+# failures, which never move the batch's own status).
+function test_should_exit_1_when_wait_reaches_terminal_failed() {
+  rp::http() { printf '{"id":"b1","status":"FAILED","requestTotal":10,"requestCompleted":4,"requestFailed":6,"requestInProgress":0}'; }
+  (rp::cmd_serverless batch get e1 b1 --wait --interval 0 >/dev/null 2>&1)
+  assert_exit_code 1
+  rp::http() { :; }
+}
+
+# --timeout expires while the batch is still working → non-zero exit.
+function test_should_exit_nonzero_when_wait_times_out() {
+  rp::http() { printf '{"id":"b1","status":"FINALIZED","requestTotal":10,"requestCompleted":4,"requestFailed":0,"requestInProgress":6}'; }
+  (rp::cmd_serverless batch get e1 b1 --wait --interval 0 --timeout 1 >/dev/null 2>&1)
+  assert_exit_code 1
+  rp::http() { :; }
+}
+
+# --wait --json keeps stdout to a single final envelope (progress is stderr).
+function test_should_print_final_envelope_on_wait_json() {
+  local out
+  rp::http() { printf '{"id":"b1","status":"FINALIZED","requestTotal":2,"requestCompleted":2,"requestFailed":0,"requestInProgress":0}'; }
+  out="$(rp::cmd_serverless batch get e1 b1 --wait --interval 0 --json 2>/dev/null)"
+  assert_contains '"requestCompleted":2' "$out"
+  rp::http() { :; }
+}

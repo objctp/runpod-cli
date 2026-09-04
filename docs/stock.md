@@ -15,3 +15,6 @@ rp stock <verb> [flags]
 - [`rp stock gpu`](stock-gpu.md) — List GPU types with price and live availability.
 - [`rp stock cpus`](stock-cpus.md) — List reservable CPU instances with price and availability.
 - [`rp stock dc`](stock-dc.md) — List datacentres with GPU stock and S3-API support.
+- [`rp stock gpu`](stock-gpu.md) — List GPU types with price and live availability.
+- [`rp stock cpus`](stock-cpus.md) — List reservable CPU instances with price and availability.
+- [`rp stock dc`](stock-dc.md) — List datacentres with GPU stock and S3-API support.

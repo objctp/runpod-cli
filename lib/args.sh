@@ -13,8 +13,8 @@ RP_BOOL_FLAGS=(async json flashboot force help interruptible serverless sync ssh
 # `--env A=1 --env B=2` becomes "A=1\nB=2". Newline (not comma) is the separator
 # so a single value may itself contain commas (e.g. --env LIST=a,b). Add a flag
 # name here to make it repeatable; consumers iterate the joined value by line
-# (rp::env_to_json).
-RP_REPEAT_FLAGS=(env)
+# (rp::env_to_json, the batch verbs' --input collector).
+RP_REPEAT_FLAGS=(env input)
 
 _args_is_repeatable() {
   [[ " ${RP_REPEAT_FLAGS[*]} " == *" $1 "* ]]
@@ -22,6 +22,7 @@ _args_is_repeatable() {
 
 rp::args_parse() {
   RP_ARGS=()
+  RP_POSITIONALS=()
   local k
   while (($#)); do
     case "$1" in

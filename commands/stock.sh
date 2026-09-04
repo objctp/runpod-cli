@@ -539,6 +539,7 @@ _stock_dc() {
 
 rp::cmd_stock() {
   local verb="${1:-help}"
+  local requested="$verb"
   shift || true
   rp::args_parse "$@"
   rp::args_has help && verb=help
@@ -547,7 +548,26 @@ rp::cmd_stock() {
   cpus) _stock_cpus ;;
   dc) _stock_dc ;;
   -h | --help | help | "")
-    echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] [--hide <cols>] | rp stock cpus [--dc <id>] [--vcpu N] [--product POD|SERVERLESS|CLUSTER] [--compact] | rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>] [--region <r,…>]   (dc list via v2; --region takes EU/NA/AS… or full names; filters apply to both table and --json)"
+    case "$requested" in
+    gpu)
+      echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] [--hide <cols>]"
+      ;;
+    cpus)
+      echo "Usage: rp stock cpus [--dc <id>] [--vcpu N] [--product POD|SERVERLESS|CLUSTER] [--compact]"
+      ;;
+    dc)
+      echo "Usage: rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>] [--region <r,…>]   (dc list via v2; --region takes EU/NA/AS… or full names; filters apply to both table and --json)"
+      ;;
+    *)
+      echo "Usage: rp stock <verb> [flags]
+
+  gpu    rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] [--hide <cols>]
+  cpus   rp stock cpus [--dc <id>] [--vcpu N] [--product POD|SERVERLESS|CLUSTER] [--compact]
+  dc     rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>] [--region <r,…>]
+
+Run 'rp stock <verb> --help' for flags, or 'rp doc stock <verb>' for full docs."
+      ;;
+    esac
     ;;
   *) rp::usage "unknown stock verb: '$verb'" ;;
   esac

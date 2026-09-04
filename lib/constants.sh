@@ -51,6 +51,11 @@ RP_LAST_N_MIN=1
 # param — openapi.json GpuCountFilter declares `minimum: 1`.
 RP_STOCK_COUNT_MIN=1
 
+# API ceiling on one batch-append call (docs.runpod.io/serverless/batch-jobs:
+# "Request body size is limited to 10 MiB per call"), enforced in
+# `rp serverless batch add` before the POST.
+RP_BATCH_APPEND_MAX=$((10 * 1024 * 1024))
+
 ###
 ### :::: default sizes & paths :::: ############################################
 ###

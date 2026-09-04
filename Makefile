@@ -9,7 +9,7 @@ fmt:
 	shfmt -i 2 -w $$(find lib commands tests -name '*.sh') bin/rp install.sh
 
 lint:
-	shellcheck lib/*.sh commands/*.sh bin/rp install.sh
+	shellcheck lib/*.sh commands/*.sh bin/rp install.sh scripts/*.sh .githooks/*
 
 test:
 	bashunit tests
