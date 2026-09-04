@@ -99,6 +99,9 @@ rp::http_soft() {
 #   $2 - path: data-plane path (e.g. "/$id/runsync")
 #   $3 - body: optional JSON request body
 #   $4 - max_time: optional --max-time seconds (default 300)
+#   $5 - extra_headers: optional newline-separated "Name: value" request
+#        headers (e.g. the worker-affinity header on job submission); forwarded
+#        into the transport's header file, never argv
 # Returns:
 #   0 - success; prints the response to stdout
 #   1 - transport/HTTP error (dies)
@@ -107,7 +110,7 @@ rp::http_api() {
   rp::require_cmd curl
   local tmp
   _mktemp tmp
-  rp::api_call api "$1" "$2" "${3:-}" "${4:-$RP_TIMEOUT_API}" >"$tmp" || true
+  rp::api_call api "$1" "$2" "${3:-}" "${4:-$RP_TIMEOUT_API}" "${5:-}" >"$tmp" || true
   _rp_http_emit "$tmp" "$1" "$2"
 }
 

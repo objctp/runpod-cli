@@ -400,12 +400,55 @@ _serverless_update() {
   rp::emit_json_or "$res" rp::ok "updated endpoint $id"
 }
 
+# Build the X-Runpod-Worker-Id request-header line for `run` from --worker-id
+# and --affinity, assigning it to the nameref in $1 (empty when neither flag is
+# given). The header's value grammar is "[mode ]<worker-id>": a bare id is soft
+# affinity (best-effort — there is no literal "soft" token), while strict /
+# strict-resume prefix the id and are honoured by load-balanced endpoints only.
+# The header name lives here so callers can splice the output straight into
+# rp::http_api's extra-headers argument. Runs in the main shell (no command
+# substitution) so rp::usage exits the caller; the charset guard on the id also
+# rules out header injection.
+_serverless_worker_affinity_header() {
+  local -n affinity_out="$1"
+  local worker mode
+  worker="$(rp::args_get worker-id)"
+  mode="$(rp::args_get affinity)"
+  if [[ -z "$worker" ]]; then
+    [[ -z "$mode" ]] || rp::usage "--affinity requires --worker-id <workerId>"
+    # shellcheck disable=SC2034 # nameref assignment lands in the caller's variable
+    affinity_out=""
+    return 0
+  fi
+  rp::require_id worker "$worker" "worker id"
+  case "$mode" in
+  '' | soft)
+    # shellcheck disable=SC2034 # nameref assignment lands in the caller's variable
+    affinity_out="X-Runpod-Worker-Id: $worker"
+    ;;
+  strict)
+    # shellcheck disable=SC2034 # nameref assignment lands in the caller's variable
+    affinity_out="X-Runpod-Worker-Id: strict $worker"
+    ;;
+  strict-resume)
+    # shellcheck disable=SC2034 # nameref assignment lands in the caller's variable
+    affinity_out="X-Runpod-Worker-Id: strict-resume $worker"
+    ;;
+  *) rp::usage "invalid --affinity '$mode' (expected soft|strict|strict-resume)" ;;
+  esac
+}
+
 # Submit a job to a deployed endpoint on the data plane (RP_API_BASE). Default
 # is /runsync, which blocks until the job completes; --async queues via /run
 # and prints the job id. The payload is wrapped through jq's stdin (never
 # argv/--argjson) so a base64-heavy --input-file body stays out of `ps`.
+# --worker-id/--affinity pin the job to one worker on a load-balanced endpoint
+# via the X-Runpod-Worker-Id request header; the same header on the response
+# (captured by the transport in _RP_WORKER_ID) is surfaced in human mode so
+# the next request can be pinned.
 _serverless_run_human() {
   local id="$1" body="$2"
+  [[ -n "${_RP_WORKER_ID:-}" ]] && rp::info "served by worker: ${_RP_WORKER_ID}"
   if rp::args_has async; then
     local jobid
     jobid="$(printf '%s' "$body" | jq -r '.id // empty')"
@@ -419,7 +462,7 @@ _serverless_run_human() {
 
 _serverless_run() {
   local id
-  rp::require_pos id "usage: rp serverless run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]"
+  rp::require_pos id "usage: rp serverless run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--worker-id <id>] [--affinity soft|strict|strict-resume] [--timeout <s>] [--json]"
   rp::require_id id "$id" "endpoint id"
   rp::args_has sync && rp::args_has async && rp::usage "--sync and --async are mutually exclusive"
   local input file
@@ -437,11 +480,12 @@ _serverless_run() {
   [[ -n "$input" ]] || rp::usage "rp serverless run needs --input '<json>' or --input-file <path|->"
   local payload
   payload="$(printf '%s' "$input" | jq -c '{input: .}' 2>/dev/null)" || rp::usage "--input is not valid JSON"
-  local route=runsync timeout
+  local route=runsync timeout worker_header
   rp::args_has async && route=run
   timeout="$(rp::args_get_uint timeout 300)"
+  _serverless_worker_affinity_header worker_header
   local body
-  body="$(rp::http_api POST "/$id/$route" "$payload" "$timeout")"
+  body="$(rp::http_api POST "/$id/$route" "$payload" "$timeout" "$worker_header")"
   rp::emit_json_or "$body" _serverless_run_human "$id" "$body"
 }
 
@@ -814,7 +858,8 @@ _serverless_logs() {
 # Submit a job to a deployed endpoint on the data plane.
 #
 # Usage: rp serverless run <id> --input '<json>' | --input-file <path|->
-#                     [--sync|--async] [--timeout <s>] [--json]
+#                     [--sync|--async] [--worker-id <id>]
+#                     [--affinity soft|strict|strict-resume] [--timeout <s>] [--json]
 #
 # Arguments:
 #   <id>             endpoint id — from `rp serverless list`
@@ -824,6 +869,12 @@ _serverless_logs() {
 #   --input-file <path|->     read job input from a file, or - for stdin
 #   --sync                    block until the job completes (default)
 #   --async                   queue and print the job id instead of waiting
+#   --worker-id <id>          pin the job to one worker on a load-balanced
+#                             endpoint (X-Runpod-Worker-Id request header);
+#                             ids come from `rp serverless workers <id>` or
+#                             the response header of a previous run
+#   --affinity soft|strict|strict-resume
+#                             affinity mode for --worker-id (default: soft)
 #   --timeout <s>             request timeout in seconds (default: 300)
 #   --json                    print the raw API response
 #
@@ -831,12 +882,27 @@ _serverless_logs() {
 #   --input and --input-file are mutually exclusive, as are --sync and --async.
 #   The body is wrapped as { "input": <json> } and POSTed to the endpoint's
 #   runsync (or run, with --async) route on the data plane.
+#   --worker-id/--affinity apply to load-balanced endpoints and compose with
+#   --sync/--async alike. The header value is "[mode ]<id>": soft sends the
+#   bare id (best-effort — the job falls back to normal selection when the
+#   worker is unavailable; there is no literal "soft" token), strict sends
+#   "strict <id>" (only that worker; the request waits up to ~5 minutes and
+#   answers 400 `worker_timeout` on timeout, 404 `affinity_worker_gone` when
+#   the worker is gone), strict-resume sends "strict-resume <id>" (strict,
+#   plus it resumes a scaled-down worker before routing).
+#   --affinity without --worker-id is a usage error.
+#   Every load-balancer response also carries X-Runpod-Worker-Id; human mode
+#   prints it ("served by worker: …") so the next request can be pinned.
+#   Release the pin when done by omitting --worker-id, so the worker can go
+#   idle.
 #
 # Examples:
 # # Run a synchronous job with inline input
 # $ rp serverless run end_abc --input '{"prompt":"hi"}'
 # # Submit a job from a file and return immediately
 # $ rp serverless run end_abc --input-file job.json --async
+# # Pin a session to one worker (strict), then release the pin
+# $ rp serverless run end_abc --input '{"prompt":"hi"}' --worker-id pod-abc123 --affinity strict
 #
 # API: POST /v2/{id}/runsync  (or /run with --async)
 
@@ -1379,7 +1445,10 @@ Usage: rp serverless <verb> [flags]
    list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types> (alias: --gpu-id)] [--gpu-count N] [--registry <id> (alias: --registry-auth-id)] [--template-id <id>] [--name <n>]
            [--scale-by delay|requests (runpodctl coercion: --scaler-type)] [--scale-threshold N (runpodctl coercion: --scaler-value)]
            [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] | scale <id> --min N --max N [--idle S] | delete <id>
-  run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--timeout <s>] [--json]
+   run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--worker-id <id>] [--affinity soft|strict|strict-resume] [--timeout <s>] [--json]
+              (--worker-id pins the job to one worker on a load-balanced endpoint via X-Runpod-Worker-Id;
+               bare id = soft affinity, strict/strict-resume prefix the id; human mode prints the
+               "served by worker" response stamp so the next request can be pinned)
   workers <id>        live worker ids/states/placement (+ status histogram, --json for full envelope)
   releases <id>       release history newest-first (+ rollout summary; per-release diff column)
   logs <id> --worker <id>   live worker log stream (--worker id from `workers`; same source/tail/since/last-event-id flags)

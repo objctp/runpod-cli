@@ -561,6 +561,115 @@ function test_should_exit_usage_when_run_input_is_invalid_json() {
   assert_exit_code 2
 }
 
+# --- worker affinity (load-balanced endpoints): --worker-id / --affinity ------
+
+# The X-Runpod-Worker-Id request-header grammar is "[mode ]<worker-id>": a bare
+# id is soft affinity (best-effort; there is no literal "soft" token on the
+# wire), strict / strict-resume prefix the id. The helper emits the full header
+# line so run can splice it into rp::http_api's extra-headers argument; the
+# mapping is asserted directly.
+function test_should_map_affinity_flags_to_header_value() {
+  local v
+  rp::args_parse e1
+  _serverless_worker_affinity_header v
+  assert_equals "" "$v"
+  rp::args_parse e1 --worker-id pod-1
+  _serverless_worker_affinity_header v
+  assert_equals "X-Runpod-Worker-Id: pod-1" "$v"
+  rp::args_parse e1 --worker-id pod-1 --affinity soft
+  _serverless_worker_affinity_header v
+  assert_equals "X-Runpod-Worker-Id: pod-1" "$v"
+  rp::args_parse e1 --worker-id pod-1 --affinity strict
+  _serverless_worker_affinity_header v
+  assert_equals "X-Runpod-Worker-Id: strict pod-1" "$v"
+  rp::args_parse e1 --worker-id pod-1 --affinity strict-resume
+  _serverless_worker_affinity_header v
+  assert_equals "X-Runpod-Worker-Id: strict-resume pod-1" "$v"
+}
+
+# A mode without a worker id can't build the header — usage error.
+function test_should_exit_usage_when_affinity_without_worker_id() {
+  local v
+  rp::args_parse e1 --affinity strict
+  (_serverless_worker_affinity_header v >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_should_exit_usage_when_affinity_mode_unknown() {
+  local v
+  rp::args_parse e1 --worker-id pod-1 --affinity pin
+  (_serverless_worker_affinity_header v >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+# The worker id must be a well-formed id: it is interpolated into a header
+# value, so the charset guard also rules out header injection.
+function test_should_exit_usage_when_worker_id_is_not_an_id() {
+  rp::args_parse e1 --input '{}' --worker-id 'bad id'
+  (_serverless_run >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+# run forwards the affinity header as rp::http_api's 5th argument (the
+# transport threads it into the request-header file). Bare id = soft.
+function test_should_send_worker_affinity_header_on_run() {
+  local meta
+  meta="$(mktemp)"
+  rp::http_api() {
+    printf '%s %s %s [%s]' "$1" "$2" "${4:-}" "${5:-}" >"$meta"
+    printf '{"status":"COMPLETED"}'
+  }
+  rp::args_parse e1 --input '{}' --worker-id pod-1
+  _serverless_run >/dev/null 2>&1
+  assert_equals "POST /e1/runsync 300 [X-Runpod-Worker-Id: pod-1]" "$(<"$meta")"
+  rp::http_api() { :; }
+  rm -f "$meta"
+}
+
+# The header composes with --async unchanged: same value, /run route.
+function test_should_compose_affinity_with_async_route() {
+  local meta out
+  meta="$(mktemp)"
+  rp::http_api() {
+    printf '%s %s %s [%s]' "$1" "$2" "${4:-}" "${5:-}" >"$meta"
+    printf '{"id":"job-42","status":"IN_QUEUE"}'
+  }
+  rp::args_parse e1 --input '{}' --async --worker-id pod-1 --affinity strict-resume
+  out="$(_serverless_run 2>/dev/null)"
+  assert_equals "POST /e1/run 300 [X-Runpod-Worker-Id: strict-resume pod-1]" "$(<"$meta")"
+  assert_equals "job-42" "$out"
+  rp::http_api() { :; }
+  rm -f "$meta"
+}
+
+# Human mode surfaces the responding worker (the X-Runpod-Worker-Id response
+# header the transport captures) so pinning composes: run → see worker → pin
+# the next request. --json stays clean.
+function test_should_print_served_by_worker_on_human_run() {
+  rp::http_api() { printf '{"status":"COMPLETED"}'; }
+  _RP_WORKER_ID="pod-9"
+  local err
+  rp::args_parse e1 --input '{}'
+  err="$(_serverless_run 2>&1 >/dev/null)"
+  assert_contains "served by worker: pod-9" "$err"
+  err="$(rp::cmd_serverless run e1 --input '{}' --json 2>&1 >/dev/null)"
+  assert_not_contains "served by worker" "$err"
+  _RP_WORKER_ID=""
+  rp::http_api() { :; }
+}
+
+# No served-by line when the endpoint did not send the response header
+# (queue-based endpoints don't).
+function test_should_omit_served_by_worker_without_response_header() {
+  rp::http_api() { printf '{"status":"COMPLETED"}'; }
+  _RP_WORKER_ID=""
+  local err
+  rp::args_parse e1 --input '{}'
+  err="$(_serverless_run 2>&1 >/dev/null)"
+  assert_not_contains "served by worker" "$err"
+  rp::http_api() { :; }
+}
+
 # rp::api_stream recording double: captures "<plane> <path> <leid>" into $cap.
 function test_should_route_serverless_logs_to_stream() {
   local cap

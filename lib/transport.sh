@@ -16,6 +16,12 @@ declare -g _RP_CURL_STATUS=200
 # across calls. Module-global.
 declare -g _RP_SUNSET=""
 
+# The `X-Runpod-Worker-Id` value from the most recent response. Load-balanced
+# serverless endpoints stamp it on every reply so a client can pin its next
+# request to the same worker; surfaced for `rp serverless run`'s human output.
+# Reset each request so it never leaks across calls. Module-global.
+declare -g _RP_WORKER_ID=""
+
 # TLS certificate verification opt-out: when rp runs from inside a pod whose CA
 # bundle can't validate api.runpod.io, curl fails with "certificate signed by
 # unknown authority". --insecure (alias -k), or RP_INSECURE_TLS=1, pass curl -k.
@@ -77,10 +83,13 @@ _rp_plane_timeout() {
 # -H/--data would leak the API key (and, on `rp registry create`, a registry
 # password; on `rp serverless run`, the job payload).
 _curl_json() {
-  local url="$1" method="$2" body="${3:-}" max_time="${4:-$RP_TIMEOUT_REST}"
+  local url="$1" method="$2" body="${3:-}" max_time="${4:-$RP_TIMEOUT_REST}" extra="${5:-}"
   local hdr body_tmp tmp hdrfile status out
   _mktemp hdr
   rp::auth_header >"$hdr"
+  # Optional one-off request headers (newline-separated "Name: value") join the
+  # auth header in the same temp file — headers never travel via argv.
+  [[ -n "$extra" ]] && printf '%s\n' "$extra" >>"$hdr"
   local -a args=(-sSL --connect-timeout "$RP_TIMEOUT_CONNECT" --max-time "$max_time" -X "$method" -H @"$hdr" -H 'Content-Type: application/json')
   if _rp_insecure_enabled; then
     _rp_insecure_warn
@@ -98,6 +107,7 @@ _curl_json() {
   fi
   args+=("$url")
   _RP_SUNSET="" # reset; populated below only when the response carries it
+  _RP_WORKER_ID=""
   status="$(curl "${args[@]}" -o "$tmp" -w '%{http_code}')" || {
     rc=$?
     _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}" "$hdrfile"
@@ -115,6 +125,8 @@ _curl_json() {
   out="$(<"$tmp")"
   # Stash the Sunset header (case-insensitive) if the server sent one.
   _RP_SUNSET="$(grep -i '^sunset:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//')"
+  # Same for the load balancer's worker stamp (tr -d '\r': curl dumps CRLF).
+  _RP_WORKER_ID="$(grep -i '^x-runpod-worker-id:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')"
   _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}" "$hdrfile"
   _RP_CURL_STATUS="$status"
   printf '%s' "$out"
@@ -203,11 +215,13 @@ rp::api_stream() {
 # Plane-addressed call: resolves <plane> to its base URL + default timeout, then
 # delegates to _curl_json. Dies only on an unknown plane (a programming error);
 # transport/HTTP outcomes are left to the caller's die/soft policy.
+# $6 - extra request headers (newline-separated "Name: value"), forwarded to
+#      _curl_json's header file; empty by default.
 rp::api_call() {
-  local plane="$1" method="$2" path="$3" body="${4:-}" max="${5:-}"
+  local plane="$1" method="$2" path="$3" body="${4:-}" max="${5:-}" extra="${6:-}"
   local base timeout
   base="$(_rp_plane_base "$plane")" || rp::die "unknown transport plane: '$plane'"
   timeout="$(_rp_plane_timeout "$plane")"
   max="${max:-$timeout}"
-  _curl_json "$base$path" "$method" "$body" "$max"
+  _curl_json "$base$path" "$method" "$body" "$max" "$extra"
 }

@@ -236,3 +236,86 @@ function test_should_pass_k_on_stream_when_insecure_flag_set() {
   assert_contains "-k" "$(<"$GQL_ARGS_CAPTURE")"
   unset 'RP_ARGS[insecure]'
 }
+
+# Curl double that also dumps the request headers (-H @file) into $HDR_CAP so
+# the extra-headers seam can be asserted without exposing argv.
+_hdr_cap_curl() {
+  local out="" a
+  while (($#)); do
+    case "$1" in
+    -o)
+      out="$2"
+      shift 2
+      ;;
+    -H)
+      [[ "$2" == @* ]] && cat "${2#@}" >>"$HDR_CAP"
+      shift 2
+      ;;
+    *) shift ;;
+    esac
+  done
+  [[ -n "$out" ]] && printf '%s' "${GQL_BODY:-}" >"$out"
+  printf '%s' "${GQL_STATUS:-200}"
+}
+
+# Extra request headers travel inside the auth header temp file (-H @file),
+# never argv — the same leak-safety rule as the API key and the job payload.
+function test_should_send_extra_headers_via_header_file() {
+  HDR_CAP="$(mktemp)"
+  curl() { _hdr_cap_curl "$@"; }
+  rp::http_api POST /x/runsync '{}' 5 'X-Runpod-Worker-Id: strict pod-1' >/dev/null 2>&1
+  assert_contains "Authorization: Bearer sk-test" "$(<"$HDR_CAP")"
+  assert_contains "X-Runpod-Worker-Id: strict pod-1" "$(<"$HDR_CAP")"
+  rm -f "$HDR_CAP"
+}
+
+function test_should_not_send_extra_headers_when_unset() {
+  HDR_CAP="$(mktemp)"
+  curl() { _hdr_cap_curl "$@"; }
+  rp::http GET /pods >/dev/null 2>&1
+  assert_contains "Authorization: Bearer sk-test" "$(<"$HDR_CAP")"
+  assert_not_contains "X-Runpod" "$(<"$HDR_CAP")"
+  rm -f "$HDR_CAP"
+}
+
+# Curl double for the response-header capture: writes the raw header block
+# (CRLF, like a real curl -D dump) from $_RESP_HEADERS into the -D file and the
+# body into the -o file.
+_resp_curl() {
+  local out="" dump=""
+  while (($#)); do
+    case "$1" in
+    -o)
+      out="$2"
+      shift 2
+      ;;
+    -D)
+      dump="$2"
+      shift 2
+      ;;
+    *) shift ;;
+    esac
+  done
+  [[ -n "$dump" ]] && printf '%s' "$_RESP_HEADERS" >"$dump"
+  [[ -n "$out" ]] && printf '%s' "${GQL_BODY:-}" >"$out"
+  printf '%s' "${GQL_STATUS:-200}"
+}
+
+# The response's X-Runpod-Worker-Id (load-balancer endpoints) lands in
+# _RP_WORKER_ID, the same pattern as _RP_SUNSET.
+function test_should_capture_worker_id_from_response_header() {
+  _RESP_HEADERS=$'HTTP/1.1 200 OK\r\nX-Runpod-Worker-Id: pod-9\r\n'
+  curl() { _resp_curl "$@"; }
+  rp::http_api POST /e/runsync '{}' >/dev/null 2>&1
+  assert_equals "pod-9" "$_RP_WORKER_ID"
+}
+
+# The capture resets per request, so a headerless response never leaks the
+# previous call's worker id into the caller's output.
+function test_should_reset_worker_id_when_response_has_none() {
+  _RP_WORKER_ID="stale-pod"
+  _RESP_HEADERS=$'HTTP/1.1 200 OK\r\n'
+  curl() { _resp_curl "$@"; }
+  rp::http_api POST /e/runsync '{}' >/dev/null 2>&1
+  assert_equals "" "$_RP_WORKER_ID"
+}
