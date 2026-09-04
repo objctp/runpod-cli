@@ -118,6 +118,45 @@ function test_should_route_each_cluster_verb() {
   rm -f "$cap"
 }
 
+function test_pods_add_sends_scale_out_post() {
+  local cap bodyfile
+  cap="$(mktemp)"
+  bodyfile="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    if [[ "$1" == "GET" ]]; then printf '[]'; else
+      printf '%s' "${3:-}" >"$bodyfile"
+      printf '{"id":"cl1"}'
+    fi
+  }
+  rp::cmd_cluster pods add cl1 --pod-count 3 >/dev/null 2>&1
+  assert_contains "POST /clusters/cl1/pods" "$(<"$cap")"
+  assert_equals "3" "$(jq -r '.podCount' "$bodyfile")"
+  rp::http() { :; }
+  rm -f "$cap" "$bodyfile"
+}
+
+function test_pods_add_rejects_pod_count_below_one() {
+  rp::http() { :; }
+  (rp::cmd_cluster pods add cl1 --pod-count 0 >/dev/null 2>&1)
+  assert_exit_code 2
+  (rp::cmd_cluster pods add cl1 >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_pods_list_still_routes_under_pods_subdispatcher() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >"$cap"
+    if [[ "$1" == "GET" ]]; then printf '{"pods":[]}'; else printf '{"id":"cl1"}'; fi
+  }
+  rp::cmd_cluster pods cl1 >/dev/null 2>&1
+  assert_contains "GET /clusters/cl1/pods" "$(<"$cap")"
+  rp::http() { :; }
+  rm -f "$cap"
+}
+
 function test_create_is_idempotent_by_name() {
   local cap
   cap="$(mktemp)"

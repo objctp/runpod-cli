@@ -6,6 +6,7 @@
 
 - Make rp stock gpu cloud- and datacentre-aware
 - Add batch sub-resource with 9 verbs
+- Add pods add to scale out a running cluster
 
 ## [1.4.0] - 2026-08-27
 

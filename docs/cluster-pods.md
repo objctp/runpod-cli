@@ -24,3 +24,6 @@ rp cluster pods <id> [--json]
 
 **API:** `GET /v2/clusters/{id}/pods`
 
+## Commands
+
+- [`rp cluster pods add`](cluster-pods-add.md) — Scale out a running cluster by adding more pods. New pods inherit the

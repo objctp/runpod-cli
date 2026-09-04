@@ -67,6 +67,7 @@ nav:
   - get: cluster-get.md
   - list: cluster-list.md
   - pods: cluster-pods.md
+  - pods-add: cluster-pods-add.md
   - update: cluster-update.md
 - Doc:
   - doc: doc.md

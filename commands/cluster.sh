@@ -93,18 +93,6 @@ _cluster_update() {
   rp::emit_json_or "$res" rp::ok "renamed cluster $id"
 }
 
-_cluster_pods() {
-  local id
-  rp::require_pos id "usage: rp cluster pods <id>"
-  rp::require_id id "$id" "cluster id"
-  _resource_meta cluster
-  local body
-  body="$(rp::http GET "$RP_RES_PATH/$id/pods")"
-  local arr
-  arr="$(rp::unwrap pods "$body")"
-  rp::emit_json_or "$body" rp::table "$arr" id name status
-}
-
 ###
 ### :::: documentation (rp doc cluster) :::: ##################################
 ###
@@ -240,9 +228,35 @@ _cluster_pods() {
 #
 # API: GET /v2/clusters/{id}/pods
 
+# doc: pods-add
+# Scale out a running cluster by adding more pods.
+#
+# Usage: rp cluster pods add <id> --pod-count N
+#
+# Arguments:
+#   <id>             cluster id — from `rp cluster list`
+#
+# Options:
+#   --pod-count N    number of additional pods to add (minimum 1, required)
+#   --json           print the raw API response
+#
+# Notes:
+#   New pods join the cluster's private network automatically and inherit the
+#   existing nodes' GPU type, template, and network storage, matching the
+#   cluster's homogeneous shape. Scaling is unavailable for clusters on reserved
+#   or contracted hardware.
+#   The request sends the number of pods to add; `podCount` is the same field
+#   used by `rp cluster create`, here repurposed for scale-out.
+#
+# API: POST /v2/clusters/{id}/pods
+
 rp::cmd_cluster() {
   local verb="${1:-help}"
   shift || true
+  if [[ "$verb" == "pods" ]]; then
+    _cluster_pods "$@"
+    return
+  fi
   rp::args_parse "$@"
   rp::args_has help && verb=help
   case "$verb" in
@@ -251,7 +265,6 @@ rp::cmd_cluster() {
   create) _cluster_create ;;
   update) _cluster_update ;;
   delete) rp::resource_delete cluster ;;
-  pods) _cluster_pods ;;
   -h | --help | help)
     cat <<'EOF'
 Usage: rp cluster <verb> [flags]
@@ -260,9 +273,60 @@ Usage: rp cluster <verb> [flags]
          [--env K=V] [--start-cmd a,b] [--network-volume-id <id>] [--volume-path <p>]
          [--template-id <id>] [--start-ssh true|false] [--start-jupyter true|false]
          [--force]   (idempotent by --name; only --name is mutable afterwards)
-  list | get <id> | update <id> --name <n> | delete <id> | pods <id>
+  list | get <id> | update <id> --name <n> | delete <id> | pods <id> | pods add <id> --pod-count N
 EOF
     ;;
   *) rp::usage "unknown cluster verb: '$verb'" ;;
   esac
+}
+
+_cluster_pods() {
+  local sub="${1:-help}"
+  shift || true
+  rp::args_parse "$@"
+  rp::args_has help && sub=help
+  case "$sub" in
+  add) _cluster_pods_add ;;
+  -h | --help | help)
+    cat <<'EOF'
+Usage: rp cluster pods <id> [flags]
+  <id>                      list a cluster's member pods (id, name, status)
+  add <id> --pod-count N    scale out: add N (>= 1) more pods to a running cluster
+EOF
+    ;;
+  *)
+    # No sub-verb: the argument is the cluster id; list its member pods.
+    _cluster_pods_list "$sub"
+    ;;
+  esac
+}
+
+_cluster_pods_list() {
+  local id="$1"
+  rp::require_id id "$id" "cluster id"
+  _resource_meta cluster
+  local body
+  body="$(rp::http GET "$RP_RES_PATH/$id/pods")"
+  local arr
+  arr="$(rp::unwrap pods "$body")"
+  rp::emit_json_or "$body" rp::table "$arr" id name status
+}
+
+# Scale out a running cluster by adding more pods. New pods inherit the
+# cluster's homogeneous shape (GPU type, template, network storage) and join
+# its private network automatically. The request body carries the number of
+# additional pods to add.
+_cluster_pods_add() {
+  local id
+  rp::require_pos id "usage: rp cluster pods add <id> --pod-count N"
+  rp::require_id id "$id" "cluster id"
+  local pod_count
+  pod_count="$(rp::args_get_uint pod-count)"
+  [[ -n "$pod_count" ]] || rp::usage "usage: rp cluster pods add <id> --pod-count N is required (number of additional pods to add)"
+  ((pod_count >= 1)) || rp::usage "usage: rp cluster pods add <id> --pod-count must be >= 1 (number of additional pods to add)"
+  _resource_meta cluster
+  local body res
+  body="$(rp::json_obj podCount "$pod_count")"
+  res="$(rp::http POST "$RP_RES_PATH/$id/pods" "$body")"
+  rp::emit_json_or "$res" rp::ok "added $pod_count pod(s) to cluster $id"
 }
