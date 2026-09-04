@@ -21,6 +21,10 @@ function set_up() {
   GQL_STATUS=200
   GQL_BODY='{"data":{"ok":true}}'
   GQL_ARGS_CAPTURE="$(mktemp)"
+  _RP_RATELIMIT_WARNED=0
+  _RP_RATE_LIMIT=""
+  _RP_RATE_LIMIT_POLICY=""
+  _RP_RETRY_AFTER=""
   curl() {
     printf '%s\n' "$*" >>"$GQL_ARGS_CAPTURE"
     local out=""
@@ -318,4 +322,82 @@ function test_should_reset_worker_id_when_response_has_none() {
   curl() { _resp_curl "$@"; }
   rp::http_api POST /e/runsync '{}' >/dev/null 2>&1
   assert_equals "" "$_RP_WORKER_ID"
+}
+
+# The v2 rate-limit family lands in module globals, the _RP_SUNSET pattern.
+function test_should_capture_ratelimit_headers_from_response() {
+  _RESP_HEADERS=$'HTTP/1.1 200 OK\r\nRateLimit: "minute";r=0;t=12, "hour";r=2800;t=1812\r\nRateLimit-Policy: "minute";q=60;w=60\r\nRetry-After: 12\r\n'
+  curl() { _resp_curl "$@"; }
+  rp::http GET /pods >/dev/null 2>&1
+  assert_equals '"minute";r=0;t=12, "hour";r=2800;t=1812' "$_RP_RATE_LIMIT"
+  assert_equals '"minute";q=60;w=60' "$_RP_RATE_LIMIT_POLICY"
+  assert_equals "12" "$_RP_RETRY_AFTER"
+}
+
+function test_should_reset_ratelimit_headers_when_response_has_none() {
+  _RP_RATE_LIMIT="stale" _RP_RATE_LIMIT_POLICY="stale" _RP_RETRY_AFTER="stale"
+  _RESP_HEADERS=$'HTTP/1.1 200 OK\r\n'
+  curl() { _resp_curl "$@"; }
+  rp::http GET /pods >/dev/null 2>&1
+  assert_equals "" "$_RP_RATE_LIMIT"
+  assert_equals "" "$_RP_RATE_LIMIT_POLICY"
+  assert_equals "" "$_RP_RETRY_AFTER"
+}
+
+# Binding window = fewest remaining; ties break to the soonest reset. The
+# documented wire example, verbatim.
+function test_should_parse_binding_window_from_ratelimit_value() {
+  assert_equals "minute 0 12" "$(_rp_ratelimit_binding '"minute";r=0;t=12, "hour";r=2800;t=1812, "day";r=49500;t=45012')"
+}
+
+function test_should_pick_smallest_remaining_across_windows() {
+  assert_equals "minute 3 45" "$(_rp_ratelimit_binding '"hour";r=2800;t=1812, "minute";r=3;t=45')"
+}
+
+function test_should_break_remaining_ties_by_soonest_reset() {
+  assert_equals "minute 0 12" "$(_rp_ratelimit_binding '"day";r=0;t=45012, "minute";r=0;t=12')"
+}
+
+function test_should_return_nothing_when_ratelimit_value_unparseable() {
+  assert_equals "" "$(_rp_ratelimit_binding "garbage")"
+  assert_equals "" "$(_rp_ratelimit_binding "")"
+}
+
+# Zero-padded counts must not trip bash's octal arithmetic ("value too great
+# for base" on 08/09 would mis-select the binding window).
+function test_should_normalise_zero_padded_counts() {
+  assert_equals "minute 8 9" "$(_rp_ratelimit_binding '"minute";r=08;t=09')"
+}
+
+# Parameters are scanned after the quoted item, so a window name that happens
+# to contain "r=…" can never pass for a count.
+function test_should_not_scan_window_name_for_params() {
+  assert_equals "" "$(_rp_ratelimit_binding '"r=9999";t=5')"
+}
+
+# A zero-remaining window warns once (stderr passes through rp::http), then
+# stays quiet for the rest of the process.
+function test_should_warn_when_window_exhausted() {
+  _RESP_HEADERS=$'HTTP/1.1 200 OK\r\nRateLimit: "minute";r=0;t=12\r\n'
+  curl() { _resp_curl "$@"; }
+  local err
+  err="$(rp::http GET /pods 2>&1 >/dev/null)"
+  assert_contains "rate limit: minute window exhausted (resets in 12s); expect HTTP 429" "$err"
+}
+
+function test_should_warn_only_once_per_process() {
+  _RESP_HEADERS=$'HTTP/1.1 200 OK\r\nRateLimit: "minute";r=0;t=12\r\n'
+  curl() { _resp_curl "$@"; }
+  rp::http GET /pods 2>/dev/null >/dev/null
+  local err
+  err="$(rp::http GET /pods 2>&1 >/dev/null)"
+  assert_not_contains "rate limit:" "$err"
+}
+
+function test_should_not_warn_when_remaining_is_nonzero() {
+  _RESP_HEADERS=$'HTTP/1.1 200 OK\r\nRateLimit: "minute";r=59;t=12\r\n'
+  curl() { _resp_curl "$@"; }
+  local err
+  err="$(rp::http GET /pods 2>&1 >/dev/null)"
+  assert_not_contains "rate limit:" "$err"
 }

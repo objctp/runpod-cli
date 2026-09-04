@@ -24,6 +24,12 @@ function set_up() {
   HTTP_BODY=""
   HTTP_DATA_CAPTURE=""
   HTTP_META_CAPTURE=""
+  # Transport state resets: the rate-limit globals are process-wide (the warn
+  # latch in particular), so every test starts from a clean slate.
+  _RP_RATELIMIT_WARNED=0
+  _RP_RATE_LIMIT=""
+  _RP_RATE_LIMIT_POLICY=""
+  _RP_RETRY_AFTER=""
   # curl double: write the configured body to the -o file, print the configured
   # status code (curl's -w output), return HTTP_RC for transport errors, copy
   # the --data request body to HTTP_DATA_CAPTURE when set, and record
@@ -119,6 +125,107 @@ function test_should_exit_three_when_http_403_rejected_key() {
   HTTP_STATUS=403
   (rp::http GET /pods >/dev/null 2>&1)
   assert_exit_code 3
+}
+
+# v2 errors are RFC 9457 problem+json (title/status/detail); the useful
+# detail must win over the generic title.
+function test_should_prefer_detail_over_title_when_problem_json_error() {
+  HTTP_BODY='{"title":"Not Found","status":404,"detail":"The requested Pod does not exist."}'
+  HTTP_STATUS=404
+  local err
+  err="$(rp::http GET /pods/x 2>&1 >/dev/null)"
+  assert_contains "The requested Pod does not exist." "$err"
+  assert_not_contains "Not Found" "$err"
+}
+
+function test_should_append_validation_errors_to_problem_json_message() {
+  HTTP_BODY='{"title":"Unprocessable Entity","status":422,"detail":"Request validation failed.","errors":["$: additional properties '"'"'bogus'"'"' not allowed"]}'
+  HTTP_STATUS=422
+  local err
+  err="$(rp::http GET /pods 2>&1 >/dev/null)"
+  assert_contains "Request validation failed." "$err"
+  assert_contains "additional properties" "$err"
+}
+
+# A 429 carries the server's Retry-After seconds in the same message.
+function test_should_append_retry_after_to_429_error() {
+  HTTP_BODY='{"title":"Too Many Requests","status":429,"detail":"rate limit exceeded for the minute window"}'
+  HTTP_STATUS=429
+  curl() {
+    local out="" dump=""
+    while (($#)); do
+      case "$1" in
+      -o)
+        out="$2"
+        shift 2
+        ;;
+      -D)
+        dump="$2"
+        shift 2
+        ;;
+      *) shift ;;
+      esac
+    done
+    [[ -n "$dump" ]] && printf 'HTTP/1.1 429 Too Many Requests\r\nRetry-After: 12\r\n' >"$dump"
+    [[ -n "$out" ]] && printf '%s' "${HTTP_BODY:-}" >"$out"
+    printf '%s' "${HTTP_STATUS:-200}"
+    return "${HTTP_RC:-0}"
+  }
+  local err
+  err="$(rp::http GET /pods 2>&1 >/dev/null)"
+  assert_contains "rate limit exceeded for the minute window" "$err"
+  assert_contains "retry after 12s" "$err"
+}
+
+# HTTP allows Retry-After to be an http-date; only integer seconds may ride
+# the message, or a date would read "retry after Wed, … GMTs".
+function test_should_not_append_retry_after_when_not_integer_seconds() {
+  HTTP_BODY='{"title":"Too Many Requests","status":429,"detail":"rate limit exceeded for the minute window"}'
+  HTTP_STATUS=429
+  curl() {
+    local out="" dump=""
+    while (($#)); do
+      case "$1" in
+      -o)
+        out="$2"
+        shift 2
+        ;;
+      -D)
+        dump="$2"
+        shift 2
+        ;;
+      *) shift ;;
+      esac
+    done
+    [[ -n "$dump" ]] && printf 'HTTP/1.1 429 Too Many Requests\r\nRetry-After: Wed, 21 Oct 2026 07:28:00 GMT\r\n' >"$dump"
+    [[ -n "$out" ]] && printf '%s' "${HTTP_BODY:-}" >"$out"
+    printf '%s' "${HTTP_STATUS:-200}"
+    return "${HTTP_RC:-0}"
+  }
+  local err
+  err="$(rp::http GET /pods 2>&1 >/dev/null)"
+  assert_contains "rate limit exceeded for the minute window" "$err"
+  assert_not_contains "retry after" "$err"
+}
+
+# A legacy body whose error is an object keeps its verbatim (compacted) JSON,
+# the message the pre-problem+json extraction printed.
+function test_should_keep_object_valued_legacy_error_message() {
+  HTTP_BODY='{"error":{"code":500,"message":"boom"}}'
+  HTTP_STATUS=500
+  local err
+  err="$(rp::http GET /pods 2>&1 >/dev/null)"
+  assert_contains '"message":"boom"' "$err"
+}
+
+# A malformed errors-only problem+json body (no title/detail) must not leave
+# a stray leading space in the message.
+function test_should_not_leave_double_space_for_errors_only_body() {
+  HTTP_BODY='{"errors":["a","b"]}'
+  HTTP_STATUS=422
+  local err
+  err="$(rp::http GET /pods 2>&1 >/dev/null)"
+  assert_contains "HTTP 422: (a; b)" "$err"
 }
 
 function test_should_exit_one_when_curl_transport_fails() {

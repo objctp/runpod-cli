@@ -8,9 +8,12 @@ _RP_HTTP=1
 
 # Emit the captured response: die on a curl transport failure or HTTP >= 400
 # (with the API's error message when present), otherwise print the body. The
-# exit code honours the contract: 404 -> not-found (4), 401/403 rejected key ->
-# auth (3), any other >= 400 -> general error (1). $1 is the temp file holding
-# the response body; $2/$3 the method/path for messages.
+# message extraction understands the v2 RFC 9457 `application/problem+json`
+# shape (title/status/detail, optional errors array) alongside the legacy
+# error/message bodies, and a 429 carries the server's `Retry-After` seconds.
+# The exit code honours the contract: 404 -> not-found (4), 401/403 rejected key
+# -> auth (3), any other >= 400 -> general error (1). $1 is the temp file
+# holding the response body; $2/$3 the method/path for messages.
 _rp_http_emit() {
   local tmp="$1" method="$2" path="$3"
   local status="$_RP_CURL_STATUS"
@@ -26,8 +29,28 @@ _rp_http_emit() {
   fi
   if ((status >= 400)); then
     local msg err
-    msg="$(jq -rc '.error // .message // .title // empty' "$tmp" 2>/dev/null || true)"
+    # Legacy .error/.message bodies keep precedence; RFC 9457 `detail` beats
+    # `title`; the optional `errors` array is appended in parentheses. Legacy
+    # object-valued errors keep their compacted JSON (tostring), as the old
+    # extraction printed it; a lone errors array must not leave a stray
+    # leading space.
+    msg="$(jq -r '
+  if type == "object" then
+    ([(.error // empty), (.message // empty), (.detail // empty), (.title // empty)]
+     | map(if type == "string" then . else tostring end)
+     | map(select(length > 0))
+     | if length > 0 then .[0] else "" end)
+    + (if ((.errors // []) | type) == "array" and ((.errors // []) | length) > 0
+       then " (" + ([.errors[] | tostring] | join("; ")) + ")"
+       else "" end)
+  else empty end
+  | sub("^ "; "")' "$tmp" 2>/dev/null || true)"
     rm -f -- "$tmp"
+    # Only integer seconds ride the message: HTTP also permits an http-date,
+    # which would read "retry after Wed, … GMTs".
+    if ((status == 429)) && [[ "${_RP_RETRY_AFTER:-}" =~ ^[0-9]+$ ]]; then
+      msg+="${msg:+ }retry after ${_RP_RETRY_AFTER}s"
+    fi
     err="Runpod $method $path -> HTTP $status${msg:+: $msg}"
     _rp_exit_for_status "$status" "$err"
   fi

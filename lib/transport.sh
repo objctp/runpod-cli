@@ -22,6 +22,17 @@ declare -g _RP_SUNSET=""
 # Reset each request so it never leaks across calls. Module-global.
 declare -g _RP_WORKER_ID=""
 
+# The v2 rate-limit family from the most recent response: `RateLimit` and
+# `RateLimit-Policy` (structured-field lists — `"minute";r=0;t=12`, where r is
+# the requests remaining in that window and t the seconds until it resets) are
+# stamped on every authenticated v2 response, and `Retry-After` (integer
+# seconds) on a 429. Captured so the emit layer can warn before the inevitable
+# 429 and the 429 error can carry the wait. Reset each request so they never
+# leak across calls. Module-global.
+declare -g _RP_RATE_LIMIT=""
+declare -g _RP_RATE_LIMIT_POLICY=""
+declare -g _RP_RETRY_AFTER=""
+
 # TLS certificate verification opt-out: when rp runs from inside a pod whose CA
 # bundle can't validate api.runpod.io, curl fails with "certificate signed by
 # unknown authority". --insecure (alias -k), or RP_INSECURE_TLS=1, pass curl -k.
@@ -29,6 +40,11 @@ declare -g _RP_WORKER_ID=""
 # (http://) transport, whereas --insecure only relaxes the cert chain check over
 # an already-encrypted https:// link. Warned once per process.
 declare -g _RP_INSECURE_WARNED=0
+
+# Warn-once latch for the exhausted-window warning below. Once per process
+# mirrors _RP_INSECURE_WARNED: a short-lived CLI process has no use for
+# repeated warnings about the same condition. Module-global.
+declare -g _RP_RATELIMIT_WARNED=0
 
 _rp_insecure_enabled() {
   [[ -n "${RP_ARGS[insecure]:-}" || -n "${RP_INSECURE_TLS:-}" ]]
@@ -38,6 +54,50 @@ _rp_insecure_warn() {
   ((_RP_INSECURE_WARNED)) && return 0
   _RP_INSECURE_WARNED=1
   rp::warn "TLS certificate verification disabled (--insecure): traffic stays encrypted but the server identity is NOT authenticated"
+}
+
+# Parse a `RateLimit` value and print `<window> <remaining> <reset-seconds>`
+# for the binding window — fewest remaining, ties broken by the soonest reset.
+# Prints nothing when no member carries both r and t (unparseable value /
+# exempt caller). Pure so it is unit-testable; must always return 0 because
+# callers run bare under `set -e` (repo precedent: `_warn_if_world_readable`).
+_rp_ratelimit_binding() {
+  local value="$1" m window params r t found=0 bw="" br=0 bt=0
+  local -a members
+  IFS=',' read -ra members <<<"$value"
+  for m in "${members[@]}"; do
+    [[ "$m" =~ \"([^\"]+)\" ]] || continue
+    window="${BASH_REMATCH[1]}"
+    # Params are scanned after the quoted item, so a window name that happens
+    # to contain "r=…" can never pass for a count.
+    params="${m#*\"}"
+    params="${params#*\"}"
+    [[ "$params" =~ r=([0-9]+) ]] || continue
+    r="$((10#${BASH_REMATCH[1]}))" # base-10: 08 must not trip octal arithmetic
+    [[ "$params" =~ t=([0-9]+) ]] || continue
+    t="$((10#${BASH_REMATCH[1]}))"
+    if ((!found || r < br || (r == br && t < bt))); then
+      bw="$window" br="$r" bt="$t" found=1
+    fi
+  done
+  if ((found)); then
+    printf '%s %s %s' "$bw" "$br" "$bt"
+  fi
+  return 0
+}
+
+# Warn once per process when the server reports a window with zero remaining
+# requests — the next request in that window will 429, so say so while the
+# user can still see which window and how long the reset takes.
+_rp_ratelimit_warn() {
+  ((_RP_RATELIMIT_WARNED)) && return 0
+  local binding window r t
+  binding="$(_rp_ratelimit_binding "${_RP_RATE_LIMIT:-}")" || true
+  [[ -n "$binding" ]] || return 0
+  read -r window r t <<<"$binding"
+  ((r == 0)) || return 0
+  _RP_RATELIMIT_WARNED=1
+  rp::warn "rate limit: ${window} window exhausted (resets in ${t}s); expect HTTP 429"
 }
 
 # Base URL for a transport plane. Resolved at call time so env overrides of
@@ -96,7 +156,9 @@ _curl_json() {
     args+=(-k)
   fi
   # Capture response headers (-D) so the `Sunset` header (sent on GraphQL/v1)
-  # can be surfaced to the user as a retirement countdown.
+  # can be surfaced to the user as a retirement countdown, and so the v2
+  # rate-limit family (RateLimit / RateLimit-Policy / Retry-After) can warn
+  # before an exhausted window's inevitable 429.
   _mktemp hdrfile
   args+=(-D "$hdrfile")
   _mktemp tmp
@@ -108,6 +170,9 @@ _curl_json() {
   args+=("$url")
   _RP_SUNSET="" # reset; populated below only when the response carries it
   _RP_WORKER_ID=""
+  _RP_RATE_LIMIT=""
+  _RP_RATE_LIMIT_POLICY=""
+  _RP_RETRY_AFTER=""
   status="$(curl "${args[@]}" -o "$tmp" -w '%{http_code}')" || {
     rc=$?
     _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}" "$hdrfile"
@@ -127,6 +192,14 @@ _curl_json() {
   _RP_SUNSET="$(grep -i '^sunset:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//')"
   # Same for the load balancer's worker stamp (tr -d '\r': curl dumps CRLF).
   _RP_WORKER_ID="$(grep -i '^x-runpod-worker-id:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')"
+  # The v2 rate-limit family (^ratelimit: cannot match ratelimit-policy: — the
+  # colon anchors it, so no special handling is needed).
+  _RP_RATE_LIMIT="$(grep -i '^ratelimit:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')"
+  _RP_RATE_LIMIT_POLICY="$(grep -i '^ratelimit-policy:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')"
+  _RP_RETRY_AFTER="$(grep -i '^retry-after:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')"
+  # Warn about an exhausted window only here, on the path where a real
+  # response arrived (a dead transport has no headers to judge).
+  _rp_ratelimit_warn
   _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}" "$hdrfile"
   _RP_CURL_STATUS="$status"
   printf '%s' "$out"
