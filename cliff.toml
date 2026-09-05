@@ -20,6 +20,12 @@ body = """
 trim = true
 footer = ""
 
+# Keep the changelog ticket-free: strip the trailing "(#NN, #MM)" refs that
+# come from conventional-commit subjects.
+postprocessors = [
+  { pattern = '\s*\((?:#\d+(?:, ?)?)+\)', replace = "" },
+]
+
 [git]
 # Parse "type(scope): subject" conventional commits.
 conventional_commits = true
