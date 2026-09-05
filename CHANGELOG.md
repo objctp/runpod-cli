@@ -4,21 +4,22 @@
 
 ### Fixed
 
-- Fail closed when the name gate errors (#33)
-- Return 0 when the window query has no flags (#31)
-- Stop silent exits, validate account names (#31, #35, #47)
-- Propagate --env pair errors to callers (#32)
-- Fail closed on env, ids, transport, and the name gate (#32, #34, #37, #47, #48)
-- Batch verbs, flag parity, id checks, runsync timeout (#34, #40, #41, #47, #49)
-- Expose curl exit code; harden header extraction (#46, #49)
-- Surface loader refusals; strip CR from key files (#36, #46)
-- Trim csv tokens, end-of-options, --wait flag (#42, #46)
-- See stored accounts, emit sunset in-call, guard bodies (#36, #39, #46)
-- Report failed centers; lock state writes (#38, #46, #47)
-- Require well-formed ids on lifecycle verbs (#34)
-- Best-effort private-key copy; large-key safety (#43, #47)
-- Die on malformed --jq; name missing body file (#44, #47)
-- Minor cleanups sweep (#47)
+- Fail closed when the name gate errors
+- Return 0 when the window query has no flags
+- Stop silent exits, validate account names
+- Propagate --env pair errors to callers
+- Fail closed on env, ids, transport, and the name gate
+- Batch verbs, flag parity, id checks, runsync timeout
+- Expose curl exit code; harden header extraction
+- Surface loader refusals; strip CR from key files
+- Trim csv tokens, end-of-options, --wait flag
+- See stored accounts, emit sunset in-call, guard bodies
+- Report failed centers; lock state writes
+- Require well-formed ids on lifecycle verbs
+- Best-effort private-key copy; large-key safety
+- Die on malformed --jq; name missing body file
+- Minor cleanups sweep
+- Use the bsd-stat probe in the env loader
 
 ## [1.5.0] - 2026-09-05
 
