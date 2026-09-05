@@ -73,7 +73,9 @@ rp::_update_check_refresh() {
     -H 'Accept: application/vnd.github+json' \
     -o "$tmp" -w '%{http_code}' "$url" 2>/dev/null)" || status=000
   if [[ "$status" == 2* ]]; then
-    latest="$(jq -r '.tag_name // empty' "$tmp" 2>/dev/null | sed 's/^v//')"
+    # A malformed release body (proxy interference, partial download) must
+    # degrade to "no update seen", not silently kill the CLI at startup.
+    latest="$(jq -r '.tag_name // empty' "$tmp" 2>/dev/null | sed 's/^v//')" || latest=""
     if [[ -n "$latest" ]]; then
       _mktemp tmpc
       jq -nc --arg ts "$(date +%s)" --arg l "$latest" \
@@ -125,7 +127,9 @@ rp::_resolve() {
 # How rp was installed, from the resolved location of the `rp` executable.
 rp::_detect_install_method() {
   local p resolved
-  p="$(command -v rp 2>/dev/null)"
+  # `command -v` exits 1 when rp is not on PATH (e.g. `bash bin/rp` from a
+  # checkout); the empty result is the normal not-installed case, not an error.
+  p="$(command -v rp 2>/dev/null)" || true
   [[ -n "$p" ]] || {
     printf '%s' unknown
     return
