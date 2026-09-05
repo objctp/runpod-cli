@@ -84,12 +84,15 @@ rp::cmd_api() {
   local path
   rp::require_pos path "usage: rp api $method <path>"
   [[ "$path" == /* ]] || path="/$path"
-  local plane body jqf
+  local plane body jqf body_file
   plane="$(rp::args_get plane rest)"
   body="$(rp::args_get body)"
   jqf="$(rp::args_get jq)"
   if [[ -n "$body" && "$body" == @* ]]; then
-    body="$(<"${body#@}")" || rp::die "cannot read --body file: ${body#@}"
+    # Capture the filename before the read: a failed read empties $body, which
+    # would leave the error message with nothing to name.
+    body_file="${body#@}"
+    body="$(<"$body_file")" || rp::die "cannot read --body file: $body_file"
   fi
   local out
   case "$plane" in
@@ -99,7 +102,9 @@ rp::cmd_api() {
   esac
   rp::paginate out
   if [[ -n "$jqf" ]]; then
-    printf '%s' "$out" | jq -r "$jqf"
+    # jq's exit 3 collides with RP_EXIT_AUTH, so trap the failure and re-raise
+    # it as a die naming the filter (same convention as lib/resource.sh).
+    printf '%s' "$out" | jq -r "$jqf" || rp::die "invalid --jq filter: $jqf"
   else
     printf '%s' "$out"
   fi

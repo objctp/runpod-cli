@@ -74,3 +74,28 @@ function test_should_error_on_unknown_plane() {
   out="$(rp::cmd_api GET /pods --plane bad 2>&1)"
   assert_contains "unknown --plane" "$out"
 }
+
+# --- #44: a malformed --jq must exit 1 (not jq's 3, which collides with
+# RP_EXIT_AUTH) and name the filter ---
+
+function test_should_exit_one_and_name_filter_when_jq_malformed() {
+  local err
+  err="$(rp::cmd_api GET /pods --jq '(' 2>&1 >/dev/null)"
+  assert_contains "invalid --jq filter: (" "$err"
+  (rp::cmd_api GET /pods --jq '(' >/dev/null 2>&1)
+  assert_exit_code 1
+}
+
+function test_should_still_apply_valid_jq_after_guard() {
+  local out
+  out="$(rp::cmd_api GET /pods --jq '.pods[0].name')"
+  assert_equals "alpha" "$out"
+}
+
+# --- #47: a failed --body @file read names the file, not an empty path ---
+
+function test_should_name_missing_body_file_in_error() {
+  local err
+  err="$(rp::cmd_api POST /pods --body @/nonexistent/rp-body.json 2>&1 >/dev/null)"
+  assert_contains "cannot read --body file: /nonexistent/rp-body.json" "$err"
+}
