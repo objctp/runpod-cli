@@ -242,7 +242,7 @@ rp_inst_run() {
   local sums_file="$_rp_inst_tmp/SHA256SUMS"
   local tarball="$_rp_inst_tmp/rp-$version.tar.gz"
   # stage/ lives under _rp_inst_tmp so the EXIT trap cleans everything in one place.
-  trap 'rm -rf "$_rp_inst_tmp"' EXIT
+  trap 'rm -rf -- "$_rp_inst_tmp"' EXIT
 
   # Create the install tree under a restrictive umask so ~/.rp and its contents
   # never inherit a loose umask (e.g. 000) from the caller's environment.
