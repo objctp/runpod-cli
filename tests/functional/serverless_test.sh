@@ -151,6 +151,34 @@ function test_should_spread_template_and_map_gpu_pool_on_create() {
   rm -f "$marker" "$body"
 }
 
+# --exclude-gpu subtracts GPU type ids from the selected pools (gpu.excludedTypes).
+function test_should_send_excluded_types_on_create() {
+  local marker body
+  marker="$(mktemp)"
+  body="$(mktemp)"
+  _mock_create_http "$marker" "$body"
+  rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --exclude-gpu "NVIDIA L4"
+  _serverless_create >/dev/null 2>&1
+  assert_equals 'ADA_24' "$(jq -r '.gpu.pools[0]' "$body")"
+  assert_equals '["NVIDIA L4"]' "$(jq -c '.gpu.excludedTypes' "$body")"
+  rp::http() { :; }
+  rm -f "$marker" "$body"
+}
+
+# Validation is client-side: an exclusion outside the selected pools would
+# silently exclude nothing at the API, so it must die locally, before any POST.
+function test_should_reject_excluded_type_outside_selected_pools_on_create() {
+  local marker
+  marker="$(mktemp)"
+  _mock_create_http "$marker"
+  rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --exclude-gpu "NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb"
+  (_serverless_create >/dev/null 2>&1)
+  assert_exit_code 2
+  assert_equals "" "$(cat "$marker")"
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
 function test_should_set_exec_timeout_volume_ids_and_flashboot_on_create() {
   local marker body
   marker="$(mktemp)"
@@ -356,6 +384,106 @@ function test_should_let_native_scaler_type_win_over_scale_by() {
   assert_equals '1' "$(jq -r '.scaling.requestCount' "$body")"
   rp::http() { :; }
   rm -f "$body"
+}
+
+# A PATCH sending pools without excludedTypes CLEARS the exclusions (the API
+# replaces the gpu object wholesale), so --exclude-gpu needs --gpu on update.
+function test_should_reject_exclude_gpu_without_gpu_on_update() {
+  rp::http() { printf '{"id":"e1"}'; }
+  rp::args_parse e1 --exclude-gpu "NVIDIA L4"
+  (_serverless_update >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+}
+
+# Resending pools alone is a silent exclusion wipe at the API; the CLI says so.
+function test_should_warn_when_update_resends_pools_without_exclusions() {
+  local body err
+  body="$(mktemp)"
+  rp::http() {
+    case "$1 $2" in
+    'GET /catalog/gpus'*) printf '{"gpus":[{"id":"NVIDIA L4","pool":"ADA_24"}]}' ;;
+    *)
+      printf '%s' "${3:-}" >"$body"
+      printf '{"id":"e1"}'
+      ;;
+    esac
+  }
+  rp::args_parse e1 --gpu "NVIDIA L4"
+  err="$(_serverless_update 2>&1 >/dev/null)"
+  assert_contains "clears any existing gpu.excludedTypes" "$err"
+  assert_equals "false" "$(jq -r '.gpu | has("excludedTypes")' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+# --gpu + --exclude-gpu on update sends both in one PATCH (exclusions require
+# pools in the same PATCH per the API's dependentRequired).
+function test_should_send_pools_and_excluded_types_on_update() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    case "$1 $2" in
+    'GET /catalog/gpus'*) printf '{"gpus":[{"id":"NVIDIA L4","pool":"ADA_24"},{"id":"NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb","pool":"ADA_24"}]}' ;;
+    *)
+      printf '%s' "${3:-}" >"$body"
+      printf '{"id":"e1"}'
+      ;;
+    esac
+  }
+  rp::args_parse e1 --gpu "NVIDIA L4" --exclude-gpu "NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb"
+  _serverless_update >/dev/null 2>&1
+  assert_equals 'ADA_24' "$(jq -r '.gpu.pools[0]' "$body")"
+  assert_equals '["NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb"]' "$(jq -c '.gpu.excludedTypes' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+# --exclude-gpu works on the --hub-id path too: the listing's gpuIds are already
+# pool ids, so the same validation applies before the POST body is assembled.
+function test_should_send_excluded_types_on_hub_path() {
+  local fixture payload
+  payload="$(mktemp)"
+  fixture="$(jq -c -n --arg img 'vllm:1' --arg cfg '{"gpuIds":"ADA_24","gpuCount":1,"containerDiskInGb":20}' \
+    '{listing:{id:"h1",title:"vLLM",listedRelease:{tagName:"v1",build:{imageName:$img},config:$cfg}}}')"
+  rp::http() {
+    case "$1 $2" in
+    'GET /serverless') printf '{"endpoints":[]}' ;;
+    'GET /catalog/gpus'*) printf '{"gpus":[{"id":"NVIDIA L4","pool":"ADA_24"},{"id":"NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb","pool":"ADA_24"}]}' ;;
+    'POST /serverless')
+      printf '%s' "${3:-}" >"$payload"
+      printf '{"id":"newhub","name":"glm"}'
+      ;;
+    esac
+  }
+  rp::graphql() { printf '%s' "$fixture"; }
+  rp::args_parse --hub-id h1 --name glm --exclude-gpu "NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb"
+  _serverless_create >/dev/null 2>&1
+  assert_equals 'ADA_24' "$(jq -r '.gpu.pools[0]' "$payload")"
+  assert_equals '["NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb"]' "$(jq -c '.gpu.excludedTypes' "$payload")"
+  rp::http() { :; }
+  rp::graphql() { :; }
+  rm -f "$payload"
+}
+
+# An exclusion outside the hub listing's pool selection must die locally
+# (exit 2) without reaching the API.
+function test_should_reject_excluded_type_outside_pools_on_hub_path() {
+  local fixture
+  fixture="$(jq -c -n --arg img 'vllm:1' --arg cfg '{"gpuIds":"ADA_24","gpuCount":1,"containerDiskInGb":20}' \
+    '{listing:{id:"h1",title:"vLLM",listedRelease:{tagName:"v1",build:{imageName:$img},config:$cfg}}}')"
+  rp::http() {
+    case "$1 $2" in
+    'GET /serverless') printf '{"endpoints":[]}' ;;
+    'GET /catalog/gpus'*) printf '{"gpus":[{"id":"NVIDIA L4","pool":"ADA_24"},{"id":"NVIDIA A40","pool":"AMPERE_48"}]}' ;;
+    esac
+  }
+  rp::graphql() { printf '%s' "$fixture"; }
+  rp::args_parse --hub-id h1 --name glm --exclude-gpu "NVIDIA A40"
+  (_serverless_create >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+  rp::graphql() { :; }
 }
 
 function test_should_exit_usage_when_create_has_no_gpu() {

@@ -86,3 +86,35 @@ rp::gpu_type_to_pool_csv() {
     | [$want[] | . as $t | ($pools | map(select((.gpuTypeIds // []) | index($t))) | .[0].id // empty)]
     | map(select(. != null)) | join(",")'
 }
+
+# Validate an --exclude-gpu CSV against a pool selection. excludedTypes
+# subtracts GPU type ids from the selected `pools` (there is no inclusive
+# allowlist), and the API silently accepts exclusions that are unknown or sit
+# outside the selection — a typo would just exclude nothing. Each type must
+# therefore be a known catalogue member AND belong to one of $2's pools.
+# Arguments:
+#   $1 - types_csv: comma-separated GPU type ids to exclude
+#   $2 - pools_csv: comma-separated pool ids the exclusions apply to
+# Returns:
+#   0 - every type is known and covered by the selected pools
+#   2 - otherwise (rp::usage, naming the offending type and its pools)
+# Call DIRECTLY, never inside command substitution: rp::usage's exit must fire
+# in the caller's shell.
+rp::gpu_excluded_validate() {
+  local types_csv="$1" pools_csv="$2"
+  [[ -n "$types_csv" ]] || return 0
+  local t hit
+  while IFS= read -r t; do
+    [[ -n "$t" ]] || continue
+    hit="$(_gpu_pools_json | jq -r --arg t "$t" --argjson pools "$(rp::csv_to_jsonarray "$pools_csv")" '
+      . as $p
+      | [$p[] | select((.gpuTypeIds // []) | index($t)) | .id] as $own
+      | if ($own | length) == 0 then "unknown|"
+        elif ([$own[] | select(. as $o | $pools | index($o))] | length) == 0 then "other|" + ($own | join(", "))
+        else "ok" end')"
+    case "${hit%%|*}" in
+    unknown) rp::usage "--exclude-gpu '$t' is not a known GPU type (see: rp stock gpu)" ;;
+    other) rp::usage "--exclude-gpu '$t' is not in the selected pools ($pools_csv); it belongs to: ${hit#*|}" ;;
+    esac
+  done < <(rp::split_csv "$types_csv")
+}

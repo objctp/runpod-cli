@@ -109,6 +109,18 @@ function test_should_build_endpoint_gpu_shape() {
   assert_equals '{"pools":["ADA_24","ADA_48"],"count":2}' "$(rp::json_gpu_endpoint "ADA_24,ADA_48" 2)"
 }
 
+function test_should_build_endpoint_gpu_shape_with_exclusions() {
+  assert_equals '{"pools":["ADA_24"],"excludedTypes":["NVIDIA L4","NVIDIA L40"],"count":2}' "$(rp::json_gpu_endpoint "ADA_24" 2 "NVIDIA L4,NVIDIA L40")"
+}
+
+function test_should_build_endpoint_gpu_shape_skipping_empty_excluded_tokens() {
+  assert_equals '{"pools":["ADA_24"],"excludedTypes":["NVIDIA L4"],"count":1}' "$(rp::json_gpu_endpoint "ADA_24" 1 "NVIDIA L4,,")"
+}
+
+function test_should_quote_mig_exclusion_with_spaces() {
+  assert_equals '{"pools":["AMPERE_24"],"excludedTypes":["NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb"],"count":1}' "$(rp::json_gpu_endpoint "AMPERE_24" 1 "NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb")"
+}
+
 function test_should_build_workers_shape_with_both_bounds() {
   assert_equals '{"min":1,"max":10}' "$(rp::json_workers "1" "10")"
 }

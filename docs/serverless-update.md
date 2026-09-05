@@ -3,7 +3,8 @@ Change an endpoint's workers, GPU pool, registry, template, name, or scaling.
 
 ```
 rp serverless update <id> [--workers-min N] [--workers-max N]
-                           [--idle S] [--gpu <types>] [--gpu-count N]
+                           [--idle S] [--gpu <types>] [--exclude-gpu <type,..>]
+                           [--gpu-count N]
                            [--registry <id>] [--template-id <id>]
                            [--name <n>] [--scale-by delay|requests]
                            [--scale-threshold N] [--scaler-type QUEUE_DELAY|REQUEST_COUNT]
@@ -23,6 +24,8 @@ rp serverless update <id> [--workers-min N] [--workers-max N]
   --workers-max N  new maximum worker count
   --idle S         workers.idleTimeout (ignored with REQUEST_COUNT scaling)
   --gpu <types>    GPU type ids for the worker pool (alias: --gpu-id)
+  --exclude-gpu <type,..>  GPU type ids to subtract from the selected pools
+                           (comma-separated; requires --gpu in the same call)
   --gpu-count N    GPUs per worker (default: 1)
   --registry <id>  registry credential for a private image (alias: --registry-auth-id)
   --template-id <id>   swap the endpoint's template (PATCH field templateId;
@@ -41,6 +44,13 @@ rp serverless update <id> [--workers-min N] [--workers-max N]
   At least one flag is required; with none, the command exits with a usage
   error rather than sending an empty PATCH.
   A --gpu change re-resolves pool ids from the type names.
+  --exclude-gpu subtracts GPU type ids from the selection made by --gpu
+  (no inclusive allowlist exists). Update semantics follow the API's PATCH:
+  exclusions require pools in the same PATCH, and resending pools WITHOUT
+  --exclude-gpu clears any existing gpu.excludedTypes — the CLI warns about
+  that wipe so an implicit clearing stays visible. Validation is client-side
+  (each excluded type must belong to one of the selected pools; the API
+  silently accepts unknown exclusions).
   --scale-by / --scale-threshold are coercion aliases (runpodctl spelling)
   that feed the same scaling object as rp's --scaler-type / --scaler-value.
 

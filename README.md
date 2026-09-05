@@ -1,10 +1,9 @@
 # Runpod CLI (rp)
 
-A small Bash CLI for managing [Runpod](https://runpod.io?ref=a0lqk36q) infrastructure: network volumes, serverless
-endpoints, pods, templates, registries, billing, cost centers, account balance,
-Hub listings, SSH keys, and live GPU stock. It speaks three Runpod APIs directly — REST API v2
-for CRUD, GraphQL for account/hub/ssh/S3-datacentre stock, and the S3-compatible
-API for filling volumes.
+A small Bash CLI for managing [Runpod](https://runpod.io?ref=a0lqk36q): pods, serverless
+endpoints, network volumes, templates, registries, clusters, billing, cost centers,
+account balance, Hub listings, SSH keys, and live GPU stock — one API key, plain
+output, script-friendly exit codes.
 
 ## Scope
 
@@ -18,7 +17,7 @@ flag spellings are accepted as a convenience only.
 ## Requirements
 
 - Bash 5+
-- Core tools (`curl`, `jq`, `awk`, `head`, `paste`) — `rp` checks for these on startup and names anything missing
+- Standard Unix tools (`curl`, `jq`) — `rp` checks on startup and names anything missing
 - `aws` CLI — only for `rp volume sync` / `rp volume ls` (S3 fill and list)
 - `huggingface-cli` — optional, only for `rp volume sync --models`
 
@@ -33,7 +32,7 @@ curl -fsSL https://raw.githubusercontent.com/objctp/runpod-cli/main/install.sh |
 
 The installer verifies a SHA-256 checksum before extracting. Update later with
 `rp upgrade` (or re-run the one-liner); pin a version with
-`curl ... | bash -s -- --version 0.1.0`.
+`curl ... | bash -s -- --version 1.4.0`.
 
 `rp` also checks for a newer release once a day and prints a one-line notice when
 one is available (it names the right command for your install method). Set
@@ -60,9 +59,8 @@ brew install objctp/tap/rp          # macOS / Linux (Homebrew)
 npm install -g @objctp/rp           # Node 22+ (wraps the same bash CLI)
 ```
 
-Both pull the same universal tarball and pin to the released `rp-VERSION.tar.gz`
-checksum; `brew` rewrites the shebang to a Bash 5+ and `npm` runs a startup
-preflight asserting Bash 5+/jq/curl.
+Both install the same CLI and take care of the Bash 5+ requirement for you
+(`npm` additionally checks for `curl` and `jq` on first run).
 
 Confirm it works:
 
@@ -97,7 +95,7 @@ wins over the stored config):
 | `RUNPOD_S3_ACCESS_KEY` | Console → Settings → **S3 API Keys** (your `user_…` id) | `volume sync` / `ls` |
 | `RUNPOD_S3_SECRET_KEY` | Console → Settings → **S3 API Keys** (an `rps_…` key, shown once) | `volume sync` / `ls` |
 | `HF_TOKEN` | huggingface.co → Access Tokens | `volume sync --models` (gated models) |
-| `RP_MODEL_CACHE` | any writable directory | `volume sync --models` download cache (default `$RP_ROOT/.cache/models`) |
+| `RP_MODEL_CACHE` | any writable directory | `volume sync --models` download cache (default: `.cache/models` inside rp's install folder) |
 
 The S3 key pair is **separate** from the REST API key — create it from its own
 console page. `rp auth login` writes the key file at mode `600` (dir `700`); the
@@ -125,54 +123,62 @@ volume mounts at `/runpod-volume` on serverless workers. To deploy from a Hub
 listing instead of a template, use `serverless create --hub-id <listing-id>`
 (resolve listings with `rp hub search` / `rp hub get`).
 
+Beyond the basics: `rp serverless batch` (beta) submits many requests to an
+endpoint as one managed unit — create, add, finalize, then watch with `batch
+get`; `rp serverless run --worker-id <id>` pins a job to one worker on a
+load-balanced endpoint; `rp stock gpu --mig` lists partitionable GPU slices,
+which `--exclude-gpu` subtracts from a serverless pool; `rp cluster pods add`
+scales out a running cluster.
+
 For command reference and worked examples, use `rp doc` (in-shell) or the docs
 site — both are generated from the same source as the CLI, so they never fall
 behind a release:
 - [`docs/`](docs/index.md)
 - In-shell: `rp --help`, `rp <resource> --help`, `rp doc <command> [<verb>]`
 
-## Things worth knowing
+## Good to know
 
-- **S3 fill needs an S3-API-supported datacentre** — `rp stock dc` reads the
-  `s3apiEnabled` flag live, so its S3 column is always current; `rp volume create`
-  warns if `--dc` is not S3-capable (and `volume sync` refuses).
+- **S3 fills need an S3-capable datacentre** — `rp stock dc` checks live which
+  datacentres support S3 fills, so its S3 column is always current; `rp volume
+  create` warns if `--dc` is not S3-capable (and `volume sync` refuses).
 - **High-performance volumes need a tier-capable datacentre** — `rp volume
-  create --type HIGH_PERFORMANCE` warns when the datacentre's
-  `networkVolumeTypes` does not list the tier; `rp stock dc --volume-type
-  HIGH_PERFORMANCE` marks the ones that do.
-- **Catalog stock is account-wide, not per-datacentre** — `rp volume gpus` and
-  `--gpus-from-volume` reflect global availability; the volume's own datacentre
-  still gates whether provisioning actually succeeds.
+  create --type HIGH_PERFORMANCE` warns when the datacentre doesn't offer that
+  tier; `rp stock dc --volume-type HIGH_PERFORMANCE` marks the ones that do.
+- **GPU availability is account-wide, not per-datacentre** — `rp volume gpus`
+  and `--gpus-from-volume` reflect global availability; the volume's own
+  datacentre still gates whether provisioning actually succeeds.
+- **Re-running `create` is safe for `volume`, `template`, and `serverless`** —
+  an existing resource with the same name is returned, not duplicated; pass
+  `--force` to duplicate anyway. `pod` and `registry` `create` always create
+  new ones and may duplicate on re-run.
 - **`volume sync --models` is a double hop** (HuggingFace → local cache → S3).
   Fine for once-and-rarely fills; use `--source <dir>` for a single hop.
-- **Idempotent creates** — `volume`, `template`, and `serverless` `create` return the
-  existing resource when the name matches; pass `--force` to duplicate. `pod` and
-  `registry` `create` always POST and may duplicate on re-run.
-- **`rp api` is a raw escape hatch** — `rp api <METHOD> <path>` calls the same
-  transport as the resource verbs, so it reaches any v2 route the typed commands
-  don't wrap yet (e.g. a brand-new endpoint). It honours `--body`, `--plane`,
-  `--jq`, `--limit`, and `--cursor`.
-- **List paging is client-side** — Runpod's REST v2 has no server-side pagination
-  yet, so `--limit` / `--cursor` slice the already-fetched list locally. The flags
-  mirror the cursor shape Runpod will add, so they forward server-side later
-  without a CLI change.
-- **Stock and prices drift** — re-run the CLI before each booking.
-- **runpodctl aliases** — several commands also accept `runpodctl`-style flag
-  spellings (e.g. `--gpu-id`, `--data-center-ids`) alongside `rp`'s own. Run
-  `rp doc <command> <verb>` to see which apply.
-- **`--insecure`** (alias `-k`, or `RP_INSECURE_TLS=1`) — skips TLS certificate
-  verification for in-pod runs where the CA bundle can't validate the API. Traffic
-  stays encrypted; the server identity is not checked. Distinct from
-  `RP_ALLOW_INSECURE_HTTP`, which refuses plaintext `http://`.
-- **Scriptable exit codes** — `0` success · `1` transport/API/general · `2`
-  usage · `3` auth (no key/creds) · `4` not-found. Branch on `$?` rather than
-  grepping stderr.
 - **Cost centers are local** — `rp cost-center` tags resources into named
   buckets and rolls up per-project spend from the billing endpoints. Runpod's
   own Cost Centers are console-only (no API), so the tagging lives in a
   per-user state file; `--cost-center` on the pod / serverless / volume /
   cluster create verbs assigns at create. Works for a solo account running
   several projects side by side.
+- **Stock and prices drift** — re-run the CLI before each booking.
+
+## For scripts and CI
+
+- **Scriptable exit codes** — `0` success · `1` transport/API/general · `2`
+  usage · `3` auth (no key/creds) · `4` not-found. Branch on `$?` rather than
+  grepping stderr.
+- **Rate limits are surfaced** — the CLI warns when a quota window is empty
+  (the next request would 429), and a 429 error names the server's wait.
+- **List paging is client-side** — Runpod's REST v2 has no server-side
+  pagination yet, so `--limit` / `--cursor` slice the already-fetched list
+  locally.
+- **`rp api` is a raw escape hatch** — `rp api <METHOD> <path>` reaches any v2
+  route the typed commands don't wrap yet (e.g. a brand-new endpoint).
+- **runpodctl aliases** — several commands also accept `runpodctl`-style flag
+  spellings (e.g. `--gpu-id`, `--data-center-ids`) alongside `rp`'s own. Run
+  `rp doc <command> <verb>` to see which apply.
+- **`--insecure`** (alias `-k`, or `RP_INSECURE_TLS=1`) — skips TLS certificate
+  verification for in-pod runs where the CA bundle can't validate the API.
+  Traffic stays encrypted; the server identity is not checked.
 
 ## Development
 

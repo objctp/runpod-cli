@@ -9,7 +9,7 @@ S3-compatible API.
 
 ```
 bin/rp            entry point — loads .env, sources lib/, dispatches to commands/
-lib/              shared helpers (common, doc, constants, transport, auth, http, graphql, s3, args, json, validate, resource, paginate, hub, billing, costcenter, _version) — `transport` is the single curl impl and delegates credential resolution to `auth` (never read `RUNPOD_API_KEY` directly)
+lib/              shared helpers (common, doc, constants, transport, auth, http, graphql, s3, args, json, validate, resource, paginate, hub, billing, costcenter, _version)
 commands/         one file per command or resource (volume, serverless, pod, template, registry, billing, stock, account, hub, ssh, ssh-key, catalog, cluster, cost-center, api, doc, upgrade)
 tests/unit/       bashunit unit tests for lib helpers
 tests/functional/ bashunit functional tests for commands
@@ -17,14 +17,20 @@ Makefile          fmt / lint / test / check + listing shortcuts
 .shellcheckrc     shellcheck config
 cliff.toml        git-cliff config for CHANGELOG.md
 scripts/changelog.sh   regenerates the Unreleased changelog section
-.githooks/        post-commit hook keeps CHANGELOG.md current
+.githooks/        pre-commit syncs docs/, post-commit keeps CHANGELOG.md current
 ```
+
+Two rules span the whole tree: `transport` is the single curl implementation,
+and credentials are resolved only by `lib/auth.sh` — never read
+`RUNPOD_API_KEY` directly anywhere; new credential sources go in
+`rp::auth_token`.
 
 ## Setup
 
 ```bash
 cp .env.example .env        # add RUNPOD_API_KEY at minimum
 make install                # or: export PATH="$PWD/bin:$PATH"
+make hooks                  # wire up git hooks (pre-commit syncs docs/, post-commit updates CHANGELOG)
 make check                  # lint + tests must pass before you commit
 ```
 
@@ -41,10 +47,11 @@ run `make check`; `bashunit` to run `make test`.
   as trusted — don't re-enable these casually.
 - **`set -euo pipefail`** at the top of executable scripts. Sourced `lib/` and
   `commands/` files do **not** set it (they are sourced into `bin/rp`, which
-  already does) — they start with an include guard instead (see below).
+  already does). `lib/` files start with an include guard instead (see below);
+  `commands/` files are sourced exactly once by `bin/rp` and need no guard.
 - Quote every expansion; prefer `(( ))` for arithmetic and `[[ ]]` for tests.
 
-## Comment Conventions
+## Comment conventions
 
 Comment only when the code itself cannot convey the information: a hidden
 constraint, a subtle invariant, a bug workaround, or behaviour that would
@@ -82,8 +89,7 @@ comment wouldn't confuse a future reader, don't write it.
   Private `_` helpers don't need the template, but *why*-style annotation
   comments above them are welcome wherever they explain a hidden constraint or
   surprise.
-- **Inline comments** — trailing `#` on the same line. Good: `# 10% of total
-  memory`. Bad: `# calculate threshold`.
+- **Inline comments** — trailing `#` on the same line. Good: `# 10% of total memory`. Bad: `# calculate threshold`.
 - **Annotation comments** — a bare `#` line above a block explaining intent.
 
 ## The include-guard pattern
@@ -120,24 +126,27 @@ in `commands/`.
      go through `rp::die` / `rp::notfound` with no `usage:` prefix.
    Never mix the two — a `usage:` prefix on an operational failure misleads the
    user into thinking their invocation syntax was wrong.
-3. Parse flags with `rp::args_parse` and read them with `rp::args_get`,
+4. Parse flags with `rp::args_parse` and read them with `rp::args_get`,
    `rp::args_has`, `rp::args_pos` (see `lib/args.sh`). Booleans are declared in
    `RP_BOOL_FLAGS` inside `lib/args.sh` — add new boolean flags there.
-4. Do CRUD through `rp::http <METHOD> <path> [json]` (REST) and reads-through-stock
-   through `rp::graphql <query> [variables]` (GraphQL). Both die on error and both
-   require a Runpod API token, resolved by `lib/auth.sh` from `RUNPOD_API_KEY` or
-   `RUNPOD_API_KEY_FILE` — never read `RUNPOD_API_KEY` from a command or the
-   transport; add a credential source in `rp::auth_token` instead.
-5. Format output with `rp::table <json> field1 field2 …` for human lists; honour
+5. Do CRUD through `rp::http <METHOD> <path> [json]` (REST) and reads-through-stock
+   through `rp::graphql <query> [variables]` (GraphQL) — serverless job
+   submission (`run`) is the exception, riding the data plane via
+   `rp::http_api`, while the `serverless batch` verbs stay on `rp::http`. These
+   helpers die on error and require a Runpod API token, resolved by
+   `lib/auth.sh` from `RUNPOD_API_KEY` or `RUNPOD_API_KEY_FILE` — never read
+   `RUNPOD_API_KEY` from a command or the transport; add a credential source in
+   `rp::auth_token` instead.
+6. Format output with `rp::table <json> field1 field2 …` for human lists; honour
    `--json` to print the raw API response instead. For list commands, pipe the
    unwrapped array through `rp::paginate` and honour `--jq` / `--limit` / `--cursor`
    (see `rp::resource_list` for the pattern) so paging and field selection work
    uniformly across every resource.
-6. Document the command for `rp doc` (see below): give `commands/<resource>.sh`
+7. Document the command for `rp doc` (see below): give `commands/<resource>.sh`
    the strict intro (a ≤62-char summary ending with `.`, then a description and
    `Usage:`), and add a `# doc: <verb>` block per verb above `rp::cmd_<resource>()`
    in case order, so users can read the options without `--help`.
-7. Add a `tests/functional/<resource>_test.sh` covering the happy path and the
+8. Add a `tests/functional/<resource>_test.sh` covering the happy path and the
    argument errors. Run `make check` until green.
 
 ### Documenting a command for `rp doc`
@@ -214,6 +223,8 @@ consistent.
 make test          # bashunit tests/
 ```
 
+While iterating, run a single file: `bashunit tests/unit/args_test.sh`.
+
 Unit tests in `tests/unit/` cover the `lib/` helpers and run without network
 access. Functional tests in `tests/functional/` exercise a command's argument
 parsing and output shaping; live Runpod calls belong behind a flag or a mock so
@@ -223,7 +234,10 @@ parsing and output shaping; live Runpod calls belong behind a flag or a mock so
 
 The manual in `docs/` is a MkDocs Material site. The markdown pages are
 generated from `rp doc` comments, not hand-written — regenerate them after
-editing command docs with:
+editing command docs with `make docs` (or `npm run docs`; both run
+`scripts/gen-manual.sh`). With `make hooks` wired up, the pre-commit hook runs
+the same script and stages the result, so a hooked clone stays in sync
+automatically.
 
 ```bash
 npm run docs        # scripts/gen-manual.sh: rp doc → docs/<command>.md
@@ -233,7 +247,7 @@ Then preview the site locally (the generated markdown is the source MkDocs
 builds from):
 
 ```bash
-. .venv/bin/activate        # or: pip install mkdocs-material
+pip install mkdocs-material
 mkdocs serve -f docs/mkdocs.yml
 ```
 

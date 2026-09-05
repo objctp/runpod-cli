@@ -5,7 +5,7 @@ List GPU types with price and live availability.
 rp stock gpu [--product <p,…>] [--min-count N]
                     [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>]
                     [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH]
-                    [--cuda <ver>] [--sort <column>] [--json]
+                    [--cuda <ver>] [--mig] [--sort <column>] [--json]
 ```
 
 ## Options
@@ -26,6 +26,7 @@ rp stock gpu [--product <p,…>] [--min-count N]
                             (--vram is accepted as an alias)
   --stock <level>           keep only types whose STOCK is that level
   --cuda <ver>              keep only types with that CUDA version available
+  --mig                     keep only partitionable MiG instances
   --sort <column>           order rows by ID, DISPLAY, VRAM_GB, CLOUD,
                             SECURE_PRICE, COMMUNITY_PRICE, STOCK or CUDA
                             (VRAM is accepted as an alias for VRAM_GB)
@@ -70,6 +71,16 @@ rp stock gpu [--product <p,…>] [--min-count N]
   --min-count is per host: it asks for N of that GPU in one machine, not N
   across the fleet. The floor is 1, so 0 or a negative is a usage error.
   --min-cuda takes 12 or 12.1; any other shape is rejected before the call.
+  Partitionable MiG instances appear as first-class catalogue rows whose `id`
+  carries the NVIDIA MiG profile suffix " MIG <n>g.<gb>gb" (n = slice count,
+  gb = the partition's memory). --mig keeps only those rows; it composes with
+  the other filters (AND). The live ids are:
+    NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb  (pool AMPERE_24)
+    NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 2g.48gb  (pool ADA_48_PRO)
+  Both are secure-only; MiG rows carry no cudaVersions or dataCenters, so the
+  CUDA and DATACENTERS columns dash out for them. `rp pod create --gpu`
+  takes a MiG id directly; serverless placement rides pools instead (see
+  `rp serverless create --exclude-gpu`).
 
 ## Examples
 
@@ -79,6 +90,9 @@ $ rp stock gpu --cloud SECURE --min-count 2
 
 # Show serverless GPUs with CUDA 12.4 or newer
 $ rp stock gpu --product SERVERLESS --min-cuda 12.4
+
+# Show only the partitionable MiG instances
+$ rp stock gpu --mig
 ```
 
 **API:** `GET /v2/catalog/gpus  (include=AVAILABILITY)`

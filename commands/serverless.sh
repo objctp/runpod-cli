@@ -45,6 +45,21 @@ _serverless_gpu_poolcsv() {
   printf '%s' "$poolcsv"
 }
 
+# Read --exclude-gpu and validate it against a resolved pool selection
+# (gpu.excludedTypes), assigning the CSV to the nameref in $1 — empty when the
+# flag is absent. Shared by the create, hub-create and update paths so a typo
+# dies locally instead of silently excluding nothing. Runs in the main shell
+# (no command substitution) so rp::usage exits the caller.
+_serverless_exclude_flag() {
+  # Two separate declarations: `local -n a=… b=…` would make b a nameref too
+  # (pointing at a variable named after the pools CSV — unbound under set -u).
+  local -n excl_out="$1"
+  local pools="$2"
+  # shellcheck disable=SC2034 # nameref assignment lands in the caller's variable
+  excl_out="$(rp::args_get exclude-gpu)"
+  [[ -z "$excl_out" ]] || rp::gpu_excluded_validate "$excl_out" "$pools"
+}
+
 # Resolve --network-volume / --network-volume-id to the volume id and
 # datacenter, setting the caller's `nvid` and `dc` locals (name → id via
 # rp::volume_dc, id → dc via rp::volume_dc_id).
@@ -154,9 +169,10 @@ _serverless_create() {
   if [[ -z "$poolcsv" ]]; then
     rp::usage "rp serverless create requires --gpu <type,..> (or --gpus-from-volume) in API v2"
   fi
-  local count
+  local count excl
   count="$(rp::args_get_uint gpu-count "$RP_DEFAULT_GPU_COUNT")"
-  rp::obj_set obj gpu "$(rp::json_gpu_endpoint "$poolcsv" "$count")"
+  _serverless_exclude_flag excl "$poolcsv"
+  rp::obj_set obj gpu "$(rp::json_gpu_endpoint "$poolcsv" "$count" "$excl")"
 
   # `type` is required by the live spec on create (immutable thereafter).
   local etype idle
@@ -250,6 +266,12 @@ _serverless_create_hub() {
     [[ -n "$poolcsv" ]] || rp::usage "listing '$hubid' declares no gpuIds — pass --gpu <type,..>"
   fi
 
+  # --exclude-gpu subtracts type ids from the pool selection above (the
+  # listing's own gpuIds are already pool ids). Main shell, so rp::usage in
+  # the validator exits the caller rather than the body's substitution.
+  local excl
+  _serverless_exclude_flag excl "$poolcsv"
+
   local gpucount cdisk
   gpucount="$(rp::args_get_uint gpu-count "$(printf '%s' "$cfg" | jq -r ".gpuCount // $RP_DEFAULT_GPU_COUNT")")"
   cdisk="$(printf '%s' "$cfg" | jq -r ".containerDiskInGb // $RP_DEFAULT_CONTAINER_DISK_GB")"
@@ -292,7 +314,7 @@ _serverless_create_hub() {
     disk "$cdisk" \
     env "$envjson" \
     type "$(rp::json_str "$htype")" \
-    gpu "$(rp::json_gpu_endpoint "$poolcsv" "$gpucount")" \
+    gpu "$(rp::json_gpu_endpoint "$poolcsv" "$gpucount" "$excl")" \
     scaling "$hscaling" \
     workers "$(rp::json_workers "$hwmin" "$hwmax" "$hidle")")"
   if [[ -n "$nvid" ]]; then
@@ -338,11 +360,25 @@ _serverless_update() {
     rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax" "$idle")"
   fi
   gpu="$(rp::args_get gpu)"
+  # exclusions subtract type ids from a pool selection, so they only mean
+  # something alongside --gpu (a PATCH carrying pools replaces the whole gpu
+  # object, exclusions included).
+  local excl
+  excl="$(rp::args_get exclude-gpu)"
+  [[ -z "$excl" || -n "$gpu" ]] || rp::usage "--exclude-gpu requires --gpu <type,..> (the API applies exclusions to a pool selection)"
   if [[ -n "$gpu" ]]; then
     local poolcsv count
     poolcsv="$(_serverless_gpu_poolcsv "$gpu")"
     count="$(rp::args_get_uint gpu-count "$RP_DEFAULT_GPU_COUNT")"
-    rp::obj_set obj gpu "$(rp::json_gpu_endpoint "$poolcsv" "$count")"
+    if [[ -n "$excl" ]]; then
+      rp::gpu_excluded_validate "$excl" "$poolcsv"
+      rp::obj_set obj gpu "$(rp::json_gpu_endpoint "$poolcsv" "$count" "$excl")"
+    else
+      # A PATCH sending pools without excludedTypes clears them server-side;
+      # make that existing API behaviour visible instead of silent.
+      rp::warn "note: resending pools clears any existing gpu.excludedTypes (restate with --exclude-gpu to keep them)"
+      rp::obj_set obj gpu "$(rp::json_gpu_endpoint "$poolcsv" "$count")"
+    fi
   fi
   local registry
   registry="$(rp::args_get registry)"
@@ -623,7 +659,7 @@ _serverless_logs() {
 # Create a serverless endpoint from a template or a Hub listing.
 #
 # Usage: rp serverless create --template <id>|--template-id <id> --name <n>
-#                             [--gpu <type,..>]
+#                             [--gpu <type,..>] [--exclude-gpu <type,..>]
 #                             [--network-volume <name> | --network-volume-id <id>
 #                              | --network-volume-ids <id,id>]
 #                             [--type QUEUE|LOAD_BALANCER] [flags]
@@ -640,6 +676,8 @@ _serverless_logs() {
 #   --name <n>                    endpoint name (required); idempotent by name
 #   --gpu <type,..>               GPU type ids (comma-separated) for the pool
 #                                 (alias: --gpu-id)
+#   --exclude-gpu <type,..>       GPU type ids (comma-separated) to subtract
+#                                 from the selected pools
 #   --gpus-from-volume <name>     pick in-stock serverless GPU types from a
 #                                 fixed four-type preference list (account-wide
 #                                 stock, not filtered by the volume's
@@ -684,6 +722,16 @@ _serverless_logs() {
 #   ignored with a warning when set.
 #   --min-cuda-version is accepted and dropped with a warning: v2 has no
 #   create-side CUDA-version field, only the /catalog/gpus filter.
+#   GPU selection is pool-based: --gpu maps the type ids to pool ids and the
+#   API places workers anywhere inside those pools. --exclude-gpu subtracts
+#   GPU type ids from that selection; there is no inclusive allowlist. The
+#   subtraction is validated client-side — each type must belong to one of
+#   the selected pools (the API silently accepts unknown exclusions, so a
+#   typo would otherwise exclude nothing).
+#   Opting out of a partitionable MiG slice is the exclusion use case: e.g.
+#   `--gpu "NVIDIA L4" --exclude-gpu "NVIDIA RTX PRO 6000 Blackwell Server
+#   Edition MIG 1g.24gb"` pins the AMPERE_24 pool (L4 is a member) and drops
+#   its 24 GB MiG member. See `rp stock gpu --mig` for the MiG ids.
 #   --cost-center tags the new endpoint into a local cost center for
 #   per-project spend (`rp cost-center spend`); the center must exist, and the
 #   check runs before the endpoint is created. The tagging is local — Runpod's
@@ -692,6 +740,9 @@ _serverless_logs() {
 # Examples:
 # # Deploy a serverless endpoint from a template
 # $ rp serverless create --name ocr --template tmpl_abc --gpu "NVIDIA L4"
+# # Same pool, but opt out of its 24 GB MiG slice
+# $ rp serverless create --name ocr --template tmpl_abc --gpu "NVIDIA L4" \
+#     --exclude-gpu "NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb"
 # # Deploy from a Hub listing
 # $ rp serverless create --name diff --hub-id hub_xyz --gpu "NVIDIA A40"
 #
@@ -732,7 +783,8 @@ _serverless_logs() {
 # Change an endpoint's workers, GPU pool, registry, template, name, or scaling.
 #
 # Usage: rp serverless update <id> [--workers-min N] [--workers-max N]
-#                            [--idle S] [--gpu <types>] [--gpu-count N]
+#                            [--idle S] [--gpu <types>] [--exclude-gpu <type,..>]
+#                            [--gpu-count N]
 #                            [--registry <id>] [--template-id <id>]
 #                            [--name <n>] [--scale-by delay|requests]
 #                            [--scale-threshold N] [--scaler-type QUEUE_DELAY|REQUEST_COUNT]
@@ -746,6 +798,8 @@ _serverless_logs() {
 #   --workers-max N  new maximum worker count
 #   --idle S         workers.idleTimeout (ignored with REQUEST_COUNT scaling)
 #   --gpu <types>    GPU type ids for the worker pool (alias: --gpu-id)
+#   --exclude-gpu <type,..>  GPU type ids to subtract from the selected pools
+#                            (comma-separated; requires --gpu in the same call)
 #   --gpu-count N    GPUs per worker (default: 1)
 #   --registry <id>  registry credential for a private image (alias: --registry-auth-id)
 #   --template-id <id>   swap the endpoint's template (PATCH field templateId;
@@ -763,6 +817,13 @@ _serverless_logs() {
 #   At least one flag is required; with none, the command exits with a usage
 #   error rather than sending an empty PATCH.
 #   A --gpu change re-resolves pool ids from the type names.
+#   --exclude-gpu subtracts GPU type ids from the selection made by --gpu
+#   (no inclusive allowlist exists). Update semantics follow the API's PATCH:
+#   exclusions require pools in the same PATCH, and resending pools WITHOUT
+#   --exclude-gpu clears any existing gpu.excludedTypes — the CLI warns about
+#   that wipe so an implicit clearing stays visible. Validation is client-side
+#   (each excluded type must belong to one of the selected pools; the API
+#   silently accepts unknown exclusions).
 #   --scale-by / --scale-threshold are coercion aliases (runpodctl spelling)
 #   that feed the same scaling object as rp's --scaler-type / --scaler-value.
 #
@@ -1442,7 +1503,7 @@ rp::cmd_serverless() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp serverless <verb> [flags]
-   create --template <id>|--template-id <id> [--name <n>] [--gpu <type,..> (alias: --gpu-id) | --gpus-from-volume <name>] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids <id,id>]
+   create --template <id>|--template-id <id> [--name <n>] [--gpu <type,..> (alias: --gpu-id) | --gpus-from-volume <name>] [--exclude-gpu <type,..> (subtract from the selected pools)] [--network-volume <name> | --network-volume-id <id> | --network-volume-ids <id,id>]
            [--type QUEUE|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot]
            [--env K=V]…  (--env is repeatable K=V; NOT aliased to runpodctl's JSON --env)
            [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] [--execution-timeout <s>] [--hub-id <listing-id>] [--force] [--registry <id> (alias: --registry-auth-id)]
@@ -1450,7 +1511,7 @@ Usage: rp serverless <verb> [flags]
            (idempotent by --name; --hub-id deploys from a Hub listing; --type defaults to QUEUE;
             --scaler-type defaults to QUEUE_DELAY with queueDelay 4; --idle sets workers.idleTimeout;
             --env overlays the template's env, user value winning per key)
-   list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types> (alias: --gpu-id)] [--gpu-count N] [--registry <id> (alias: --registry-auth-id)] [--template-id <id>] [--name <n>]
+   list | get <id> | update <id> [--workers-min N] [--workers-max N] [--idle S] [--gpu <types> (alias: --gpu-id)] [--exclude-gpu <type,..>] [--gpu-count N] [--registry <id> (alias: --registry-auth-id)] [--template-id <id>] [--name <n>]
            [--scale-by delay|requests (runpodctl coercion: --scaler-type)] [--scale-threshold N (runpodctl coercion: --scaler-value)]
            [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] | scale <id> --min N --max N [--idle S] | delete <id>
    run <id> --input '<json>' | --input-file <path|-> [--sync|--async] [--worker-id <id>] [--affinity soft|strict|strict-resume] [--timeout <s>] [--json]

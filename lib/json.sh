@@ -121,9 +121,18 @@ rp::json_gpu_pod() { rp::json_obj id "$(rp::json_str "$1")" count "$2"; }
 # the caller); pure mirror of rp::json_gpu_pod.
 rp::json_cpu() { rp::json_obj id "$(rp::json_str "$1")" vcpuCount "$2"; }
 
-# Serverless GPU: {pools:[...], count}.
+# Serverless GPU: {pools:[...], count}, or {pools:[...], excludedTypes:[...],
+# count} when $3 carries the GPU type ids to subtract from the pools (empty
+# tokens skipped). excludedTypes is a subtractive filter on `pools` — the v2
+# endpoint shape has no inclusive GPU allowlist, only pool selection.
 rp::json_gpu_endpoint() {
-  rp::json_obj pools "$(rp::csv_to_jsonarray "$1")" count "$2"
+  if [[ -n "${3:-}" ]]; then
+    local excluded
+    excluded="$(rp::split_csv "$3" | jq -R 'select(length>0)' | jq -sc .)"
+    rp::json_obj pools "$(rp::csv_to_jsonarray "$1")" excludedTypes "$excluded" count "$2"
+  else
+    rp::json_obj pools "$(rp::csv_to_jsonarray "$1")" count "$2"
+  fi
 }
 
 # Worker scaling: {min, max, idleTimeout?}, omitting any empty field.

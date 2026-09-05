@@ -67,6 +67,13 @@ _stock_gpu() {
   # global aggregate (mirrors how the STOCK column is computed below).
   [[ -z "$stock_f" ]] || data="$(printf '%s' "$data" | jq -c --arg s "$stock_f" --arg dcq "$dc" 'map(select((if $dcq == "" then (.availability // "") else ((.dataCenters // [] | map(select(.id | ascii_upcase == $dcq)) | .[0].availability) // "") end) | ascii_upcase == $s))')"
   [[ -z "$cuda_f" ]] || data="$(printf '%s' "$data" | jq -c --arg c "$cuda_f" 'map(select(([.cudaVersions // [] | .[] | select(type == "object" and (.available // false))] | map(.version)) | index($c)))')"
+  # --mig keeps only partitionable MiG instances: their ids carry the NVIDIA MiG
+  # profile suffix " MIG <n>g.<gb>gb" (e.g. "…Blackwell Server Edition MIG
+  # 1g.24gb"). MiG rows lack cudaVersions/dataCenters, so other filters see "-"
+  # for them; --mig composes with them (AND) like every other filter.
+  if rp::args_has mig; then
+    data="$(printf '%s' "$data" | jq -c 'map(select((.id // "") | test(" MIG [0-9]+g\\.[0-9]+gb$")))')"
+  fi
   [[ -z "$sort" ]] || data="$(printf '%s' "$data" | jq -c --arg s "$sort" --arg dcq "$dc" 'sort_by(
     if $s == "VRAM_GB" then (.memory // 0)
     elif $s == "SECURE_PRICE" then (.price.secure // 0)
@@ -131,6 +138,7 @@ _stock_gpu() {
     rp::args_has min-cuda && fl+=" --min-cuda"
     rp::args_has stock && fl+=" --stock"
     rp::args_has cuda && fl+=" --cuda"
+    rp::args_has mig && fl+=" --mig"
     if [[ -n "$fl" ]]; then
       rp::info "no GPU types match the current filters ($fl); try widening them"
     else
@@ -365,7 +373,7 @@ _stock_dc() {
 # Usage: rp stock gpu [--product <p,…>] [--min-count N]
 #                     [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>]
 #                     [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH]
-#                     [--cuda <ver>] [--sort <column>] [--json]
+#                     [--cuda <ver>] [--mig] [--sort <column>] [--json]
 #
 # Options:
 #   --product <p,…>           POD, CLUSTER or SERVERLESS, comma-separated
@@ -383,6 +391,7 @@ _stock_dc() {
 #                             (--vram is accepted as an alias)
 #   --stock <level>           keep only types whose STOCK is that level
 #   --cuda <ver>              keep only types with that CUDA version available
+#   --mig                     keep only partitionable MiG instances
 #   --sort <column>           order rows by ID, DISPLAY, VRAM_GB, CLOUD,
 #                             SECURE_PRICE, COMMUNITY_PRICE, STOCK or CUDA
 #                             (VRAM is accepted as an alias for VRAM_GB)
@@ -426,12 +435,24 @@ _stock_dc() {
 #   --min-count is per host: it asks for N of that GPU in one machine, not N
 #   across the fleet. The floor is 1, so 0 or a negative is a usage error.
 #   --min-cuda takes 12 or 12.1; any other shape is rejected before the call.
+#   Partitionable MiG instances appear as first-class catalogue rows whose `id`
+#   carries the NVIDIA MiG profile suffix " MIG <n>g.<gb>gb" (n = slice count,
+#   gb = the partition's memory). --mig keeps only those rows; it composes with
+#   the other filters (AND). The live ids are:
+#     NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb  (pool AMPERE_24)
+#     NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 2g.48gb  (pool ADA_48_PRO)
+#   Both are secure-only; MiG rows carry no cudaVersions or dataCenters, so the
+#   CUDA and DATACENTERS columns dash out for them. `rp pod create --gpu`
+#   takes a MiG id directly; serverless placement rides pools instead (see
+#   `rp serverless create --exclude-gpu`).
 #
 # Examples:
 # # Show secure-cloud GPUs with at least two in stock
 # $ rp stock gpu --cloud SECURE --min-count 2
 # # Show serverless GPUs with CUDA 12.4 or newer
 # $ rp stock gpu --product SERVERLESS --min-cuda 12.4
+# # Show only the partitionable MiG instances
+# $ rp stock gpu --mig
 #
 # API: GET /v2/catalog/gpus  (include=AVAILABILITY)
 
@@ -550,7 +571,7 @@ rp::cmd_stock() {
   -h | --help | help | "")
     case "$requested" in
     gpu)
-      echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] [--hide <cols>]"
+      echo "Usage: rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--mig] [--sort <column>] [--hide <cols>]"
       ;;
     cpus)
       echo "Usage: rp stock cpus [--dc <id>] [--vcpu N] [--product POD|SERVERLESS|CLUSTER] [--compact]"
@@ -561,7 +582,7 @@ rp::cmd_stock() {
     *)
       echo "Usage: rp stock <verb> [flags]
 
-  gpu    rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--sort <column>] [--hide <cols>]
+  gpu    rp stock gpu [--product POD,CLUSTER,SERVERLESS] [--min-count N] [--cloud SECURE|COMMUNITY] [--dc <id>] [--min-cuda <ver>] [--vram-gb N] [--stock NONE|LOW|MEDIUM|HIGH] [--cuda <ver>] [--mig] [--sort <column>] [--hide <cols>]
   cpus   rp stock cpus [--dc <id>] [--vcpu N] [--product POD|SERVERLESS|CLUSTER] [--compact]
   dc     rp stock dc [--json] [--s3] [--global-network] [--volume-type <t,…>] [--compliance <c,…>] [--region <r,…>]
 

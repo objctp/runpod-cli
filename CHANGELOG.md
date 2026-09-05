@@ -11,6 +11,7 @@
 - Warn when a high-performance volume targets an incapable datacentre
 - Surface v2 rate-limit headers and parse problem+json errors
 - Add local per-project spend buckets
+- Add MiG instance discovery and serverless GPU exclusions
 
 ## [1.4.0] - 2026-08-27
 
