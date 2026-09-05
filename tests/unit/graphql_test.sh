@@ -131,3 +131,59 @@ function test_should_exit_three_when_api_key_unset() {
   (rp::graphql 'query { x }' >/dev/null 2>&1)
   assert_exit_code 3
 }
+
+# A 200 with a non-JSON body (proxy interstitial, HTML error page) must fail as
+# a GraphQL error, not print a raw jq parse error from the extraction.
+function test_should_die_clearly_when_200_body_is_not_json() {
+  GQL_BODY='<html>bad gateway</html>'
+  GQL_STATUS=200
+  local err rc
+  err="$(rp::graphql 'query { x }' 2>&1 >/dev/null)"
+  rc=$?
+  assert_contains "invalid JSON body" "$err"
+  assert_equals "1" "$rc"
+}
+
+function test_should_return_one_quietly_when_soft_200_body_is_not_json() {
+  GQL_BODY='<html>bad gateway</html>'
+  GQL_STATUS=200
+  local out err
+  out="$(rp::graphql_soft 'query { x }' 2>"$OUT")"
+  err="$(<"$OUT")"
+  assert_empty "$out"
+  assert_empty "$err"
+}
+
+# graphql_soft must consult the account store, not just raw env: a user logged
+# in via `rp auth login` (no RUNPOD_API_KEY exported) would otherwise always
+# fall back to the stale static S3-DC snapshot. _rp_env_load lives in bin/rp,
+# so a faithful stub of its account load is defined — and unset — here only.
+function test_should_see_the_account_store_in_graphql_soft() {
+  _rp_env_load() {
+    local f="$1" line
+    [[ -f "$f" ]] || return 0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ "$line" == RUNPOD_API_KEY=* ]]; then
+        export "RUNPOD_API_KEY=${line#RUNPOD_API_KEY=}"
+      fi
+    done <"$f"
+    return 0
+  }
+  local dir f out rc
+  dir="$(mktemp -d)"
+  f="$dir/acme"
+  printf 'RUNPOD_API_KEY=sk-stored\n' >"$f"
+  chmod 600 "$f"
+  unset RUNPOD_API_KEY RUNPOD_API_KEY_FILE
+  GQL_BODY='{"data":{"dc":"live"}}'
+  GQL_STATUS=200
+  RP_ACCOUNT=acme RP_CREDS_DIR="$dir" RP_ACTIVE_FILE="$dir/active"
+  out="$(rp::graphql_soft 'query { x }' 2>/dev/null)"
+  rc=$?
+  RP_ACCOUNT=""
+  chmod 600 "$f"
+  rm -rf "$dir"
+  unset -f _rp_env_load RUNPOD_API_KEY
+  assert_equals '{"dc":"live"}' "$out"
+  assert_equals "0" "$rc"
+}
