@@ -10,6 +10,14 @@ _RP_TRANSPORT=1
 # die/soft policy. Module-global: set inside _curl_json, read by callers.
 declare -g _RP_CURL_STATUS=200
 
+# Curl's own exit code from the most recent _curl_json call (0 on a completed
+# fetch, even when the fetch returned an HTTP error status). _RP_CURL_STATUS is
+# 000 for every transport failure, so this is what lets a caller distinguish a
+# --max-time expiry (curl 28) from a connect failure (curl 7) — see
+# `rp serverless run`'s runsync triage. Reset at entry, set on every call.
+# Module-global.
+declare -g _RP_CURL_RC=""
+
 # The `Sunset` header value (HTTP-date) from the most recent response, when the
 # server sent one. GraphQL (and v1) responses now carry it; surfaced by callers
 # so users see the retirement countdown. Reset each request so it never leaks
@@ -173,8 +181,10 @@ _curl_json() {
   _RP_RATE_LIMIT=""
   _RP_RATE_LIMIT_POLICY=""
   _RP_RETRY_AFTER=""
+  _RP_CURL_RC=""
   status="$(curl "${args[@]}" -o "$tmp" -w '%{http_code}')" || {
     rc=$?
+    _RP_CURL_RC="$rc"
     _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}" "$hdrfile"
     # curl exit 130 == killed by SIGINT: surface as "interrupted" (exit 130),
     # never a bogus transport error. The emit helpers (_rp_http_emit /
@@ -188,20 +198,24 @@ _curl_json() {
     return "$rc"
   }
   out="$(<"$tmp")"
+  # The header extractions below grep the dump and return 1 when a header is
+  # absent — `|| true` keeps a bare caller (one not wrapped in rp::api_call's
+  # caller-side masking) alive under set -e.
   # Stash the Sunset header (case-insensitive) if the server sent one.
-  _RP_SUNSET="$(grep -i '^sunset:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//')"
+  _RP_SUNSET="$(grep -i '^sunset:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//')" || true
   # Same for the load balancer's worker stamp (tr -d '\r': curl dumps CRLF).
-  _RP_WORKER_ID="$(grep -i '^x-runpod-worker-id:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')"
+  _RP_WORKER_ID="$(grep -i '^x-runpod-worker-id:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')" || true
   # The v2 rate-limit family (^ratelimit: cannot match ratelimit-policy: — the
   # colon anchors it, so no special handling is needed).
-  _RP_RATE_LIMIT="$(grep -i '^ratelimit:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')"
-  _RP_RATE_LIMIT_POLICY="$(grep -i '^ratelimit-policy:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')"
-  _RP_RETRY_AFTER="$(grep -i '^retry-after:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')"
+  _RP_RATE_LIMIT="$(grep -i '^ratelimit:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')" || true
+  _RP_RATE_LIMIT_POLICY="$(grep -i '^ratelimit-policy:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')" || true
+  _RP_RETRY_AFTER="$(grep -i '^retry-after:' "$hdrfile" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')" || true
   # Warn about an exhausted window only here, on the path where a real
   # response arrived (a dead transport has no headers to judge).
   _rp_ratelimit_warn
   _rp_cleanup_tmp "$hdr" "$tmp" "${body_tmp:-}" "$hdrfile"
   _RP_CURL_STATUS="$status"
+  _RP_CURL_RC=0
   printf '%s' "$out"
   return 0
 }
