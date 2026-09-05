@@ -195,3 +195,107 @@ function test_login_from_runpodctl_missing_key_dies() {
   assert_file_not_exists "$RP_CONFIG_HOME/credentials.d/default"
   rm -f "$rpc"
 }
+
+# The subshells below run under bin/rp's `set -euo pipefail`: on a fresh
+# install _auth_active_name/_account_name used to return 1 and abort the
+# command before its friendly message.
+function test_fresh_install_list_exits_zero_with_friendly_message() {
+  local out rc
+  out="$(
+    set -euo pipefail
+    rp::cmd_auth list 2>&1
+  )"
+  rc=$?
+  assert_equals 0 "$rc"
+  assert_contains "no accounts stored" "$out"
+}
+
+function test_fresh_install_status_exits_zero_reporting_none() {
+  local out rc
+  out="$(
+    set -euo pipefail
+    rp::cmd_auth status 2>&1
+  )"
+  rc=$?
+  assert_equals 0 "$rc"
+  assert_contains "ACTIVE ACCOUNT  <none>" "$out"
+  assert_contains "API KEY         NOT configured" "$out"
+}
+
+function test_fresh_install_logout_exits_zero_and_touches_nothing() {
+  local out rc
+  out="$(
+    set -euo pipefail
+    rp::cmd_auth logout 2>&1
+  )"
+  rc=$?
+  assert_equals 0 "$rc"
+  assert_contains "no active account to log out" "$out"
+  assert_file_not_exists "$RP_CONFIG_HOME/credentials.d"
+  assert_file_not_exists "$RP_CONFIG_HOME/active"
+}
+
+# Account names become file names under credentials.d/ — a traversal name must
+# exit 2 (usage) before anything outside the store is written or deleted.
+function test_login_rejects_traversal_name() {
+  local out rc
+  out="$(rp::cmd_auth login --name ../notes.txt --api-key sk-evil </dev/null 2>&1)"
+  rc=$?
+  assert_equals 2 "$rc"
+  assert_contains "invalid account name '../notes.txt'" "$out"
+  assert_file_not_exists "$RP_CONFIG_HOME/notes.txt"
+  assert_file_not_exists "$RP_CONFIG_HOME/credentials.d"
+}
+
+function test_logout_rejects_traversal_name() {
+  printf 'do not delete\n' >"$RP_CONFIG_HOME/notes.txt"
+  local out rc
+  out="$(rp::cmd_auth logout --name ../notes.txt 2>&1)"
+  rc=$?
+  assert_equals 2 "$rc"
+  assert_contains "invalid account name '../notes.txt'" "$out"
+  assert_file_contains "$RP_CONFIG_HOME/notes.txt" "do not delete"
+}
+
+function test_switch_rejects_traversal_name() {
+  local out rc
+  out="$(rp::cmd_auth switch ../notes.txt 2>&1)"
+  rc=$?
+  assert_equals 2 "$rc"
+  assert_contains "invalid account name '../notes.txt'" "$out"
+  assert_file_not_exists "$RP_CONFIG_HOME/active"
+}
+
+function test_login_accepts_dotted_and_dashed_names() {
+  rp::cmd_auth login --name prod.eu-1 --api-key sk-ok </dev/null
+  assert_file_exists "$RP_CONFIG_HOME/credentials.d/prod.eu-1"
+  assert_file_contains "$RP_CONFIG_HOME/active" "prod.eu-1"
+}
+
+# The interactive login offer only runs at a terminal, so the acceptance logic
+# is tested on _auth_offer_import directly (read prompts on stderr when piped).
+function test_import_prompt_accepts_yes() {
+  local out
+  out="$(printf 'yes\n' | _auth_offer_import rpa_promptkey '/cfg/config.toml' 2>/dev/null)"
+  assert_equals "rpa_promptkey" "$out"
+}
+
+function test_import_prompt_accepts_any_case_of_yes() {
+  local out
+  out="$(printf 'YES\n' | _auth_offer_import rpa_promptkey '/cfg/config.toml' 2>/dev/null)"
+  assert_equals "rpa_promptkey" "$out"
+}
+
+function test_import_prompt_still_accepts_single_y() {
+  local out
+  out="$(printf 'y\n' | _auth_offer_import rpa_promptkey '/cfg/config.toml' 2>/dev/null)"
+  assert_equals "rpa_promptkey" "$out"
+}
+
+function test_import_prompt_rejects_no_and_bare_enter() {
+  local out
+  out="$(printf 'no\n' | _auth_offer_import rpa_promptkey '/cfg/config.toml' 2>/dev/null)"
+  assert_equals "" "$out"
+  out="$(printf '\n' | _auth_offer_import rpa_promptkey '/cfg/config.toml' 2>/dev/null)"
+  assert_equals "" "$out"
+}

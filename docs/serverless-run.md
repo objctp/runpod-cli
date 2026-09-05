@@ -34,6 +34,9 @@ rp serverless run <id> --input '<json>' | --input-file <path|->
   --input and --input-file are mutually exclusive, as are --sync and --async.
   The body is wrapped as { "input": <json> } and POSTed to the endpoint's
   runsync (or run, with --async) route on the data plane.
+  A --timeout expiry reports "request timed out after Ns — the job may still
+  complete server-side; use --async for long jobs" instead of a generic
+  transport error.
   --worker-id/--affinity apply to load-balanced endpoints and compose with
   --sync/--async alike. The header value is "[mode ]<id>": soft sends the
   bare id (best-effort — the job falls back to normal selection when the

@@ -8,7 +8,7 @@ rp account [info]
 ## Options
 
 ```
-  --json  print the raw GraphQL response
+  --json  print the GraphQL data object (.data)
 ```
 
 ## Notes

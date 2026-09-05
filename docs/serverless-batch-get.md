@@ -17,7 +17,7 @@ rp serverless batch get <endpoint> <batchId> [--wait] [--interval <s>] [--timeou
 ```
   --wait           poll until the counts reconcile (completed + failed =
                    total) or the batch reaches a terminal state
-  --interval <s>   seconds between polls (default 5)
+  --interval <s>   seconds between polls (default 5, minimum 1)
   --timeout <s>    cap the wait (default: none — batches are multi-hour by
                    design; Ctrl-C or this flag ends the wait)
   --json           print the raw API response

@@ -16,7 +16,8 @@ rp registry delegations create --resource <ecr-arn> [--name <n>]
 
 ## Notes
   On success the new delegation id is printed; the name is optional and, when
-  absent, is not sent in the request body.
+  absent, is not sent in the request body. --json prints the raw API response
+  instead of the id line.
 
 **API:** `POST /v2/registries/delegations`
 

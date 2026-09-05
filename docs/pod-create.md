@@ -56,6 +56,8 @@ rp pod create --image <ref> --name <n>
                                  is also set (GPU pods only)
   --bid-per-gpu <n>               max $/GPU-hour to pay for a spot pod; implies
                                  --interruptible; must be > 0 (GPU pods only)
+  --force                        create even when a pod of this name exists
+                                 (bypasses the idempotency-by-name gate)
 ```
 
 ## Notes
@@ -95,9 +97,11 @@ rp pod create --image <ref> --name <n>
   CPU pod it is silently ignored (there is no gpu block to carry it). It is
   mutually exclusive with any allowed-CUDA-versions selection, which rp does
   not expose.
-  --force is accepted and ignored. Unlike `rp volume create` and
-  `rp template create`, pod creation is not idempotent by name, so re-running
-  this command creates a second pod.
+  Pod creation is idempotent by name, like `rp volume create` and
+  `rp template create`: where a pod of that name already exists, the CLI
+  prints the existing id and skips the POST, so re-running a create is safe
+  whatever spot flags it carried. --force bypasses the gate and creates
+  another pod.
   --cost-center tags the new pod into a local cost center for per-project
   spend (`rp cost-center spend`); the center must exist, and the check runs
   before the pod is created. The tagging is local — Runpod's own Cost Centers
