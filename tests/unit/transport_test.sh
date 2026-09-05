@@ -131,6 +131,28 @@ function test_should_exit_130_on_sigint_over_graphql() {
   assert_exit_code 130
 }
 
+# _RP_CURL_RC threads curl's own exit code out of _curl_json, so a caller can
+# tell a --max-time expiry (28) from other transport failures that all share
+# _RP_CURL_STATUS=000.
+function test_should_capture_curl_rc_on_transport_failure() {
+  curl() { return 28; }
+  _curl_json "https://rest.test/v2/pods" GET >/dev/null 2>&1
+  assert_equals "28" "$_RP_CURL_RC"
+  assert_equals "000" "$_RP_CURL_STATUS"
+}
+
+function test_should_capture_curl_rc_130_on_sigint() {
+  curl() { return 130; }
+  _curl_json "https://rest.test/v2/pods" GET >/dev/null 2>&1
+  assert_equals "130" "$_RP_CURL_RC"
+}
+
+function test_should_set_curl_rc_zero_on_a_completed_fetch() {
+  _RP_CURL_RC=28 # stale from a previous failed call
+  rp::http GET /pods >/dev/null 2>&1
+  assert_equals "0" "$_RP_CURL_RC"
+}
+
 # Streaming path must honour the same exit-code contract as the buffered one:
 # 404 -> not-found (4) and 401/403 rejected key -> auth (3). The curl double
 # writes a header dump (the -D file) and returns 22 (curl's >=400 "error").
