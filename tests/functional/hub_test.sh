@@ -43,6 +43,18 @@ function test_gpu_type_to_pool_maps_type_name_to_pool_id() {
   rp::http() { :; }
 }
 
+# A space after the comma is natural typing: every token must reach the pool
+# match trimmed, so "NVIDIA L4, RTX 4090" maps BOTH types (the untrimmed
+# " RTX 4090" silently matched nothing and was dropped).
+function test_gpu_type_to_pool_maps_every_token_of_a_spaced_csv() {
+  rp::http() { printf '{"gpus":[{"id":"NVIDIA L4","pool":"ADA_24"},{"id":"RTX 4090","pool":"ADA_48_PRO"}]}'; }
+  _RP_GPU_POOLS=""
+  local pools
+  pools="$(rp::gpu_type_to_pool_csv "NVIDIA L4, RTX 4090")"
+  assert_equals "ADA_24,ADA_48_PRO" "$pools"
+  rp::http() { :; }
+}
+
 function test_gpu_type_to_pool_returns_empty_for_unknown_type() {
   rp::http() { printf '{"gpus":[{"id":"NVIDIA A100 80GB PCIe","pool":"AMPERE_80"}]}'; }
   _RP_GPU_POOLS=""
@@ -189,4 +201,48 @@ function test_hub_list_command_accepts_lowercase_type() {
   assert_contains "P" "$out"
   assert_not_contains "V" "$out"
   rp::graphql() { :; }
+}
+
+# The deprecation warn (with the Sunset countdown) is emitted inside
+# rp::graphql — where _RP_SUNSET still exists — gated on the flag the hub call
+# sites set. rp::api_call is stubbed so the real emit path runs.
+function _hub_api_call_with_sunset() {
+  _RP_CURL_STATUS=200
+  _RP_SUNSET="${_HUB_SUNSET:-}"
+  printf '%s' '{"data":{"listings":[{"id":"abc","title":"vLLM"}]}}'
+}
+
+function test_hub_warns_with_sunset_countdown_from_the_transport() {
+  RUNPOD_API_KEY="sk-test"
+  rp::api_call() { _hub_api_call_with_sunset "$@"; }
+  _HUB_SUNSET="Sat, 06 Jun 2026 00:00:00 GMT"
+  local err
+  err="$(rp::cmd_hub search whisper 2>&1 >/dev/null)"
+  unset -f rp::api_call
+  _HUB_SUNSET=""
+  assert_contains "rp hub is GraphQL-backed and has no v2 endpoint yet" "$err"
+  assert_contains "(Sunset: Sat, 06 Jun 2026 00:00:00 GMT)" "$err"
+}
+
+function test_hub_warns_without_a_sunset_suffix_when_the_header_is_absent() {
+  RUNPOD_API_KEY="sk-test"
+  rp::api_call() { _hub_api_call_with_sunset "$@"; }
+  local err
+  err="$(rp::cmd_hub search whisper 2>&1 >/dev/null)"
+  unset -f rp::api_call
+  assert_contains "rp hub is GraphQL-backed" "$err"
+  assert_not_contains "(Sunset:" "$err"
+}
+
+# The hub wording must not leak to non-hub rp::graphql callers (account,
+# ssh-key, dc stock): they never set RP_HUB_WANT_SUNSET.
+function test_non_hub_graphql_does_not_emit_the_hub_warn() {
+  RUNPOD_API_KEY="sk-test"
+  rp::api_call() { _hub_api_call_with_sunset "$@"; }
+  _HUB_SUNSET="Sat, 06 Jun 2026 00:00:00 GMT"
+  local err
+  err="$(rp::graphql 'query { x }' 2>&1 >/dev/null)"
+  unset -f rp::api_call
+  _HUB_SUNSET=""
+  assert_not_contains "rp hub" "$err"
 }

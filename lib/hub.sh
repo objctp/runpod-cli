@@ -25,11 +25,14 @@ _gpu_pools_json() {
 }
 
 # listings(input: ListingsInput!) -> JSON array of {id,title,repoOwner,repoName,type}
+# The RP_HUB_WANT_SUNSET prefix makes rp::graphql emit the hub deprecation warn
+# where _RP_SUNSET still exists — these verbs capture via $(), so the value
+# would be lost on return (see _rp_hub_sunset_warn in lib/graphql.sh).
 rp::hub_search() {
   local query="$1" limit="${2:-$RP_HUB_SEARCH_LIMIT}"
   local vars
   vars="$(jq -c -n --arg s "$query" --argjson l "$limit" '{input:{searchQuery:$s,limit:$l}}')"
-  rp::graphql "$RP_HUB_LISTINGS_QUERY" "$vars" | jq -c '.listings'
+  RP_HUB_WANT_SUNSET=1 rp::graphql "$RP_HUB_LISTINGS_QUERY" "$vars" | jq -c '.listings'
 }
 
 # listings(input: ListingsInput!) without a searchQuery — list the marketplace
@@ -58,7 +61,7 @@ rp::hub_list() {
         | (if $offset != "" then $in + {offset: ($offset | tonumber)} else $in end))
     }')"
   local data
-  data="$(rp::graphql "$q" "$vars" | jq -c '.listings')"
+  data="$(RP_HUB_WANT_SUNSET=1 rp::graphql "$q" "$vars" | jq -c '.listings')"
   if [[ -n "$type" ]]; then
     data="$(printf '%s' "$data" | jq -c --arg t "$type" 'map(select(.type == $t))')"
   fi
@@ -71,7 +74,7 @@ rp::hub_get() {
   local q='query($id:String!){ listing(id:$id){ id title repoOwner repoName type listedRelease { name tagName build { imageName } config } } }'
   local vars
   vars="$(jq -c -n --arg id "$id" '{id:$id}')"
-  rp::graphql "$q" "$vars" | jq -c '.listing'
+  RP_HUB_WANT_SUNSET=1 rp::graphql "$q" "$vars" | jq -c '.listing'
 }
 
 # Translate a CSV of GPU type names -> CSV of pool ids (first pool covering each).
