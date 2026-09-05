@@ -26,10 +26,16 @@ unset _rp_src _rp_dir
 RP_CREDS_DIR="$RP_CONFIG_HOME/credentials.d"
 RP_ACTIVE_FILE="$RP_CONFIG_HOME/active"
 export RP_CREDS_DIR RP_ACTIVE_FILE
-# Hard runtime preflight (Bash 5+ / jq / curl) must run *before* the lib loop
+# Hard runtime preflight (Bash 5.1+ / jq / curl) must run *before* the lib loop
 # below: lib/args.sh and friends use Bash 5 syntax (`declare -g`), so a too-old
 # Bash must be caught here with a clear message rather than a syntax error.
 rp::check_runtime
+# Command substitutions inherit errexit from here on (needs the 5.1 floor
+# checked above): a failing command inside $() now aborts the substitution
+# instead of silently yielding partial/empty output. Pipelines whose non-zero
+# exit is expected (e.g. an empty grep match) guard their assignments with
+# `|| true`; everything else fails closed at the call site.
+shopt -s inherit_errexit
 # EXIT/HUP/TERM clean up temp files and continue; INT (Ctrl-C) exits quietly as
 # 130 ("interrupted") — without it a SIGINT inside curl would otherwise surface
 # as a bogus "curl transport error" from the emit helpers. The EXIT trap still

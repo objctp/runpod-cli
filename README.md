@@ -16,7 +16,7 @@ flag spellings are accepted as a convenience only.
 
 ## Requirements
 
-- Bash 5+
+- Bash 5.1+
 - Standard Unix tools (`curl`, `jq`) — `rp` checks on startup and names anything missing
 - `aws` CLI — only for `rp volume sync` / `rp volume ls` (S3 fill and list)
 - `huggingface-cli` — optional, only for `rp volume sync --models`
@@ -38,7 +38,7 @@ The installer verifies a SHA-256 checksum before extracting. Update later with
 one is available (it names the right command for your install method). Set
 `RP_NO_UPDATE_CHECK=1` to disable the check.
 
-> macOS ships Bash 3.2, but `rp` needs Bash 5+. The installer detects this and
+> macOS ships Bash 3.2, but `rp` needs Bash 5.1+. The installer detects this and
 > refuses with the fix (`brew install bash`, then restart your shell).
 
 For development (clone + symlink, no download required):
@@ -59,7 +59,7 @@ brew install objctp/tap/rp          # macOS / Linux (Homebrew)
 npm install -g @objctp/rp           # Node 22+ (wraps the same bash CLI)
 ```
 
-Both install the same CLI and take care of the Bash 5+ requirement for you
+Both install the same CLI and take care of the Bash 5.1+ requirement for you
 (`npm` additionally checks for `curl` and `jq` on first run).
 
 Confirm it works:

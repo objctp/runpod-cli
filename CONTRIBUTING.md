@@ -1,6 +1,6 @@
 # Contributing
 
-`rp` is a Bash 5+ CLI: a thin dispatcher (`bin/rp`) sourcing shared helpers
+`rp` is a Bash 5.1+ CLI: a thin dispatcher (`bin/rp`) sourcing shared helpers
 (`lib/`), with one file per resource (`commands/`) and a bashunit suite
 (`tests/`). It talks to three Runpod APIs directly — REST, GraphQL, and the
 S3-compatible API.
@@ -34,7 +34,7 @@ make hooks                  # wire up git hooks (pre-commit syncs docs/, post-co
 make check                  # lint + tests must pass before you commit
 ```
 
-You need `curl`, `jq`, and Bash 5+ to run the CLI; `shellcheck` and `shfmt` to
+You need `curl`, `jq`, and Bash 5.1+ to run the CLI; `shellcheck` and `shfmt` to
 run `make check`; `bashunit` to run `make test`.
 
 ## Code style

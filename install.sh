@@ -58,11 +58,13 @@ rp_inst_os() {
   esac
 }
 
-# Return 0 if the running bash is major >= 5 (rp's requirement). RP_BASH_MAJOR
-# lets tests simulate macOS's 3.2 without a readonly BASH_VERSINFO override.
+# Return 0 if the running bash is >= 5.1 (rp's requirement — rp needs
+# inherit_errexit). RP_BASH_MAJOR/RP_BASH_MINOR let tests simulate macOS's 3.2
+# without a readonly BASH_VERSINFO override.
 rp_inst_bash_ok() {
   local major="${RP_BASH_MAJOR:-${BASH_VERSINFO[0]:-0}}"
-  [[ "$major" -ge 5 ]]
+  local minor="${RP_BASH_MINOR:-${BASH_VERSINFO[1]:-0}}"
+  ((major > 5 || (major == 5 && minor >= 1)))
 }
 
 # Reject a version/Tag that does not look like a release. A crafted or
@@ -230,7 +232,7 @@ rp_inst_run() {
     rp_inst_die "unsupported OS: $(uname -s) (rp supports macOS and Linux)"
 
   if [[ "$os" == "darwin" ]] && ! rp_inst_bash_ok; then
-    rp_inst_die "rp needs Bash 5+; this macOS has $(printf '%s.%s' \
+    rp_inst_die "rp needs Bash 5.1+; this macOS has $(printf '%s.%s' \
       "${BASH_VERSINFO[0]:-?}" "${BASH_VERSINFO[1]:-?}"). Fix: brew install bash, \
  then restart your shell and re-run the installer."
   fi
