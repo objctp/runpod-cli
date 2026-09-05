@@ -10,8 +10,10 @@
 #   {"centers":{"<name>":{"note":"…"}}, "assignments":{"<id>":{"type":"pod|serverless|volume|cluster|", "center":"<name>"}}}
 # Every resource sits in exactly one bucket: assign/stamp overwrite the
 # previous entry, deleting a bucket drops its members back to untagged.
-# Locals are cc_-prefixed: tests override rp::http with doubles that read
-# their own outer variables (same convention as lib/resource.sh).
+# Mutations serialise on a mkdir-based lock spanning the read-modify-write
+# cycle (see rp::cc_lock). Locals are cc_-prefixed: tests override rp::http
+# with doubles that read their own outer variables (same convention as
+# lib/resource.sh).
 [[ -n "${_RP_COSTCENTER:-}" ]] && return 0
 _RP_COSTCENTER=1
 
@@ -21,6 +23,46 @@ _RP_COSTCENTER=1
 # RP_COST_CENTERS_FILE wins; empty means unset.
 rp::cc_file() {
   printf '%s' "${RP_COST_CENTERS_FILE:-$RP_CONFIG_HOME/cost-centers.json}"
+}
+
+# The state lock: a directory beside the state file, created atomically by
+# mkdir(2) on every POSIX filesystem (macOS ships no flock(1)). Concurrent
+# read-modify-write cycles (e.g. parallel `rp pod create --cost-center proj`)
+# otherwise each read the same base state and the second rename silently
+# discards the first writer's tag. Bounded spin with a short sleep; a lock left
+# behind by a process that died between lock and release self-heals — it is
+# recycled once older than 2 minutes (the same stale-lock policy
+# rp::update_check uses, chosen over a trap, which would clobber bin/rp's EXIT
+# trap). Beside the file rather than unconditionally RP_CONFIG_HOME so two
+# writers sharing an RP_COST_CENTERS_FILE override still interlock.
+declare -g _RP_CC_LOCK_TRIES=100
+declare -g _RP_CC_LOCK_SLEEP=0.02
+
+rp::cc_lock() {
+  local cc_dir cc_i
+  cc_dir="$(dirname "$(rp::cc_file)")"
+  mkdir -p "$cc_dir"
+  for ((cc_i = 0; cc_i < _RP_CC_LOCK_TRIES; cc_i++)); do
+    if mkdir "$cc_dir/.cost-centers.lock" 2>/dev/null; then
+      return 0
+    fi
+    if [[ -d "$cc_dir/.cost-centers.lock" ]] &&
+      find "$cc_dir/.cost-centers.lock" -maxdepth 0 -mmin +2 2>/dev/null | grep -q .; then
+      rmdir "$cc_dir/.cost-centers.lock" 2>/dev/null || true
+    fi
+    sleep "$_RP_CC_LOCK_SLEEP"
+  done
+  return 1
+}
+
+rp::cc_unlock() {
+  rmdir "$(dirname "$(rp::cc_file)")/.cost-centers.lock" 2>/dev/null || true
+}
+
+# Die when the state lock cannot be taken: proceeding would silently drop a
+# concurrent writer's tag, the exact bug the lock exists to prevent.
+_cc_lock_or_die() {
+  rp::cc_lock || rp::die "timed out waiting for the cost-center state lock ($(dirname "$(rp::cc_file)")/.cost-centers.lock) — is another rp running?"
 }
 
 # Read the state file and print it normalised to the two-key shape. A missing
@@ -43,20 +85,37 @@ rp::cc_state() {
   printf '%s' "$cc_norm"
 }
 
-# Atomically replace the state file: validate, write a temp file in the target
+# Atomically replace the state file: write a temp file in the target
 # directory, lock it to owner-only, then rename over the target. A crash mid-
-# write therefore never truncates the existing state.
-rp::cc_save() {
+# write therefore never truncates the existing state. $1 must already be a
+# valid state object — every caller derives it from rp::cc_state's validated
+# read (rp::cc_save re-validates for direct callers). The temp file is
+# registered in _RP_TEMPS so the EXIT trap removes it if the process dies
+# before the rename; it is dropped again once the rename lands.
+rp::_cc_save_locked() {
   local cc_state="$1" cc_f cc_dir cc_tmp
-  printf '%s' "$cc_state" | jq -e 'type == "object"' >/dev/null 2>&1 ||
-    rp::die "refusing to save invalid cost-center state: $cc_state"
   cc_f="$(rp::cc_file)"
   cc_dir="$(dirname "$cc_f")"
   mkdir -p "$cc_dir"
   cc_tmp="$(mktemp "$cc_dir/.cost-centers.XXXXXX")"
+  _RP_TEMPS+=("$cc_tmp")
   printf '%s\n' "$cc_state" >"$cc_tmp"
   chmod 600 "$cc_tmp"
-  mv -f "$cc_tmp" "$cc_f"
+  if mv -f "$cc_tmp" "$cc_f"; then
+    _rp_temps_drop "$cc_tmp"
+  fi
+}
+
+# Public write seam for callers that hold no lock: validate, take the state
+# lock, write, release. The mutators below call rp::_cc_save_locked directly
+# because they hold the lock across their whole read-modify-write cycle.
+rp::cc_save() {
+  local cc_state="$1"
+  printf '%s' "$cc_state" | jq -e 'type == "object"' >/dev/null 2>&1 ||
+    rp::die "refusing to save invalid cost-center state: $cc_state"
+  _cc_lock_or_die
+  rp::_cc_save_locked "$cc_state"
+  rp::cc_unlock
 }
 
 # Print the cost-center names in creation order.
@@ -91,11 +150,16 @@ rp::cc_require_center() {
 rp::cc_create() {
   local cc_name="${1:-}" cc_note="${2:-}" cc_state
   [[ -n "$cc_name" ]] || rp::usage "usage: rp cost-center create <name> [--note <text>]"
+  _cc_lock_or_die
+  if rp::cc_exists "$cc_name"; then
+    rp::cc_unlock
+    return 0
+  fi
   cc_state="$(rp::cc_state)"
-  rp::cc_exists "$cc_name" && return 0
   cc_state="$(jq -c --arg n "$cc_name" --arg note "$cc_note" \
     '.centers[$n] = (if $note == "" then {} else {note: $note} end)' <<<"$cc_state")"
-  rp::cc_save "$cc_state"
+  rp::_cc_save_locked "$cc_state"
+  rp::cc_unlock
 }
 
 # Delete a cost center: the bucket goes and its members return to the
@@ -104,11 +168,13 @@ rp::cc_delete() {
   local cc_name="${1:-}" cc_state
   [[ -n "$cc_name" ]] || rp::usage "usage: rp cost-center delete <name>"
   rp::cc_require_center "$cc_name"
+  _cc_lock_or_die
   cc_state="$(rp::cc_state)"
   cc_state="$(jq -c --arg n "$cc_name" '
     del(.centers[$n])
     | .assignments |= with_entries(select(.value.center != $n))' <<<"$cc_state")"
-  rp::cc_save "$cc_state"
+  rp::_cc_save_locked "$cc_state"
+  rp::cc_unlock
 }
 
 # Assign ids to a cost center, moving each id out of any previous bucket.
@@ -130,7 +196,9 @@ rp::cc_assign() {
   done
   local -a cc_unknown=()
   for cc_id in "${!cc_type_of[@]}"; do
-    [[ -z "${cc_type_of[$cc_id]}" ]] && cc_unknown+=("$cc_id")
+    if [[ -z "${cc_type_of[$cc_id]}" ]]; then
+      cc_unknown+=("$cc_id")
+    fi
   done
   if ((${#cc_unknown[@]})); then
     while IFS=$'\t' read -r cc_id cc_type; do
@@ -138,34 +206,51 @@ rp::cc_assign() {
       cc_type_of["$cc_id"]="$cc_type"
     done < <(rp::cc_detect_types "${cc_unknown[@]}")
   fi
+  # Probe before taking the lock: classification makes four network calls and
+  # must not run while another writer spins on the lock. The state is re-read
+  # under the lock so the write is based on the freshest tags.
+  _cc_lock_or_die
+  cc_state="$(rp::cc_state)"
   for cc_id in "$@"; do
     cc_state="$(jq -c --arg i "$cc_id" --arg t "${cc_type_of[$cc_id]}" --arg c "$cc_center" \
       '.assignments[$i] = {type: $t, center: $c}' <<<"$cc_state")"
   done
-  rp::cc_save "$cc_state"
+  rp::_cc_save_locked "$cc_state"
+  rp::cc_unlock
 }
 
 # Assign with a known type and no probing — the seam create verbs use at
-# assign-at-create, where the resource type is known by construction.
+# assign-at-create, where the type is known by construction.
 rp::cc_stamp() {
   local cc_center="$1" cc_type="$2" cc_id="$3" cc_state
   rp::cc_require_center "$cc_center"
+  _cc_lock_or_die
   cc_state="$(rp::cc_state)"
   cc_state="$(jq -c --arg i "$cc_id" --arg t "$cc_type" --arg c "$cc_center" \
     '.assignments[$i] = {type: $t, center: $c}' <<<"$cc_state")"
-  rp::cc_save "$cc_state"
+  # Explicit failure, not errexit-dependent: the create-path caller (cc_tag_quietly)
+  # downgrades this to a warning, and test harnesses run with errexit off.
+  rp::_cc_save_locked "$cc_state" || {
+    rp::cc_unlock
+    return 1
+  }
+  rp::cc_unlock
 }
 
 # Remove ids from every bucket (no-op for ids that were never assigned).
 rp::cc_unassign() {
   (($#)) || rp::usage "usage: rp cost-center unassign <id>…"
   local cc_state cc_id
-  cc_state="$(rp::cc_state)"
   for cc_id in "$@"; do
     rp::require_id cc_id "$cc_id" "resource id"
+  done
+  _cc_lock_or_die
+  cc_state="$(rp::cc_state)"
+  for cc_id in "$@"; do
     cc_state="$(jq -c --arg i "$cc_id" 'del(.assignments[$i])' <<<"$cc_state")"
   done
-  rp::cc_save "$cc_state"
+  rp::_cc_save_locked "$cc_state"
+  rp::cc_unlock
 }
 
 # Tag a just-created resource (used by rp::resource_create's --cost-center

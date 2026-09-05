@@ -74,6 +74,14 @@ function test_list_json_prints_the_rows_array() {
   assert_contains '"resources":2' "$out"
 }
 
+# A --jq filter that selects nothing prints nothing, which --json would echo as
+# a blank line; the empty array is emitted instead.
+function test_list_json_with_a_matching_nothing_jq_prints_empty_array() {
+  _seed
+  rp::cmd_cost_center list --json --jq '.[] | select(.name == "ghost")' >"$CC_OUT" 2>/dev/null
+  assert_equals "[]" "$(<"$CC_OUT")"
+}
+
 function test_assign_verb_probes_the_lists_and_records_types() {
   rp::cmd_cost_center create web >/dev/null 2>&1
   rp::cmd_cost_center assign web pod_x ep_y vol_z cl_1 >/dev/null 2>&1
@@ -189,6 +197,35 @@ function test_spend_json_prints_the_full_breakdown() {
 function test_spend_exits_notfound_for_an_unknown_center() {
   (rp::cmd_cost_center spend ghost >/dev/null 2>&1)
   assert_exit_code 4
+}
+
+# The per-center roll-up runs in the main shell: one center's billing failure
+# must abort the command (non-zero exit), not vanish from the table with a
+# wrong TOTAL and a success status.
+function test_spend_exits_nonzero_when_a_centers_billing_fails() {
+  rp::cc_create web
+  rp::cc_create infra
+  rp::cc_stamp web pod pod_x
+  rp::cc_stamp infra pod pod_y
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >>"$CC_CALLS"
+    case "$2" in
+    /pods) printf '{"pods":[]}' ;;
+    /serverless) printf '{"endpoints":[]}' ;;
+    /network-volumes) printf '{"networkVolumes":[]}' ;;
+    /clusters) printf '{"clusters":[]}' ;;
+    /billing/pods*)
+      if [[ "$2" == *podId=pod_y* ]]; then
+        return 1 # infra's billing endpoint errors
+      fi
+      printf '{"records":[],"metadata":{"totals":{"totalAmount":10}}}'
+      ;;
+    *) printf '{}' ;;
+    esac
+  }
+  (rp::cmd_cost_center spend >/dev/null 2>&1)
+  local rc=$?
+  assert_equals "1" "$rc"
 }
 
 # --- dispatch ---

@@ -46,6 +46,7 @@ _cc_double_detect() {
 
 function tear_down() {
   rm -f "$RP_COST_CENTERS_FILE" "$CC_CAP"
+  rmdir "$(dirname "$RP_COST_CENTERS_FILE")/.cost-centers.lock" 2>/dev/null || true
 }
 
 # --- state file seam ---
@@ -118,6 +119,86 @@ function test_save_refuses_invalid_state_and_leaves_file_untouched() {
   (rp::cc_save 'garbage {' >/dev/null 2>&1)
   assert_exit_code 1
   assert_file_contains "$RP_COST_CENTERS_FILE" '"centers"'
+}
+
+# --- state lock (#38) ---
+
+function _cc_lock_dir() {
+  printf '%s' "$(dirname "$RP_COST_CENTERS_FILE")/.cost-centers.lock"
+}
+
+function test_lock_is_taken_and_released_by_save() {
+  rp::cc_save '{"centers":{},"assignments":{}}'
+  assert_file_not_exists "$(_cc_lock_dir)"
+}
+
+function test_lock_is_taken_and_released_by_the_mutators() {
+  rp::cc_create web
+  rp::cc_stamp web pod pod_x
+  assert_file_not_exists "$(_cc_lock_dir)"
+}
+
+function test_lock_fails_when_another_writer_holds_it() {
+  rm -rf "$(_cc_lock_dir)" # a stale lock from an earlier run must not interfere
+  mkdir "$(_cc_lock_dir)"
+  (
+    _RP_CC_LOCK_TRIES=3 _RP_CC_LOCK_SLEEP=0.01 rp::cc_lock
+  )
+  local rc=$?
+  rmdir "$(_cc_lock_dir)" 2>/dev/null || true
+  assert_equals "1" "$rc"
+}
+
+function test_lock_recycles_a_stale_lock_left_by_a_dead_process() {
+  rm -rf "$(_cc_lock_dir)" # a stale lock from an earlier run must not interfere
+  mkdir "$(_cc_lock_dir)"
+  touch -t 202001010000 "$(_cc_lock_dir)" # older than the 2-minute stale age
+  rp::cc_lock
+  local rc=$?
+  rmdir "$(_cc_lock_dir)" # the lock is ours now; release it
+  assert_equals "0" "$rc"
+}
+
+function test_two_sequential_writes_both_survive() {
+  rp::cc_create web
+  rp::cc_stamp web pod pod_x
+  rp::cc_stamp web serverless ep_y
+  local state
+  state="$(rp::cc_state)"
+  assert_contains '"pod_x":{"type":"pod","center":"web"}' "$state"
+  assert_contains '"ep_y":{"type":"serverless","center":"web"}' "$state"
+}
+
+function test_two_concurrent_stamps_both_survive() {
+  rp::cc_create web
+  (rp::cc_stamp web pod pod_x >/dev/null 2>&1) &
+  (rp::cc_stamp web serverless ep_y >/dev/null 2>&1) &
+  wait
+  local state
+  state="$(rp::cc_state)"
+  assert_contains '"pod_x":{"type":"pod","center":"web"}' "$state"
+  assert_contains '"ep_y":{"type":"serverless","center":"web"}' "$state"
+  assert_file_not_exists "$(_cc_lock_dir)"
+}
+
+# --- temp registration (#46) ---
+
+function test_save_unregisters_the_temp_after_the_mv() {
+  _RP_TEMPS=("/tmp/rp-cc-test-preexisting")
+  rp::cc_save '{"centers":{"web":{}},"assignments":{}}'
+  # The temp was dropped (renamed into place); unrelated registrations stay.
+  assert_equals "/tmp/rp-cc-test-preexisting" "$(printf '%s\n' "${_RP_TEMPS[@]}")"
+  _RP_TEMPS=()
+}
+
+function test_save_registers_the_temp_when_the_write_fails() {
+  mv() { return 1; }
+  rp::_cc_save_locked '{"centers":{},"assignments":{}}' >/dev/null 2>&1 || true
+  unset -f mv
+  # The crashed write's temp stays registered so the EXIT trap removes it.
+  assert_equals "1" "${#_RP_TEMPS[@]}"
+  assert_file_exists "${_RP_TEMPS[0]}"
+  _tmp_cleanup
 }
 
 # --- create ---
