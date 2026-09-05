@@ -253,8 +253,14 @@ _rp_require_commands() {
 # failing later with an opaque "command not found". Feature-gated tools (aws,
 # huggingface-cli, ssh-keygen) are checked at their own call sites, not here.
 rp::check_runtime() {
-  if ((BASH_VERSINFO[0] < 5)); then
-    rp::die "rp needs Bash 5+ (this is Bash ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]:-?}); upgrade Bash and retry"
+  # inherit_errexit (set in bin/rp right after this preflight) needs 5.1; the
+  # minor check keeps a 5.0 bash from failing later on an invalid shopt name.
+  # RP_BASH_MAJOR/RP_BASH_MINOR let tests simulate an old bash (mirrors
+  # install.sh's hook — BASH_VERSINFO itself is readonly).
+  local major="${RP_BASH_MAJOR:-${BASH_VERSINFO[0]:-0}}"
+  local minor="${RP_BASH_MINOR:-${BASH_VERSINFO[1]:-0}}"
+  if ((major < 5 || (major == 5 && minor < 1))); then
+    rp::die "rp needs Bash 5.1+ (this is Bash ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]:-?}); upgrade Bash and retry"
   fi
   _rp_require_commands jq curl
 }
