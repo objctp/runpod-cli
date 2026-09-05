@@ -18,6 +18,9 @@ function set_up_before_script() {
 function set_up() {
   # GPU-pool lookups are cached for the process lifetime; reset between tests.
   _RP_GPU_POOLS=''
+  # The run path checks credentials before the transport; tests stub the seam
+  # itself, so a presence-only token keeps the real check green.
+  RUNPOD_API_KEY="${RUNPOD_API_KEY:-rp-test-key}"
 }
 
 function test_should_return_existing_id_when_endpoint_name_exists() {
@@ -607,9 +610,13 @@ function test_should_post_runsync_with_wrapped_input_when_run_given() {
   local cap meta out
   cap="$(mktemp)"
   meta="$(mktemp)"
-  rp::http_api() {
-    printf '%s %s %s' "$1" "$2" "${4:-}" >"$meta"
-    printf '%s' "${3:-}" >"$cap"
+  # run calls the transport soft (rp::api_call, current shell) so a transport
+  # failure can be triaged before the shared emit; the stub plays _curl_json's
+  # contract: body on stdout (captured to the temp file), status global set.
+  rp::api_call() {
+    _RP_CURL_STATUS=200
+    printf '%s %s %s' "$2" "$3" "${5:-}" >"$meta"
+    printf '%s' "${4:-}" >"$cap"
     printf '{"status":"COMPLETED","output":{"ok":true}}'
   }
   rp::args_parse e1 --input '{"image":"b64data"}'
@@ -617,22 +624,23 @@ function test_should_post_runsync_with_wrapped_input_when_run_given() {
   assert_equals "POST /e1/runsync 300" "$(<"$meta")"
   assert_equals "b64data" "$(jq -r '.input.image' "$cap")"
   assert_contains '"COMPLETED"' "$out"
-  rp::http_api() { :; }
+  rp::api_call() { :; }
   rm -f "$cap" "$meta"
 }
 
 function test_should_post_run_and_print_job_id_when_async_given() {
   local meta out
   meta="$(mktemp)"
-  rp::http_api() {
-    printf '%s %s %s' "$1" "$2" "${4:-}" >"$meta"
+  rp::api_call() {
+    _RP_CURL_STATUS=200
+    printf '%s %s %s' "$2" "$3" "${5:-}" >"$meta"
     printf '{"id":"job-42","status":"IN_QUEUE"}'
   }
   rp::args_parse e1 --async --input '{}' --timeout 600
   out="$(_serverless_run 2>/dev/null)"
   assert_equals "POST /e1/run 600" "$(<"$meta")"
   assert_equals "job-42" "$out"
-  rp::http_api() { :; }
+  rp::api_call() { :; }
   rm -f "$meta"
 }
 
@@ -641,29 +649,33 @@ function test_should_read_payload_from_file_when_input_file_given() {
   cap="$(mktemp)"
   infile="$(mktemp)"
   printf '{"image":"from-file"}' >"$infile"
-  rp::http_api() {
-    printf '%s' "${3:-}" >"$cap"
+  rp::api_call() {
+    _RP_CURL_STATUS=200
+    printf '%s' "${4:-}" >"$cap"
     printf '{"status":"COMPLETED"}'
   }
   rp::args_parse e1 --input-file "$infile"
   out="$(_serverless_run 2>/dev/null)"
   assert_equals "from-file" "$(jq -r '.input.image' "$cap")"
   assert_contains '"COMPLETED"' "$out"
-  rp::http_api() { :; }
+  rp::api_call() { :; }
   rm -f "$cap" "$infile"
 }
 
 function test_should_print_raw_body_when_run_given_json_flag() {
-  rp::http_api() { printf '{"status":"COMPLETED","output":{"ok":true}}'; }
+  rp::api_call() {
+    _RP_CURL_STATUS=200
+    printf '{"status":"COMPLETED","output":{"ok":true}}'
+  }
   rp::args_parse e1 --input '{}' --json
   local out
   out="$(_serverless_run 2>/dev/null)"
   assert_equals '{"status":"COMPLETED","output":{"ok":true}}' "$out"
-  rp::http_api() { :; }
+  rp::api_call() { :; }
 }
 
 function test_should_exit_usage_when_run_missing_id_or_input() {
-  rp::http_api() { :; }
+  rp::api_call() { :; }
   rp::args_parse --input '{}'
   (_serverless_run >/dev/null 2>&1)
   assert_exit_code 2
@@ -673,7 +685,7 @@ function test_should_exit_usage_when_run_missing_id_or_input() {
 }
 
 function test_should_exit_usage_when_run_given_conflicting_flags() {
-  rp::http_api() { :; }
+  rp::api_call() { :; }
   rp::args_parse e1 --input '{}' --input-file /tmp/x
   (_serverless_run >/dev/null 2>&1)
   assert_exit_code 2
@@ -683,7 +695,7 @@ function test_should_exit_usage_when_run_given_conflicting_flags() {
 }
 
 function test_should_exit_usage_when_run_input_is_invalid_json() {
-  rp::http_api() { :; }
+  rp::api_call() { :; }
   rp::args_parse e1 --input 'not-json{'
   (_serverless_run >/dev/null 2>&1)
   assert_exit_code 2
@@ -743,14 +755,15 @@ function test_should_exit_usage_when_worker_id_is_not_an_id() {
 function test_should_send_worker_affinity_header_on_run() {
   local meta
   meta="$(mktemp)"
-  rp::http_api() {
-    printf '%s %s %s [%s]' "$1" "$2" "${4:-}" "${5:-}" >"$meta"
+  rp::api_call() {
+    _RP_CURL_STATUS=200
+    printf '%s %s %s [%s]' "$2" "$3" "${5:-}" "${6:-}" >"$meta"
     printf '{"status":"COMPLETED"}'
   }
   rp::args_parse e1 --input '{}' --worker-id pod-1
   _serverless_run >/dev/null 2>&1
   assert_equals "POST /e1/runsync 300 [X-Runpod-Worker-Id: pod-1]" "$(<"$meta")"
-  rp::http_api() { :; }
+  rp::api_call() { :; }
   rm -f "$meta"
 }
 
@@ -758,15 +771,16 @@ function test_should_send_worker_affinity_header_on_run() {
 function test_should_compose_affinity_with_async_route() {
   local meta out
   meta="$(mktemp)"
-  rp::http_api() {
-    printf '%s %s %s [%s]' "$1" "$2" "${4:-}" "${5:-}" >"$meta"
+  rp::api_call() {
+    _RP_CURL_STATUS=200
+    printf '%s %s %s [%s]' "$2" "$3" "${5:-}" "${6:-}" >"$meta"
     printf '{"id":"job-42","status":"IN_QUEUE"}'
   }
   rp::args_parse e1 --input '{}' --async --worker-id pod-1 --affinity strict-resume
   out="$(_serverless_run 2>/dev/null)"
   assert_equals "POST /e1/run 300 [X-Runpod-Worker-Id: strict-resume pod-1]" "$(<"$meta")"
   assert_equals "job-42" "$out"
-  rp::http_api() { :; }
+  rp::api_call() { :; }
   rm -f "$meta"
 }
 
@@ -774,7 +788,10 @@ function test_should_compose_affinity_with_async_route() {
 # header the transport captures) so pinning composes: run → see worker → pin
 # the next request. --json stays clean.
 function test_should_print_served_by_worker_on_human_run() {
-  rp::http_api() { printf '{"status":"COMPLETED"}'; }
+  rp::api_call() {
+    _RP_CURL_STATUS=200
+    printf '{"status":"COMPLETED"}'
+  }
   _RP_WORKER_ID="pod-9"
   local err
   rp::args_parse e1 --input '{}'
@@ -783,19 +800,22 @@ function test_should_print_served_by_worker_on_human_run() {
   err="$(rp::cmd_serverless run e1 --input '{}' --json 2>&1 >/dev/null)"
   assert_not_contains "served by worker" "$err"
   _RP_WORKER_ID=""
-  rp::http_api() { :; }
+  rp::api_call() { :; }
 }
 
 # No served-by line when the endpoint did not send the response header
 # (queue-based endpoints don't).
 function test_should_omit_served_by_worker_without_response_header() {
-  rp::http_api() { printf '{"status":"COMPLETED"}'; }
+  rp::api_call() {
+    _RP_CURL_STATUS=200
+    printf '{"status":"COMPLETED"}'
+  }
   _RP_WORKER_ID=""
   local err
   rp::args_parse e1 --input '{}'
   err="$(_serverless_run 2>&1 >/dev/null)"
   assert_not_contains "served by worker" "$err"
-  rp::http_api() { :; }
+  rp::api_call() { :; }
 }
 
 # rp::api_stream recording double: captures "<plane> <path> <leid>" into $cap.
@@ -857,13 +877,14 @@ function test_should_route_each_serverless_verb() {
   assert_contains "PATCH /serverless/e1" "$(<"$cap")"
   rp::cmd_serverless delete e1 >/dev/null 2>&1
   assert_contains "DELETE /serverless/e1" "$(<"$cap")"
-  rp::http_api() {
-    printf '%s %s\n' "$1" "$2" >"$cap"
+  rp::api_call() {
+    _RP_CURL_STATUS=200
+    printf '%s %s\n' "$2" "$3" >"$cap"
     printf '{}'
   }
   rp::cmd_serverless run e1 --input '{}' >/dev/null 2>&1
   assert_contains "POST /e1/runsync" "$(<"$cap")"
-  rp::http_api() { :; }
+  rp::api_call() { :; }
   rm -f "$cap"
 }
 
@@ -1734,4 +1755,411 @@ function test_should_print_final_envelope_on_wait_json() {
   out="$(rp::cmd_serverless batch get e1 b1 --wait --interval 0 --json 2>/dev/null)"
   assert_contains '"requestCompleted":2' "$out"
   rp::http() { :; }
+}
+
+# ---------------------------------------------------------------------------
+# #40 — batch defects; #41 — create/update parity; #49 — runsync timeout;
+# #34 — id guard; #47 — polish items.
+
+# A Ctrl-C during the --wait poll's GET must end the wait with 130: the poll
+# runs under `|| wrc=$?` (errexit suspended), so the fetch status has to be
+# captured and returned explicitly. The double simulates an interrupted fetch
+# (curl rc 130 → the emit layer exits 130) on the first poll only.
+function test_should_propagate_sigint_130_from_batch_poll() {
+  local cc
+  cc="$(mktemp)"
+  printf '0' >"$cc"
+  rp::http() {
+    local c
+    c="$(cat "$cc")"
+    c=$((c + 1))
+    printf '%s' "$c" >"$cc"
+    if ((c == 1)); then
+      return 130
+    fi
+    printf '{"id":"b1","status":"FINALIZED","requestTotal":2,"requestCompleted":2,"requestFailed":0}'
+  }
+  rp::args_parse e1 b1 --wait --interval 0
+  (_serverless_batch_get >/dev/null 2>&1)
+  assert_exit_code 130
+  assert_equals 1 "$(cat "$cc")"
+  rp::http() { :; }
+  rm -f "$cc"
+}
+
+# A pretty-printed --input (e.g. `--input "$(jq . payload.json)"`) is one valid
+# document spread over lines; the collector must buffer lines until they parse
+# instead of judging each line alone.
+function test_should_accept_multiline_input_on_batch_create() {
+  local body_f pretty
+  body_f="$(mktemp)"
+  pretty="$(jq . <<<'{"text":"a"}')"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body_f"
+    printf '{"id":"b-new","status":"DRAFT"}'
+  }
+  rp::args_parse e1 --input "$pretty"
+  _serverless_batch_create 2>/dev/null
+  assert_equals 'a' "$(jq -r '.[0].input.text' "$body_f")"
+  rp::http() { :; }
+  rm -f "$body_f"
+}
+
+# Same buffering on the add path (hand-written pretty JSON, no trailing newline
+# trickery beyond what <<< produces).
+function test_should_accept_multiline_input_on_batch_add() {
+  local body_f pretty
+  body_f="$(mktemp)"
+  pretty="$(printf '{\n  "text": "b"\n}\n')"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body_f"
+    printf '{"added":1}'
+  }
+  rp::args_parse e1 b1 --input "$pretty"
+  _serverless_batch_add 2>/dev/null
+  assert_equals 'b' "$(jq -r '.requests[0].input.text' "$body_f")"
+  rp::http() { :; }
+  rm -f "$body_f"
+}
+
+# Lines that never assemble into a document are still a usage error — after a
+# document that did parse, and with no POST fired.
+function test_should_exit_usage_on_unparseable_multiline_input() {
+  local cap_f
+  cap_f="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >>"$cap_f"
+    printf '{}'
+  }
+  rp::args_parse e1 --input '{"ok":1}' --input '{"bad":'
+  (_serverless_batch_create >/dev/null 2>&1)
+  assert_exit_code 2
+  assert_equals "" "$(<"$cap_f")"
+  rp::http() { :; }
+  rm -f "$cap_f"
+}
+
+# --status must filter the JSON path too: --status completed --json emits only
+# completed requests, with the envelope shape preserved; without --status the
+# envelope passes through untouched.
+function test_should_filter_envelope_by_status_on_requests_json() {
+  local envelope out
+  envelope='{"requests":[{"id":"r1","status":"COMPLETED"},{"id":"r2","status":"FAILED","error":"boom"},{"id":"r3","status":"IN_PROGRESS"}],"total":3,"offset":0,"limit":50,"hasMore":false}'
+  rp::http() { printf '%s' "$envelope"; }
+  out="$(rp::cmd_serverless batch requests e1 b1 --status completed --json 2>/dev/null)"
+  assert_contains '"r1"' "$out"
+  assert_not_contains '"r2"' "$out"
+  assert_not_contains '"r3"' "$out"
+  assert_contains '"total":3' "$out"
+  out="$(rp::cmd_serverless batch requests e1 b1 --status in-progress --json 2>/dev/null)"
+  assert_contains '"r3"' "$out"
+  assert_not_contains '"r1"' "$out"
+  out="$(rp::cmd_serverless batch requests e1 b1 --json 2>/dev/null)"
+  assert_equals "$envelope" "$out"
+  rp::http() { :; }
+}
+
+# The hub path honours the same create flags as the plain path: plural
+# --network-volume-ids, --execution-timeout and --flashboot used to be dropped
+# silently (#41).
+function test_should_honour_volume_ids_timeout_flashboot_on_hub_path() {
+  local fixture payload
+  payload="$(mktemp)"
+  fixture="$(jq -c -n --arg img 'vllm:1' --arg cfg '{"gpuIds":"ADA_24","gpuCount":1,"containerDiskInGb":20}' \
+    '{listing:{id:"h1",title:"vLLM",listedRelease:{tagName:"v1",build:{imageName:$img},config:$cfg}}}')"
+  rp::http() {
+    case "$1 $2" in
+    'GET /serverless') printf '{"endpoints":[]}' ;;
+    'POST /serverless')
+      printf '%s' "${3:-}" >"$payload"
+      printf '{"id":"newhub","name":"glm"}'
+      ;;
+    esac
+  }
+  rp::graphql() { printf '%s' "$fixture"; }
+  rp::args_parse --hub-id h1 --name glm --network-volume-ids nv1,nv2 --execution-timeout 120 --flashboot
+  _serverless_create >/dev/null 2>&1
+  assert_equals '["nv1","nv2"]' "$(jq -c '.networkVolumes' "$payload")"
+  assert_equals '120000' "$(jq -r '.timeout' "$payload")"
+  assert_equals 'FLASHBOOT' "$(jq -r '.flashboot' "$payload")"
+  rp::http() { :; }
+  rp::graphql() { :; }
+  rm -f "$payload"
+}
+
+# A named volume on the hub path still carries its datacenter alongside the
+# plural flag's ids.
+function test_should_scope_hub_volumes_with_datacenter() {
+  local fixture payload
+  payload="$(mktemp)"
+  fixture="$(jq -c -n --arg img 'vllm:1' --arg cfg '{"gpuIds":"ADA_24","gpuCount":1,"containerDiskInGb":20}' \
+    '{listing:{id:"h1",title:"vLLM",listedRelease:{tagName:"v1",build:{imageName:$img},config:$cfg}}}')"
+  rp::http() {
+    case "$1 $2" in
+    'GET /serverless') printf '{"endpoints":[]}' ;;
+    'GET /network-volumes') printf '{"networkVolumes":[{"id":"nv-1","name":"nv-a"}]}' ;;
+    'GET /network-volumes/nv-1') printf '{"id":"nv-1","dataCenter":"US-KS-2"}' ;;
+    'POST /serverless')
+      printf '%s' "${3:-}" >"$payload"
+      printf '{"id":"newhub","name":"glm"}'
+      ;;
+    esac
+  }
+  rp::graphql() { printf '%s' "$fixture"; }
+  rp::args_parse --hub-id h1 --name glm --network-volume nv-a --network-volume-ids nv2
+  _serverless_create >/dev/null 2>&1
+  assert_equals '["nv-1","nv2"]' "$(jq -c '.networkVolumes' "$payload")"
+  assert_equals '["US-KS-2"]' "$(jq -c '.dataCenterIds' "$payload")"
+  rp::http() { :; }
+  rp::graphql() { :; }
+  rm -f "$payload"
+}
+
+# --scale-by/--scale-threshold are runpodctl coercions that must work on create
+# exactly as on update (they used to be silently ignored, yielding the
+# QUEUE_DELAY/4s default).
+function test_should_coerce_scale_by_on_create() {
+  local marker body
+  marker="$(mktemp)"
+  body="$(mktemp)"
+  _mock_create_http "$marker" "$body"
+  rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --scale-by requests --scale-threshold 7
+  _serverless_create >/dev/null 2>&1
+  assert_equals 'REQUEST_COUNT' "$(jq -r '.scaling.type' "$body")"
+  assert_equals '7' "$(jq -r '.scaling.requestCount' "$body")"
+  rp::http() { :; }
+  rm -f "$marker" "$body"
+}
+
+# Same coercion on the hub path (it funnels through the same scaler helper).
+function test_should_coerce_scale_by_on_hub_path() {
+  local fixture payload
+  payload="$(mktemp)"
+  fixture="$(jq -c -n --arg img 'vllm:1' --arg cfg '{"gpuIds":"ADA_24","gpuCount":1,"containerDiskInGb":20}' \
+    '{listing:{id:"h1",title:"vLLM",listedRelease:{tagName:"v1",build:{imageName:$img},config:$cfg}}}')"
+  rp::http() {
+    case "$1 $2" in
+    'GET /serverless') printf '{"endpoints":[]}' ;;
+    'POST /serverless')
+      printf '%s' "${3:-}" >"$payload"
+      printf '{"id":"newhub","name":"glm"}'
+      ;;
+    esac
+  }
+  rp::graphql() { printf '%s' "$fixture"; }
+  rp::args_parse --hub-id h1 --name glm --scale-by delay --scale-threshold 9
+  _serverless_create >/dev/null 2>&1
+  assert_equals 'QUEUE_DELAY' "$(jq -r '.scaling.type' "$payload")"
+  assert_equals '9' "$(jq -r '.scaling.queueDelay' "$payload")"
+  rp::http() { :; }
+  rp::graphql() { :; }
+  rm -f "$payload"
+}
+
+# update must mirror create's --idle rule: when the PATCH itself sets
+# REQUEST_COUNT scaling, --idle is dropped with a note instead of PATCHing a
+# combination the API rejects.
+function test_should_drop_idle_with_warning_when_update_sets_request_count() {
+  local body err
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"e1"}'
+  }
+  rp::args_parse e1 --idle 5 --scale-by requests
+  err="$(_serverless_update 2>&1 >/dev/null)"
+  assert_equals 'REQUEST_COUNT' "$(jq -r '.scaling.type' "$body")"
+  assert_equals 'false' "$(jq -r 'has("workers")' "$body")"
+  assert_contains "ignored" "$err"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+# --idle alone (the PATCH not touching scaling) keeps working: the endpoint's
+# current scaler is unknown client-side, so nothing is dropped.
+function test_should_keep_idle_on_update_without_scaling_change() {
+  local body err
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"e1"}'
+  }
+  rp::args_parse e1 --idle 5
+  err="$(_serverless_update 2>&1 >/dev/null)"
+  assert_equals '5' "$(jq -r '.workers.idleTimeout' "$body")"
+  assert_not_contains "ignored" "$err"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
+# A runsync --timeout expiry (curl rc 28) must say so: the job keeps running
+# server-side with no id to poll, which the generic transport error hides. The
+# inner set -e mirrors bin/rp, where the emit's die aborts the command.
+function test_should_die_with_timeout_message_when_runsync_times_out() {
+  local err rc
+  rp::api_call() {
+    _RP_CURL_STATUS=000
+    _RP_CURL_RC=28
+    return 1
+  }
+  rp::args_parse e1 --input '{}' --timeout 25
+  err="$( (
+    set -e
+    _serverless_run 2>&1 >/dev/null
+  ))"
+  rc=$?
+  assert_equals 1 "$rc"
+  assert_contains "request timed out after 25s" "$err"
+  assert_contains "use --async" "$err"
+  rp::api_call() { :; }
+}
+
+# Any other transport rc keeps the shared emit's generic message (28 is the
+# only cause-specific case).
+function test_should_keep_generic_transport_message_for_other_curl_rc() {
+  local err rc
+  rp::api_call() {
+    _RP_CURL_STATUS=000
+    _RP_CURL_RC=7
+    return 1
+  }
+  rp::args_parse e1 --input '{}'
+  err="$( (
+    set -e
+    _serverless_run 2>&1 >/dev/null
+  ))"
+  rc=$?
+  assert_equals 1 "$rc"
+  assert_contains "curl transport error: POST /e1/runsync" "$err"
+  assert_not_contains "request timed out" "$err"
+  rp::api_call() { :; }
+  unset _RP_CURL_RC
+}
+
+# _RP_CURL_RC is consumed defensively: a transport that leaves it unset (older
+# lib) still gets the generic message, never a wrong "timed out".
+function test_should_defer_to_generic_message_without_curl_rc() {
+  local err rc
+  rp::api_call() {
+    _RP_CURL_STATUS=000
+    return 1
+  }
+  unset _RP_CURL_RC
+  rp::args_parse e1 --input '{}'
+  err="$( (
+    set -e
+    _serverless_run 2>&1 >/dev/null
+  ))"
+  rc=$?
+  assert_equals 1 "$rc"
+  assert_contains "curl transport error: POST /e1/runsync" "$err"
+  rp::api_call() { :; }
+}
+
+# The raw --network-volume-id is interpolated into GET /network-volumes/$id;
+# ids with path/query metacharacters or whitespace must die locally with the
+# standard usage error and make no request (#34).
+function test_should_reject_malformed_network_volume_id_before_request() {
+  local cap
+  cap="$(mktemp)"
+  rp::http() {
+    printf '%s %s\n' "$1" "$2" >>"$cap"
+    printf '{}'
+  }
+  rp::args_parse --network-volume-id 'x?y=1'
+  (_serverless_resolve_nv >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::args_parse --network-volume-id 'a/b'
+  (_serverless_resolve_nv >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::args_parse --network-volume-id 'has space'
+  (_serverless_resolve_nv >/dev/null 2>&1)
+  assert_exit_code 2
+  assert_equals "" "$(<"$cap")"
+  rp::http() { :; }
+  rm -f "$cap"
+}
+
+# --interval 0 must not turn the wait loop into an unthrottled hammer: the
+# effective interval floors at 1s (observed through the sleep seam). The poll
+# helper is driven directly so the test pins the floor, not the dispatcher.
+function test_should_floor_wait_interval_at_one_second() {
+  local cc slept rc body
+  cc="$(mktemp)"
+  slept="$(mktemp)"
+  printf '0' >"$cc"
+  sleep() { printf '%s,' "$*" >>"$slept"; }
+  rp::http() {
+    local c
+    c="$(cat "$cc")"
+    c=$((c + 1))
+    printf '%s' "$c" >"$cc"
+    if ((c < 3)); then
+      printf '{"id":"b1","status":"FINALIZED","requestTotal":10,"requestCompleted":4,"requestFailed":0}'
+    else
+      printf '{"id":"b1","status":"FINALIZED","requestTotal":10,"requestCompleted":10,"requestFailed":0}'
+    fi
+  }
+  rp::args_parse e1 b1 --interval 0
+  _serverless_batch_poll e1 b1 body >/dev/null 2>&1
+  rc=$?
+  unset -f sleep
+  assert_equals 0 "$rc"
+  assert_equals "1,1," "$(<"$slept")"
+  rp::http() { :; }
+  rm -f "$cc" "$slept"
+}
+
+# --scaler-value is the one numeric flag with no upstream validation; a
+# non-numeric token must die as a usage error before any request (create and
+# update both funnel through the scaling helper).
+function test_should_reject_non_numeric_scaler_value() {
+  local marker
+  marker="$(mktemp)"
+  _mock_create_http "$marker"
+  rp::args_parse --name e1 --template t --gpu "NVIDIA L4" --scaler-value 4s
+  (_serverless_create >/dev/null 2>&1)
+  assert_exit_code 2
+  assert_equals "" "$(cat "$marker")"
+  rp::http() { printf '{"id":"e1"}'; }
+  rp::args_parse e1 --scaler-type QUEUE_DELAY --scaler-value 4s
+  (_serverless_update >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
+# A decimal value stays valid (queueDelay's unit is float seconds).
+function test_should_accept_decimal_scaler_value() {
+  _serverless_scaling_obj QUEUE QUEUE_DELAY 0.5
+  assert_contains '"queueDelay":0.5' "$_RP_SCALING_JSON"
+}
+
+# --gpus-from-volume is honoured even with no volume placement flags: the dc
+# gate used to leave it unconsumed and the error told users to pass the flag
+# they had already passed.
+function test_should_consume_gpus_from_volume_outside_dc_gate() {
+  local marker body
+  marker="$(mktemp)"
+  body="$(mktemp)"
+  rp::http() {
+    case "$1 $2" in
+    'GET /serverless') printf '{"endpoints":[]}' ;;
+    'GET /templates/t') printf '{"id":"t","image":"img:1","disk":10}' ;;
+    'GET /network-volumes') printf '{"networkVolumes":[{"id":"nv-1","name":"vol"}]}' ;;
+    'GET /network-volumes/nv-1') printf '{"id":"nv-1","dataCenter":"US-KS-2"}' ;;
+    'GET /catalog/gpus'*) printf '{"gpus":[{"id":"NVIDIA L4","pool":"ADA_24","availability":"OK"}]}' ;;
+    'POST /serverless')
+      printf 'POSTED' >>"$marker"
+      printf '%s' "${3:-}" >"$body"
+      printf '{"id":"newep"}'
+      ;;
+    esac
+  }
+  rp::args_parse --name e1 --template t --gpus-from-volume vol
+  _serverless_create >/dev/null 2>&1
+  assert_equals "POSTED" "$(cat "$marker")"
+  assert_equals 'ADA_24' "$(jq -r '.gpu.pools[0]' "$body")"
+  rp::http() { :; }
+  rm -f "$marker" "$body"
 }
