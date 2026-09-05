@@ -56,7 +56,7 @@ function test_world_writable_account_file_dies_loudly() {
   _rp_env_load() {
     local f="$1" perm
     [[ -f "$f" ]] || return 0
-    if stat -f '/dev/null' >/dev/null 2>&1; then
+    if stat -f '%Lp' /dev/null >/dev/null 2>&1; then
       perm="$(stat -f '%Lp' "$f")"
     else
       perm="$(stat -c '%a' "$f")"

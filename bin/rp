@@ -52,7 +52,10 @@ _rp_env_load() {
   set +x
   # Refuse group/world-writable .env (mode has any of the group/other write
   # bits set). A writable .env is a clear compromise risk. (Fix #4)
-  if stat -f '/dev/null' >/dev/null 2>&1; then
+  # BSD-dialect probe: format AND file, so GNU stat fails it ('%Lp' is not a
+  # file) and Linux falls through to stat -c. A bare `stat -f /dev/null`
+  # succeeds on both dialects and silently skipped the check on Linux.
+  if stat -f '%Lp' /dev/null >/dev/null 2>&1; then
     perm="$(stat -f '%Lp' "$f")"
   else
     perm="$(stat -c '%a' "$f")"
