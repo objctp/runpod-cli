@@ -6,6 +6,7 @@ function set_up_before_script() {
   _opts=$(shopt -po errexit nounset pipefail 2>/dev/null || true)
   source "$RP_ROOT/lib/common.sh"
   source "$RP_ROOT/lib/doc.sh"
+  source "$RP_ROOT/commands/doc.sh"
   eval "$_opts"
 }
 
@@ -123,4 +124,48 @@ function test_serverless_batch_subverbs_documented() {
     assert_contains "Usage:" "$body"
     _assert_headers "$body"
   done
+}
+
+# --- rp::cmd_doc dispatcher: not-found and ambiguous queries are usage errors ---
+
+function test_doc_unknown_command_exits_two() {
+  (rp::cmd_doc bogus-command >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_doc_unknown_verb_exits_two() {
+  (rp::cmd_doc pod bogus-verb >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+function test_doc_unknown_subverb_exits_two() {
+  (rp::cmd_doc registry delegations bogus-verb >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+# A prefix matching several commands must list the candidates and exit 2, never
+# silently resolve to the alphabetically-first match ('s' hits serverless, ssh,
+# ssh-key and stock).
+function test_doc_ambiguous_prefix_lists_candidates_and_exits_two() {
+  local err
+  err="$( (rp::cmd_doc s 2>&1 >/dev/null))"
+  assert_contains "ambiguous command prefix 's'" "$err"
+  assert_contains "serverless" "$err"
+  assert_contains "ssh-key" "$err"
+  assert_contains "stock" "$err"
+  (rp::cmd_doc s >/dev/null 2>&1)
+  assert_exit_code 2
+}
+
+# A unique prefix still resolves (no regression from the ambiguity guard).
+function test_doc_unique_prefix_resolves() {
+  local out
+  out="$(rp::cmd_doc serv 2>/dev/null)"
+  assert_contains "rp serverless" "$out"
+}
+
+function test_doc_exact_name_still_resolves() {
+  local out
+  out="$(rp::cmd_doc volume 2>/dev/null)"
+  assert_contains "rp volume" "$out"
 }

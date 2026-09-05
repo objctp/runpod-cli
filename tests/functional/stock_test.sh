@@ -844,3 +844,54 @@ function test_should_exit_two_when_stock_verb_unknown() {
   (rp::cmd_stock __bogus__ >/dev/null 2>&1)
   assert_exit_code 2
 }
+
+# --- #47: --dc must never be interpolated into jq program text ---
+
+# gpu: the display reshape rides rp::table (which takes no jq --arg), so a value
+# that could break the program text is rejected up front as a usage error.
+function test_gpu_dc_with_quote_is_a_usage_error_before_any_request() {
+  local marker err
+  marker="$(mktemp)"
+  rp::http() {
+    printf 'CALLED' >>"$marker"
+    printf '%s' "$STOCK_GPU_BODY"
+  }
+  rp::args_parse --dc 'EU"RO-1'
+  err="$(_stock_gpu 2>&1 >/dev/null)"
+  assert_contains "invalid --dc 'EU\"RO-1'" "$err"
+  (
+    rp::args_parse --dc 'EU"RO-1'
+    _stock_gpu >/dev/null 2>&1
+  )
+  assert_exit_code 2
+  # The guard fires before the catalogue fetch.
+  assert_equals "" "$(cat "$marker")"
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
+# cpus: dcq rides jq --arg, so even a quote-shaped value degrades to an ordinary
+# empty result instead of a cryptic jq compile error.
+function test_cpus_dc_with_quote_degrades_to_empty_result() {
+  rp::args_parse --dc 'x"y'
+  local out
+  out="$(_stock_cpus 2>&1 >/dev/null)"
+  assert_contains "no CPU instances match the current filters" "$out"
+  (
+    rp::args_parse --dc 'x"y'
+    _stock_cpus >/dev/null 2>&1
+  )
+  assert_exit_code 0
+}
+
+# Positive control for the --arg threading: a normal --dc still scopes rows and
+# the region-accurate STOCK column.
+function test_cpus_dc_filter_still_scopes_after_arg_threading() {
+  STOCK_CPU_BODY='{"cpus":[{"id":"cpu3c","name":"Compute-Optimized","group":"CPU3","vcpu":{"min":2,"max":32},"ramGbPerVcpu":2,"price":{"securePerVcpu":0.03},"availability":"HIGH","dataCenters":[{"id":"EU-RO-1","availability":"NONE"}]}]}'
+  rp::args_parse --dc eu-ro-1
+  _stock_cpus >"$OUT" 2>/dev/null
+  local rendered
+  rendered="$(<"$OUT")"
+  assert_contains "cpu3c" "$rendered"
+  assert_contains "NONE" "$rendered"
+}

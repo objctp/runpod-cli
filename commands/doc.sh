@@ -33,20 +33,28 @@ what `rp doc` shows — there is no separate doc file to maintain.
 EOF
 }
 
-# Resolve a command name to its file: exact match first, else the first command
-# whose name starts with the arg (prefix). Prints the path, or nothing.
+# Resolve a command name to its file: exact match first, else a unique prefix
+# match. Prints the path, or nothing; an ambiguous prefix is a usage error that
+# names the candidates (never a silent pick of the alphabetically-first match).
 _doc_resolve() {
   local arg="$1" f
-  [[ -f "$RP_ROOT/commands/$arg.sh" ]] && {
+  if [[ -f "$RP_ROOT/commands/$arg.sh" ]]; then
     printf '%s' "$RP_ROOT/commands/$arg.sh"
     return 0
-  }
+  fi
+  local -a matches=()
   for f in "$RP_ROOT"/commands/*.sh; do
-    [[ "$(basename "$f" .sh)" == "$arg"* ]] && {
-      printf '%s' "$f"
-      return 0
-    }
+    [[ "$(basename "$f" .sh)" == "$arg"* ]] && matches+=("$f")
   done
+  if ((${#matches[@]} == 1)); then
+    printf '%s' "${matches[0]}"
+    return 0
+  fi
+  if ((${#matches[@]} > 1)); then
+    local names="" m
+    for m in "${matches[@]}"; do names+=" $(basename "$m" .sh)"; done
+    rp::usage "ambiguous command prefix '$arg' matches:$names"
+  fi
   return 0
 }
 
@@ -162,10 +170,9 @@ rp::cmd_doc() {
     return 0
   fi
   local cmdfile
-  cmdfile="$(_doc_resolve "$a")"
+  cmdfile="$(_doc_resolve "$a")" || return $?
   if [[ -z "$cmdfile" ]]; then
-    printf '%s\n' "no documentation matches '$a'"
-    return 0
+    rp::usage "no documentation matches '$a'"
   fi
   local name
   name="$(basename "$cmdfile" .sh)"
@@ -174,8 +181,7 @@ rp::cmd_doc() {
     return 0
   fi
   if ! _doc_is_verb "$cmdfile" "$name" "$b"; then
-    printf '%s\n' "no verb '$b' for command '$name'"
-    return 0
+    rp::usage "no verb '$b' for command '$name'"
   fi
   # A group verb owns sub-verbs; without one, show its index rather than a
   # block that would only repeat what the index already says.
@@ -185,7 +191,7 @@ rp::cmd_doc() {
     elif _doc_is_subverb "$cmdfile" "$name" "$b" "$c"; then
       _doc_verb "$cmdfile" "$name" "$b $c"
     else
-      printf '%s\n' "no sub-verb '$c' for '$name $b'"
+      rp::usage "no sub-verb '$c' for '$name $b'"
     fi
     return 0
   fi

@@ -18,6 +18,7 @@
 - Require well-formed ids on lifecycle verbs (#34)
 - Best-effort private-key copy; large-key safety (#43, #47)
 - Die on malformed --jq; name missing body file (#44, #47)
+- Minor cleanups sweep (#47)
 
 ## [1.5.0] - 2026-09-05
 

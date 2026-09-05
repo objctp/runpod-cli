@@ -119,3 +119,15 @@ function test_should_warn_account_is_graphql_bridged() {
   assert_contains "early 2027" "$(<"$err")"
   rm -f "$err"
 }
+
+# --- #47: the deprecation warning is suppressed for every help spelling ---
+
+function test_should_not_warn_on_help_flags() {
+  local err
+  err="$(mktemp)"
+  rp::cmd_account -h >/dev/null 2>"$err"
+  rp::cmd_account --help >/dev/null 2>>"$err"
+  rp::cmd_account help >/dev/null 2>>"$err"
+  assert_equals "" "$(cat "$err")"
+  rm -f "$err"
+}

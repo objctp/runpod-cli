@@ -37,7 +37,7 @@ _account_info() {
 # Usage: rp account [info]
 #
 # Options:
-#   --json  print the raw GraphQL response
+#   --json  print the GraphQL data object (.data)
 #
 # Notes:
 #   Backed by the GraphQL `myself` query — there is no API v2 equivalent in the
@@ -64,6 +64,8 @@ rp::cmd_account() {
   # GraphQL bridge: stays until Runpod ships a v2 account endpoint or retires
   # GraphQL (early 2027). Warn every invocation (help excluded) and append the
   # Sunset header countdown when the server starts sending it.
-  [[ "$verb" == "help" ]] && return 0
-  rp::warn "rp account is GraphQL-backed; Runpod retires GraphQL in early 2027${_RP_SUNSET:+ (Sunset: $_RP_SUNSET)}. It will move to a v2 endpoint when one is available."
+  case "$verb" in
+  -h | --help | help) ;;
+  *) rp::warn "rp account is GraphQL-backed; Runpod retires GraphQL in early 2027${_RP_SUNSET:+ (Sunset: $_RP_SUNSET)}. It will move to a v2 endpoint when one is available." ;;
+  esac
 }
