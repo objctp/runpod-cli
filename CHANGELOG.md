@@ -8,6 +8,7 @@
 - Return 0 when the window query has no flags (#31)
 - Stop silent exits, validate account names (#31, #35, #47)
 - Propagate --env pair errors to callers (#32)
+- Fail closed on env, ids, transport, and the name gate (#32, #34, #37, #47, #48)
 
 ## [1.5.0] - 2026-09-05
 

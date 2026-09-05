@@ -14,6 +14,9 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/graphql.sh"
   source "$RP_ROOT/commands/pod.sh"
   _s3_dcs_live() { :; }
+  # The real rp::resource_existing is needed for the idempotency-parity tests;
+  # earlier tests in this file overwrite it with doubles, so keep a copy.
+  _RP_POD_TEST_RESOURCE_EXISTING="$(declare -f rp::resource_existing)"
   eval "$_opts"
 }
 
@@ -851,4 +854,247 @@ function test_should_list_all_pods_when_public_ip_flag_absent() {
   assert_contains "pub1" "$out"
   assert_contains "priv1" "$out"
   rp::http() { :; }
+}
+
+# --env pair with a missing key aborts before any request (issue #32).
+function test_should_abort_create_when_env_pair_missing_key() {
+  rp::http() {
+    echo "rp::http called before the --env guard" >&2
+    exit 99
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --env =bad
+  local err
+  err="$(mktemp)"
+  (_pod_create >/dev/null 2>"$err")
+  assert_exit_code 2
+  assert_contains "invalid --env pair (missing key)" "$(cat "$err")"
+  rp::http() { :; }
+  rm -f "$err"
+}
+
+function test_should_abort_update_when_env_pair_missing_key() {
+  rp::http() {
+    echo "rp::http called before the --env guard" >&2
+    exit 99
+  }
+  rp::args_parse pod1 --env =bad
+  local err
+  err="$(mktemp)"
+  (_pod_update >/dev/null 2>"$err")
+  assert_exit_code 2
+  assert_contains "invalid --env pair (missing key)" "$(cat "$err")"
+  rp::http() { :; }
+  rm -f "$err"
+}
+
+# Lifecycle verbs validate the id before interpolating it into a REST path
+# (issue #34): ?, /, & and whitespace must exit 2 with no request.
+function test_should_reject_pod_id_metacharacters_on_lifecycle_verbs() {
+  rp::http() {
+    echo "rp::http called with an invalid id" >&2
+    exit 99
+  }
+  rp::api_stream() {
+    echo "rp::api_stream called with an invalid id" >&2
+    exit 99
+  }
+  local err
+  err="$(mktemp)"
+  (rp::cmd_pod start 'p?x=1' >/dev/null 2>"$err")
+  assert_exit_code 2
+  assert_contains "invalid pod id" "$(cat "$err")"
+  (rp::cmd_pod stop 'a/b' >/dev/null 2>&1)
+  assert_exit_code 2
+  (rp::cmd_pod restart 'a&b' >/dev/null 2>&1)
+  assert_exit_code 2
+  (rp::cmd_pod update 'a b' --volume-gb 5 >/dev/null 2>&1)
+  assert_exit_code 2
+  (rp::cmd_pod logs 'x y' >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+  rp::api_stream() { :; }
+  rm -f "$err"
+}
+
+# A dead transport (curl status 000) must die, not fall through to "no id"
+# (issue #37); the GraphQL bridge must not be attempted.
+function test_should_die_on_curl_transport_failure_in_spot_create() {
+  rp::resource_existing() { return 1; }
+  rp::http_soft() {
+    _RP_CURL_STATUS=000
+    : >"$1"
+  }
+  rp::graphql() {
+    echo "bridge must not run on a transport failure" >&2
+    exit 99
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --bid-per-gpu 0.20
+  local err
+  err="$(mktemp)"
+  (_pod_create >/dev/null 2>"$err")
+  assert_exit_code 1
+  assert_contains "curl transport error: POST /pods" "$(cat "$err")"
+  rp::http_soft() { :; }
+  rp::graphql() { :; }
+  rm -f "$err"
+}
+
+function test_should_die_on_sigint_in_spot_create() {
+  rp::resource_existing() { return 1; }
+  rp::http_soft() {
+    _RP_CURL_STATUS=130
+    : >"$1"
+  }
+  rp::graphql() { exit 99; }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --interruptible
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 1
+  rp::http_soft() { :; }
+  rp::graphql() { :; }
+}
+
+# Idempotency parity (issue #48): both spot and non-spot creates gate on the
+# name, --force bypasses the gate on both.
+function test_should_gate_non_spot_create_by_name() {
+  eval "$_RP_POD_TEST_RESOURCE_EXISTING"
+  local marker out
+  marker="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[{"id":"podE","name":"foo"}]'
+    else
+      printf 'POSTED' >>"$marker"
+      printf '{"id":"p1"}'
+    fi
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090"
+  out="$(_pod_create 2>/dev/null)"
+  assert_equals "podE" "$out"
+  assert_equals "" "$(cat "$marker")"
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
+function test_should_gate_spot_create_by_name() {
+  eval "$_RP_POD_TEST_RESOURCE_EXISTING"
+  local marker out
+  marker="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[{"id":"podE","name":"foo"}]'
+    else
+      printf 'POSTED' >>"$marker"
+      printf '{"id":"p1"}'
+    fi
+  }
+  rp::http_soft() {
+    echo "http_soft must not run when the name gate hits" >&2
+    exit 99
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --bid-per-gpu 0.20
+  out="$(_pod_create 2>/dev/null)"
+  assert_equals "podE" "$out"
+  assert_equals "" "$(cat "$marker")"
+  rp::http() { :; }
+  rp::http_soft() { :; }
+  rm -f "$marker"
+}
+
+function test_should_bypass_name_gate_on_non_spot_create_when_force_given() {
+  eval "$_RP_POD_TEST_RESOURCE_EXISTING"
+  local marker out
+  marker="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[{"id":"podE","name":"foo"}]'
+    else
+      printf 'POSTED' >>"$marker"
+      printf '{"id":"p1"}'
+    fi
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --force
+  out="$(_pod_create 2>/dev/null)"
+  assert_equals "p1" "$out"
+  assert_equals "POSTED" "$(cat "$marker")"
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
+function test_should_bypass_name_gate_on_spot_create_when_force_given() {
+  eval "$_RP_POD_TEST_RESOURCE_EXISTING"
+  local marker out
+  marker="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[{"id":"podE","name":"foo"}]'
+    else
+      printf 'POSTED' >>"$marker"
+      printf '{"id":"p1"}'
+    fi
+  }
+  rp::http_soft() {
+    _RP_CURL_STATUS=200
+    printf 'SOFT-POSTED' >>"$marker"
+    printf '{"id":"p1"}' >"$1"
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --bid-per-gpu 0.20 --force
+  out="$(_pod_create 2>/dev/null)"
+  assert_equals "p1" "$out"
+  assert_contains "POSTED" "$(cat "$marker")"
+  rp::http() { :; }
+  rp::http_soft() { :; }
+  rm -f "$marker"
+}
+
+# A --jq filter that selects nothing prints [] under --json instead of a blank
+# line (issue #47); plain mode keeps the empty output.
+function test_should_print_empty_array_when_jq_matches_nothing_with_json() {
+  rp::http() {
+    printf '%s' '{"pods":[{"id":"p1","name":"a","image":"i","status":"RUNNING","cost":1}]}'
+  }
+  local out
+  out="$(
+    rp::args_parse --json --jq '.[] | select(.name == "zzz")'
+    _pod_list 2>/dev/null
+  )"
+  assert_equals "[]" "$out"
+  rp::http() { :; }
+}
+
+function test_should_print_nothing_when_jq_matches_nothing_plain() {
+  rp::http() {
+    printf '%s' '{"pods":[{"id":"p1","name":"a","image":"i","status":"RUNNING","cost":1}]}'
+  }
+  local out
+  out="$(
+    rp::args_parse --jq '.[] | select(.name == "zzz")'
+    _pod_list 2>/dev/null
+  )"
+  assert_equals "" "$out"
+  rp::http() { :; }
+}
+
+# The GraphQL spot bridge has no fields for these v2 extras; it must name them
+# in a warning rather than drop them silently (issue #47).
+function test_should_warn_when_spot_bridge_drops_unsupported_flags() {
+  rp::resource_existing() { return 1; }
+  rp::http_soft() {
+    _RP_CURL_STATUS=422
+    printf '{"detail":[{"loc":["body","interruptible"],"msg":"extra forbidden"}]}' >"$1"
+  }
+  rp::graphql() {
+    printf '{"podRentInterruptable":{"id":"podG"}}'
+  }
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --bid-per-gpu 0.20 --global-networking true --public-ip --min-cuda-version 12.1
+  local err out
+  err="$(mktemp)"
+  out="$(_pod_create 2>"$err")"
+  assert_equals "podG" "$out"
+  assert_contains "--global-networking" "$(cat "$err")"
+  assert_contains "--public-ip" "$(cat "$err")"
+  assert_contains "--min-cuda-version" "$(cat "$err")"
+  rp::resource_existing() { return 1; }
+  rp::http_soft() { :; }
+  rp::graphql() { :; }
+  rm -f "$err"
 }

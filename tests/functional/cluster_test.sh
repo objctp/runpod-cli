@@ -175,3 +175,42 @@ function test_create_is_idempotent_by_name() {
   rp::http() { :; }
   rm -f "$cap"
 }
+
+# An --env pair with a missing key aborts before any request (issue #32).
+function test_should_abort_create_when_env_pair_missing_key() {
+  rp::http() {
+    echo "rp::http called before the --env guard" >&2
+    exit 99
+  }
+  rp::args_parse --name n --type TRAINING --gpu "NVIDIA L4" --env =bad
+  (_cluster_create >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+}
+
+function test_should_send_env_map_when_env_given() {
+  local cap
+  cap="$(mktemp)"
+  _CAP="$cap"
+  _capture_http
+  rp::args_parse --name n --type TRAINING --gpu "NVIDIA L4" --env FOO=bar
+  _cluster_create >/dev/null 2>&1
+  assert_equals "bar" "$(jq -r '.env.FOO' "$cap")"
+  rp::http() { :; }
+  rm -f "$cap"
+}
+
+function test_cluster_update_rejects_bad_id_without_request() {
+  local marker
+  marker="$(mktemp)"
+  rp::http() {
+    printf 'CALLED' >>"$marker"
+    printf '{}'
+  }
+  for bad in "cl?x=1" "cl/1" "cl 1"; do
+    (rp::cmd_cluster update "$bad" >/dev/null 2>&1)
+    assert_exit_code 2
+  done
+  assert_equals "" "$(cat "$marker")"
+  rm -f "$marker"
+}
