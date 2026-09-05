@@ -19,9 +19,12 @@ function set_up() {
 
 # Main-shell call: rp::billing_window_query assigns via nameref and exits from
 # the caller's shell on a usage error, so a $(...) capture would hide it.
+# Regression: with no window flags the helper used to end on a failing
+# [[ ]] && and return 1, killing bare callers under set -e.
 function test_window_query_is_empty_when_no_flags_given() {
   rp::args_parse
   rp::billing_window_query BW_WINDOW "rp billing"
+  assert_exit_code 0
   assert_equals "0" "${#BW_WINDOW[@]}"
 }
 
@@ -35,6 +38,7 @@ function test_window_query_carries_start_end_and_bucket() {
 function test_window_query_carries_last_n() {
   rp::args_parse --last-n 7
   rp::billing_window_query BW_WINDOW "rp billing"
+  assert_exit_code 0
   assert_equals "?lastN=7" "$(rp::query_params "${BW_WINDOW[@]}")"
 }
 

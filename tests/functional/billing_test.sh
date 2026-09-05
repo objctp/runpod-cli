@@ -46,6 +46,18 @@ function test_should_dispatch_pods_verb_to_billing_endpoint() {
   assert_contains '"data"' "$(<"$OUT")"
 }
 
+# Regression: the window-query helper returned 1 with no window flags, which
+# aborted the bare caller in _billing under bin/rp's set -euo pipefail —
+# `rp billing pods` exited 1 with no output. The subshell mirrors that errexit.
+function test_should_exit_zero_for_verb_with_no_window_flags() {
+  (
+    set -euo pipefail
+    rp::cmd_billing pods >"$OUT" 2>/dev/null
+  )
+  assert_exit_code 0
+  assert_contains '"data"' "$(<"$OUT")"
+}
+
 # Main-shell routing so the serverless/volumes branches register coverage.
 function test_should_route_serverless_and_volumes_verbs() {
   local cap
