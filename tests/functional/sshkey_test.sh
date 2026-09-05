@@ -167,3 +167,60 @@ function test_unknown_verb_exits_two() {
   (rp::cmd_ssh-key frobnicate >/dev/null 2>&1)
   assert_exit_code 2
 }
+
+# --- #43: a failed private-key copy must not abort the import ---
+
+function test_add_from_runpodctl_import_survives_unreadable_private_key() {
+  local cap rpc sshdir err
+  cap="$(mktemp)"
+  _CAP="$cap"
+  sshdir="$(mktemp -d)"
+  RP_CONFIG_HOME="$sshdir"
+  rpc="$(mktemp -d)/.runpod/ssh"
+  mkdir -p "$rpc"
+  printf 'ssh-ed25519 AAAANEW-unreadable user@rpc\n' >"$rpc/rpckey.pub"
+  printf 'PRIV' >"$rpc/rpckey"
+  chmod 000 "$rpc/rpckey" # unreadable source (e.g. after a backup restore)
+  _stub_sshkey_http '{"keys":[]}'
+  err="$(mktemp)"
+  RUNPODCTL_SSH_DIR="$rpc" rp::cmd_ssh-key add --from-runpodctl </dev/null >/dev/null 2>"$err"
+  assert_exit_code 0
+  # The public half was still registered…
+  assert_equals "1" "$(jq -r '.keys | length' "$cap")"
+  # …and the failure was downgraded to a warning naming both paths.
+  assert_contains "could not copy private key $rpc/rpckey to $sshdir/ssh/rpckey" "$(cat "$err")"
+  rp::http() { :; }
+  rm -f "$cap" "$err"
+  rm -rf "$sshdir" "$rpc"
+}
+
+# --- #47: `awk 'NF' | head -n1` SIGPIPE'd on >64 KiB input under pipefail ---
+
+function test_add_from_runpodctl_handles_large_authorized_keys_file() {
+  local cap rpc sshdir
+  cap="$(mktemp)"
+  _CAP="$cap"
+  sshdir="$(mktemp -d)"
+  RP_CONFIG_HOME="$sshdir"
+  rpc="$(mktemp -d)/.runpod/ssh"
+  mkdir -p "$rpc"
+  # First line is the key; a >64 KiB second line overflows the pipe buffer that
+  # head -n1 used to abandon (killing awk with 141 mid-import).
+  {
+    printf 'ssh-ed25519 AAAABIG user@rpc\n'
+    head -c 200000 /dev/zero | tr '\0' 'x'
+    printf '\n'
+  } >"$rpc/big.pub"
+  _stub_sshkey_http '{"keys":[]}'
+  # set -eo pipefail mirrors bin/rp: under the old `awk 'NF' | head -n1`, the
+  # import died with SIGPIPE (141) here instead of completing.
+  (
+    set -eo pipefail
+    RUNPODCTL_SSH_DIR="$rpc" rp::cmd_ssh-key add --from-runpodctl </dev/null >/dev/null 2>&1
+  )
+  assert_exit_code 0
+  assert_equals "ssh-ed25519 AAAABIG user@rpc" "$(jq -r '.keys[0]' "$cap")"
+  rp::http() { :; }
+  rm -f "$cap"
+  rm -rf "$sshdir" "$rpc"
+}
