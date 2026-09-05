@@ -40,11 +40,14 @@ _template_create() {
   rp::obj_set obj name "$(rp::json_str "$name")"
   rp::obj_set obj image "$(rp::json_str "$image")"
   rp::args_has serverless && rp::obj_set obj serverless true
-  local cmd env ports vol_gb cdisk
+  local cmd env ports vol_gb cdisk envjson
   cmd="$(rp::args_get docker-cmd)"
   [[ -n "$cmd" ]] && rp::obj_set obj args "$(rp::json_str "$(rp::csv_to_argstring "$cmd")")"
   env="$(rp::args_get env)"
-  [[ -n "$env" ]] && rp::obj_set obj env "$(rp::env_to_json "$env")"
+  if [[ -n "$env" ]]; then
+    envjson="$(rp::env_to_json "$env")" || rp::usage "invalid --env pair"
+    rp::obj_set obj env "$envjson"
+  fi
   ports="$(rp::args_get ports)"
   [[ -n "$ports" ]] && rp::obj_set obj ports "$(rp::csv_to_jsonarray "$ports")"
   vol_gb="$(rp::args_get_uint volume-gb)"
@@ -80,7 +83,8 @@ _template_create() {
 _template_update() {
   local id
   rp::require_pos id "usage: rp template update <id> [--name <n>] [--image <img>] [--public true|false] [--registry <id>] [--docker-cmd <a,b>] [--env K=V]… [--ports <a/b>] [--container-disk-gb N] [--volume-gb N] [--volume-mount-path <path>] [--category <c>] [--serverless]  (PATCH)"
-  local obj='{}' name image cmd env ports cdisk registry category vol_gb pub
+  rp::require_id id "$id" "template id"
+  local obj='{}' name image cmd env ports cdisk registry category vol_gb pub envjson
   name="$(rp::args_get name)"
   [[ -n "$name" ]] && rp::obj_set obj name "$(rp::json_str "$name")"
   image="$(rp::args_get image)"
@@ -88,7 +92,10 @@ _template_update() {
   cmd="$(rp::args_get docker-cmd)"
   [[ -n "$cmd" ]] && rp::obj_set obj args "$(rp::json_str "$(rp::csv_to_argstring "$cmd")")"
   env="$(rp::args_get env)"
-  [[ -n "$env" ]] && rp::obj_set obj env "$(rp::env_to_json "$env")"
+  if [[ -n "$env" ]]; then
+    envjson="$(rp::env_to_json "$env")" || rp::usage "invalid --env pair"
+    rp::obj_set obj env "$envjson"
+  fi
   ports="$(rp::args_get ports)"
   [[ -n "$ports" ]] && rp::obj_set obj ports "$(rp::csv_to_jsonarray "$ports")"
   cdisk="$(rp::args_get_uint container-disk-gb)"

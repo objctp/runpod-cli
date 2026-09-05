@@ -13,6 +13,7 @@
 _pod_simple() {
   local action="$1" id
   rp::require_pos id "usage: rp pod $action <id>"
+  rp::require_id id "$id" "pod id"
   rp::http POST "/pods/$id/action" "$(rp::json_obj action "$(rp::json_str "$action")")" >/dev/null
   rp::ok "$action pod $id"
 }
@@ -20,7 +21,8 @@ _pod_simple() {
 _pod_update() {
   local id
   rp::require_pos id "usage: rp pod update <id> [--container-disk-gb N] [--volume-gb N] [--volume-path <p>] [--name <n>] [--image <img>] [--global-networking true|false] [--locked true|false] [--ports <a/b>] [--env K=V]… [--start-cmd <a,b,...>] [--registry <id>] (see: rp pod --help)"
-  local obj='{}' disk vol_gb name image ports start env
+  rp::require_id id "$id" "pod id"
+  local obj='{}' disk vol_gb name image ports start env envjson
   disk="$(rp::args_get_uint container-disk-gb)"
   rp::obj_set obj disk "$disk"
   vol_gb="$(rp::args_get_uint volume-gb)"
@@ -47,7 +49,8 @@ _pod_update() {
   fi
   env="$(rp::args_get env)"
   if [[ -n "$env" ]]; then
-    rp::obj_set obj env "$(rp::env_to_json "$env")"
+    envjson="$(rp::env_to_json "$env")" || rp::usage "invalid --env pair"
+    rp::obj_set obj env "$envjson"
   fi
   local registry
   registry="$(rp::args_get registry)"
@@ -122,7 +125,7 @@ _pod_create() {
     obj="$(_json_merge "$obj" "$(rp::json_obj mounts "$(rp::json_persistent_mount "$vol_gb" "$mpath")")")"
   fi
 
-  local dc ports start env
+  local dc ports start env envjson
   dc="$(rp::args_get dc)"
   if [[ -n "$dc" ]]; then
     rp::obj_set obj dataCenterIds "$(rp::csv_to_jsonarray "$dc")"
@@ -137,7 +140,8 @@ _pod_create() {
   fi
   env="$(rp::args_get env)"
   if [[ -n "$env" ]]; then
-    rp::obj_set obj env "$(rp::env_to_json "$env")"
+    envjson="$(rp::env_to_json "$env")" || rp::usage "invalid --env pair"
+    rp::obj_set obj env "$envjson"
   fi
   local registry
   registry="$(rp::args_get registry)"
@@ -243,8 +247,9 @@ _pod_create() {
     # server does not yet advertise them it rejects the request; detect that
     # exact rejection and fall back to the deprecated GraphQL bridge below. Once
     # v2 natively supports spot, the v2 branch succeeds and the bridge is dead
-    # code to be removed. Honour the same idempotency-by-name gate as
-    # rp::resource_create so re-running with an existing name is a no-op.
+    # code to be removed. The idempotency-by-name gate is checked here (not in
+    # rp::resource_create) because this branch POSTs itself and returns before
+    # ever reaching it — the non-spot path below is gated there.
     if rp::resource_existing pod "$name_val"; then
       rp::cc_tag_quietly "$pod_cc" pod "${RP_RES_EXISTING_ID:-}"
       return 0
@@ -253,6 +258,11 @@ _pod_create() {
     _mktemp _bodyfile
     rp::http_soft "$_bodyfile" POST "/pods" "$obj"
     _status="$_RP_CURL_STATUS"
+    # 000 is curl's own "no HTTP response" (DNS/TLS/timeout) and 130 is SIGINT;
+    # neither is an HTTP status, but both pass the <400 check below, so without
+    # this guard a dead transport is misreported as "pod create returned no id"
+    # and the GraphQL bridge is never reached.
+    if ((_status == 0 || _status == 130)); then rp::die "curl transport error: POST /pods"; fi
     if ((_status < 400)); then
       rp::extract_id _newid "$(<"$_bodyfile")" "pod"
       rp::cc_tag_quietly "$pod_cc" pod "$_newid"
@@ -273,7 +283,10 @@ _pod_create() {
     _rp_exit_for_status "$_status" "Runpod POST /pods -> HTTP $_status${_msg:+: $_msg}"
   fi
 
-  rp::resource_create pod "" "$obj"
+  # The real name (not "") makes rp::resource_create's idempotency-by-name gate
+  # apply to the non-spot path too, so re-run behaviour no longer depends on
+  # which spot flags were passed; --force bypasses the gate on both paths.
+  rp::resource_create pod "$name_val" "$obj"
 }
 
 # True (0) when a v2 create error body indicates the spot fields were the
@@ -296,6 +309,21 @@ _pod_create_graphql_spot() {
   # bypasses rp::resource_create, so assign-at-create is stamped here).
   [[ "$(printf '%s' "$obj" | jq -r 'has("gpu")')" == "true" ]] ||
     rp::die "spot pods require a GPU (--gpu); CPU spot pods are not supported"
+  # The mutation input below has no fields for these v2 extras, so they would
+  # be dropped silently; name the flags the user passed instead.
+  local dropped=()
+  if [[ "$(printf '%s' "$obj" | jq -r 'has("globalNetworking")')" == "true" ]]; then
+    dropped+=("--global-networking")
+  fi
+  if [[ "$(printf '%s' "$obj" | jq -r 'has("supportPublicIp")')" == "true" ]]; then
+    dropped+=("--public-ip")
+  fi
+  if [[ "$(printf '%s' "$obj" | jq -r '.gpu | has("minCudaVersion")')" == "true" ]]; then
+    dropped+=("--min-cuda-version")
+  fi
+  if ((${#dropped[@]} > 0)); then
+    rp::warn "the GraphQL spot bridge does not support ${dropped[*]} — they are dropped from this create"
+  fi
   input="$(printf '%s' "$obj" | jq -c '{
     name: .name,
     imageName: .image,
@@ -328,6 +356,7 @@ _pod_create_graphql_spot() {
 _pod_logs() {
   local id src tail since leid q
   rp::require_pos id "usage: rp pod logs <id> [--source container|system] [--tail N] [--since <rfc3339>] [--last-event-id <ts>]"
+  rp::require_id id "$id" "pod id"
   src="$(rp::args_get source)"
   case "$src" in '' | container | system) ;; *) rp::usage "invalid --source '$src' (expected container|system)" ;; esac
   tail="$(rp::args_get_uint tail)"
@@ -396,6 +425,8 @@ _pod_logs() {
 #                                  is also set (GPU pods only)
 #   --bid-per-gpu <n>               max $/GPU-hour to pay for a spot pod; implies
 #                                  --interruptible; must be > 0 (GPU pods only)
+#   --force                        create even when a pod of this name exists
+#                                  (bypasses the idempotency-by-name gate)
 #
 # Notes:
 #   A pod is either a GPU pod or a CPU pod: pass --gpu or --cpu-flavor, never
@@ -434,9 +465,11 @@ _pod_logs() {
 #   CPU pod it is silently ignored (there is no gpu block to carry it). It is
 #   mutually exclusive with any allowed-CUDA-versions selection, which rp does
 #   not expose.
-#   --force is accepted and ignored. Unlike `rp volume create` and
-#   `rp template create`, pod creation is not idempotent by name, so re-running
-#   this command creates a second pod.
+#   Pod creation is idempotent by name, like `rp volume create` and
+#   `rp template create`: where a pod of that name already exists, the CLI
+#   prints the existing id and skips the POST, so re-running a create is safe
+#   whatever spot flags it carried. --force bypasses the gate and creates
+#   another pod.
 #   --cost-center tags the new pod into a local cost center for per-project
 #   spend (`rp cost-center spend`); the center must exist, and the check runs
 #   before the pod is created. The tagging is local — Runpod's own Cost Centers
@@ -665,7 +698,14 @@ _pod_list() {
       rp::die "public-ip filter failed"
   fi
   jqf="$(rp::args_get jq)"
-  [[ -z "$jqf" ]] || arr="$(printf '%s' "$arr" | jq -c "$jqf")" || rp::die "invalid --jq filter: $jqf"
+  if [[ -n "$jqf" ]]; then
+    arr="$(printf '%s' "$arr" | jq -c "$jqf")" || rp::die "invalid --jq filter: $jqf"
+    # A filter that selects nothing prints nothing, which --json would echo as
+    # a blank line; emit the empty array instead (plain mode stays silent).
+    if rp::args_has json && [[ -z "$arr" ]]; then
+      arr='[]'
+    fi
+  fi
   rp::paginate arr
   rp::emit_json_or "$arr" rp::table "$arr" id name image status cost publicIp
 }
@@ -693,7 +733,7 @@ rp::cmd_pod() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp pod <verb> [flags]
-   create --image <img> [--name <n>] [--gpu <id> (alias: --gpu-id)] [--gpu-count N]
+   create --name <n> --image <img> [--gpu <id> (alias: --gpu-id)] [--gpu-count N]
            [--compute-type GPU|CPU (runpodctl coercion: --gpu, or --cpu-flavor+--vcpu)]
            [--dc <id,id> (alias: --data-center-ids)] [--cpu-flavor <id>] [--vcpu <n>]
            (CPU-only pod: --cpu-flavor excludes --gpu and --volume-gb)

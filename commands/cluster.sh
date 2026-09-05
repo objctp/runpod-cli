@@ -49,9 +49,12 @@ _cluster_create() {
   ports="$(rp::args_get ports)"
   [[ -z "$ports" ]] || rp::obj_set obj ports "$(rp::csv_to_jsonarray "$ports")"
 
-  local env
+  local env envjson
   env="$(rp::args_get env)"
-  [[ -z "$env" ]] || rp::obj_set obj env "$(rp::env_to_json "$env")"
+  if [[ -n "$env" ]]; then
+    envjson="$(rp::env_to_json "$env")" || rp::usage "invalid --env pair"
+    rp::obj_set obj env "$envjson"
+  fi
 
   local start
   start="$(rp::args_get start-cmd)"
@@ -84,6 +87,7 @@ _cluster_create() {
 _cluster_update() {
   local id
   rp::require_pos id "usage: rp cluster update <id> --name <n>"
+  rp::require_id id "$id" "cluster id"
   local name
   name="$(rp::args_get name)"
   [[ -n "$name" ]] || rp::usage "usage: rp cluster update <id> --name <n> (rename only; compute/type/config are fixed at create)"

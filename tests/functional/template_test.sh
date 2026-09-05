@@ -293,6 +293,48 @@ function test_should_show_help_when_help_verb_given() {
   rm -f "$tmp"
 }
 
+# An --env pair with a missing key aborts before any request (issue #32).
+function test_should_abort_create_when_env_pair_missing_key() {
+  rp::http() {
+    echo "rp::http called before the --env guard" >&2
+    exit 99
+  }
+  rp::args_parse --name n --image i --env =bad
+  (_template_create >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+}
+
+function test_should_abort_update_when_env_pair_missing_key() {
+  rp::http() {
+    echo "rp::http called before the --env guard" >&2
+    exit 99
+  }
+  rp::args_parse t1 --env =bad
+  (_template_update >/dev/null 2>&1)
+  assert_exit_code 2
+  rp::http() { :; }
+}
+
+function test_should_send_env_map_when_create_given_env() {
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[]'
+    else
+      printf '%s' "$3" >"$body"
+      printf '{"id":"x"}'
+    fi
+  }
+  rp::args_parse --name n --image i --env FOO=bar --env A=1
+  _template_create >/dev/null 2>&1
+  assert_equals "bar" "$(jq -r '.env.FOO' "$body")"
+  assert_equals "1" "$(jq -r '.env.A' "$body")"
+  rp::http() { :; }
+  rm -f "$body"
+}
+
 # Main-shell routing through the public dispatcher so each verb branch registers.
 function test_should_route_each_template_verb() {
   local cap
@@ -314,4 +356,19 @@ function test_should_route_each_template_verb() {
   rp::cmd_template delete t1 >/dev/null 2>&1
   assert_contains "DELETE /templates/t1" "$(<"$cap")"
   rm -f "$cap"
+}
+
+function test_template_update_rejects_bad_id_without_request() {
+  local marker
+  marker="$(mktemp)"
+  rp::http() {
+    printf 'CALLED' >>"$marker"
+    printf '{}'
+  }
+  for bad in "tpl?x=1" "tpl/1" "tpl 1"; do
+    (rp::cmd_template update "$bad" >/dev/null 2>&1)
+    assert_exit_code 2
+  done
+  assert_equals "" "$(cat "$marker")"
+  rm -f "$marker"
 }
