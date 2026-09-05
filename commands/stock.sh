@@ -42,6 +42,11 @@ _stock_gpu() {
   # --dc is a bare datacentre id; resolve it case-insensitively against each
   # GPU's dataCenters (the same array that feeds the DATACENTERS column).
   dc="$(rp::args_get dc)"
+  # The display reshape interpolates $dc into jq program text (rp::table takes
+  # no jq --arg), so anything beyond id characters would end the program at a
+  # quote — reject those up front with a usage error, not a cryptic jq failure.
+  [[ -z "$dc" || "$dc" =~ ^[A-Za-z0-9_.-]+$ ]] ||
+    rp::usage "invalid --dc '$dc' (expected a datacentre id like EU-RO-1; see: rp stock dc)"
   [[ -z "$dc" ]] || dc="${dc^^}"
   if [[ -n "$sort" ]]; then
     sort="${sort^^}"
@@ -198,9 +203,11 @@ _stock_cpus() {
   fi
 
   local dc_upper="${dc^^}"
+  # dcq rides jq --arg (not program-text interpolation), so a quote in --dc
+  # cannot break the reshape.
   local common_reshape='
     def money($v): (($v * 1000 | round) / 1000 | tostring);
-    def dcq: "'"$dc_upper"'";
+    def dcq: $dcq;
     def keep($raw): (if ($raw == null or $raw == 0) then null else $raw end);
     def dcs_of: (.dataCenters // []);
     def stock_of($f): (if (dcq == "") then ($f.availability // "")
@@ -276,7 +283,7 @@ _stock_cpus() {
     return 0
   fi
   # A filtered-out set would otherwise render as a bare header; say so instead.
-  final="$(printf '%s' "$data" | jq -c "$full_reshape")" || return 1
+  final="$(printf '%s' "$data" | jq -c --arg dcq "$dc_upper" "$full_reshape")" || return 1
   if [[ "$(printf '%s' "$final" | jq 'length')" -eq 0 ]]; then
     # Name only the filters actually supplied, so the hint never claims you
     # used flags you didn't.

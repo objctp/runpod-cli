@@ -81,8 +81,13 @@ do_release() {
   # Keep the version manifest in lockstep with the release.
   bump_manifest "package.json" "$version"
 
-  RUNPOD_CLI_CHANGELOG_HOOK=1 git commit -m "chore(release): ${version}" \
-    -- "$FILE" package.json >/dev/null
+  # A re-run over an already-cut version rewrites identical content, so git
+  # commit would fail "nothing to commit" and abort under set -e; only commit
+  # when the release files actually changed.
+  if ! git diff --quiet -- "$FILE" package.json; then
+    RUNPOD_CLI_CHANGELOG_HOOK=1 git commit -m "chore(release): ${version}" \
+      -- "$FILE" package.json
+  fi
 
   git tag -a "$version" -m "Release ${version}" 2>/dev/null || echo "tag ${version} already exists" >&2
 
