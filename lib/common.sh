@@ -112,6 +112,18 @@ _mktemp() {
   _RP_TEMPS+=("$mktemp_out")
 }
 
+# Unregister a temp path that has been consumed without being deleted (e.g.
+# renamed into its final place), so the EXIT trap never rm -f's a stale path.
+# No-op for paths that were never registered.
+_rp_temps_drop() {
+  local path="$1" f
+  local -a keep=()
+  for f in "${_RP_TEMPS[@]}"; do
+    [[ "$f" == "$path" ]] || keep+=("$f")
+  done
+  _RP_TEMPS=("${keep[@]}")
+}
+
 # Warn (stderr) if $1 is readable by group or other — guards credential files
 # like .env. Portable across macOS (stat -f) and Linux (stat -c). Must return 0
 # in the private case too: callers run it bare under `set -e`, so a non-zero
@@ -162,7 +174,9 @@ rp::require_api_key() {
   _rp_xtrace="$(rp::_xtrace_save)"
   set +x
   # Honour a selected account (or the active pointer) before the presence check.
-  rp::_load_account 2>/dev/null || true
+  # No stderr suppression: the loader's refusal of a group/world-writable
+  # account file must reach the user, not die silently behind a redirect.
+  rp::_load_account || true
   [[ -n "${RUNPOD_API_KEY:-}" || -n "${RUNPOD_API_KEY_FILE:-}" ]] || _auth "RUNPOD_API_KEY unset — run 'rp auth login', or set RUNPOD_API_KEY / RUNPOD_API_KEY_FILE"
   rp::_xtrace_restore "$_rp_xtrace"
 }

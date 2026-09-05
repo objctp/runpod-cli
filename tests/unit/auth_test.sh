@@ -37,6 +37,53 @@ function test_token_from_file_trims_newline() {
   rm -f "$f"
 }
 
+# A CRLF-written secret file must not embed \r in the Bearer token (opaque 401s).
+function test_token_from_file_strips_carriage_returns() {
+  local f
+  f="$(mktemp)"
+  printf 'sk-crlf789\r\n' >"$f"
+  RUNPOD_API_KEY_FILE="$f" rp::auth_token >"$OUT"
+  assert_equals "sk-crlf789" "$(<"$OUT")"
+  rm -f "$f"
+}
+
+# The account store's permission refusal must reach the user: _load_account is
+# called without stderr suppression, so a group/world-writable account file
+# dies LOUDLY (message + exit 1), not silently. _rp_env_load lives in bin/rp
+# (unsourceable), so a faithful stub of its refusal is defined — and unset —
+# inside this test only; without it _load_account is a no-op here.
+function test_world_writable_account_file_dies_loudly() {
+  _rp_env_load() {
+    local f="$1" perm
+    [[ -f "$f" ]] || return 0
+    if stat -f '/dev/null' >/dev/null 2>&1; then
+      perm="$(stat -f '%Lp' "$f")"
+    else
+      perm="$(stat -c '%a' "$f")"
+    fi
+    if [[ "$perm" =~ ^[0-7]+$ ]] && ((8#$perm & 022)); then
+      rp::die "$f is group/world-writable (mode $perm); refusing to load it — run 'chmod go-w $f'"
+    fi
+    return 0
+  }
+  local dir f out rc saved_account saved_creds saved_active
+  saved_account="${RP_ACCOUNT:-}" saved_creds="$RP_CREDS_DIR" saved_active="$RP_ACTIVE_FILE"
+  dir="$(mktemp -d)"
+  f="$dir/acme"
+  printf 'RUNPOD_API_KEY=sk-acme\n' >"$f"
+  chmod 666 "$f"
+  unset RUNPOD_API_KEY RUNPOD_API_KEY_FILE
+  RP_ACCOUNT=acme RP_CREDS_DIR="$dir" RP_ACTIVE_FILE="$dir/active"
+  out="$(rp::auth_token 2>&1)"
+  rc=$?
+  RP_ACCOUNT="$saved_account" RP_CREDS_DIR="$saved_creds" RP_ACTIVE_FILE="$saved_active"
+  chmod 600 "$f"
+  rm -rf "$dir"
+  unset -f _rp_env_load
+  assert_contains "group/world-writable" "$out"
+  assert_equals "1" "$rc"
+}
+
 function test_file_missing_dies() {
   local out
   out="$(
