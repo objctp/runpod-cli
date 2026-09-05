@@ -142,3 +142,51 @@ function test_notice_recommends_brew_upgrade_for_brew() {
   out="$(rp::_print_update_notice 1.4.0 2>&1 >/dev/null)"
   assert_contains "brew upgrade runpod-cli" "$out"
 }
+
+# --- inherit_errexit hardening (#51) ---
+
+# A malformed release body (proxy garbage, partial download) must degrade to
+# "no update seen" — not silently kill the CLI at startup under set -e.
+function test_refresh_degrades_on_malformed_release_body() {
+  curl() {
+    local out
+    while (($#)); do
+      case "$1" in
+      -o)
+        out="$2"
+        shift 2
+        ;;
+      *) shift ;;
+      esac
+    done
+    printf '<html>gateway garbage</html>' >"$out"
+    printf '200'
+  }
+  local cache lock out rc
+  cache="$(mktemp -u)"
+  lock="$(mktemp -u)"
+  out="$(
+    set -euo pipefail
+    shopt -s inherit_errexit
+    rp::_update_check_refresh "$cache" "$lock" 2>&1
+  )" && rc=0 || rc=$?
+  assert_equals 0 "$rc"
+  assert_equals "" "$out"
+  if [[ -f "$cache" || -d "$lock" ]]; then
+    rm -rf "$cache" "$lock"
+    return 1
+  fi
+}
+
+# `command -v rp` exits 1 when rp is not on PATH (e.g. `bash bin/rp` from a
+# checkout); the empty result is the normal not-installed case.
+function test_detect_install_method_unknown_when_rp_not_on_path() {
+  local out rc
+  out="$(
+    set -euo pipefail
+    shopt -s inherit_errexit
+    PATH=/nonexistent rp::_detect_install_method 2>&1
+  )" && rc=0 || rc=$?
+  assert_equals 0 "$rc"
+  assert_equals "unknown" "$out"
+}
