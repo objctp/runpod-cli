@@ -73,8 +73,26 @@ _serverless_resolve_nv() {
     nvid="$RP_VOLUME_ID"
     dc="$RP_VOLUME_DC"
   elif [[ -n "$nvid" ]]; then
+    # The id is interpolated into GET /network-volumes/$nvid downstream; the
+    # charset guard stops a crafted id from splitting the path or injecting a
+    # query string (same guard rp::resource_get applies).
+    rp::require_id nvid "$nvid" "volume id"
     rp::volume_dc_id "$nvid"
     dc="$RP_VOLUME_DC"
+  fi
+}
+
+# Collect the volume ids for the create body: the id resolved by
+# _serverless_resolve_nv (--network-volume / --network-volume-id) first, then
+# any --network-volume-ids CSV entries. Shared by the plain and hub create
+# paths so the plural flag is honoured on both.
+_serverless_nv_id_list() {
+  local -n nv_list_out="$1"
+  local x
+  nv_list_out=()
+  [[ -n "$nvid" ]] && nv_list_out+=("$nvid")
+  if [[ -n "$(rp::args_get network-volume-ids)" ]]; then
+    while IFS= read -r x; do [[ -n "$x" ]] && nv_list_out+=("$x"); done < <(rp::split_csv "$(rp::args_get network-volume-ids)")
   fi
 }
 
@@ -110,7 +128,40 @@ _serverless_scaling_obj() {
     rp::usage "scaling must be REQUEST_COUNT when --type LOAD_BALANCER (got scaler-type '$_out_type')"
   fi
   _RP_SCALER_TYPE="$_out_type"
+  # --scaler-value is the only numeric flag with no upstream validation; jq
+  # would only fail later with a raw parse error, so gate it here (create,
+  # hub-create and update all funnel through this helper).
+  [[ "$sval" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
+    rp::usage "invalid --scaler-value '$sval' (expected a number)"
   _RP_SCALING_JSON="$(rp::json_scaling "$_out_type" "$sval")"
+}
+
+# Runpodctl-compat coercion: --scale-by / --scale-threshold map onto rp's own
+# --scaler-type / --scaler-value (same scaling object), but the value must be
+# translated first, so this runs in-command rather than in the RP_FLAG_ALIASES
+# map. Per the collision policy rp's native flag wins: the alias only fills an
+# unset canonical. Assigns the effective values to the namerefs in $1/$2 — both
+# empty when no scaler flag was passed. Shared by create (plain + hub) and
+# update so --scale-by behaves identically on every path.
+_serverless_scaler_coerce() {
+  local -n coerce_type_out="$1"
+  local -n coerce_val_out="$2"
+  local scale_by scale_thr
+  scale_by="$(rp::args_get scale-by)"
+  scale_thr="$(rp::args_get scale-threshold)"
+  # shellcheck disable=SC2034 # nameref assignments land in the caller's variables
+  coerce_type_out="$(rp::args_get scaler-type)"
+  coerce_val_out="$(rp::args_get scaler-value)"
+  if [[ -z "$coerce_type_out" && -n "$scale_by" ]]; then
+    case "$scale_by" in
+    delay) coerce_type_out=QUEUE_DELAY ;;
+    requests) coerce_type_out=REQUEST_COUNT ;;
+    *) rp::usage "invalid --scale-by '$scale_by' (expected delay|requests)" ;;
+    esac
+  fi
+  if [[ -z "$coerce_val_out" && -n "$scale_thr" ]]; then
+    coerce_val_out="$scale_thr"
+  fi
 }
 
 _serverless_create() {
@@ -158,10 +209,16 @@ _serverless_create() {
   gpusfrom="$(rp::args_get gpus-from-volume)"
   gpu="$(rp::args_get gpu)"
   _serverless_resolve_nv
+  # --gpus-from-volume is consumed outside the datacenter gate: the flag
+  # resolves the volume's dc itself, so a bare --gpus-from-volume (no volume
+  # placement flags) must still be honoured rather than answered by an error
+  # telling the user to pass it.
+  if [[ -n "$gpusfrom" ]]; then
+    gpu="$(_resolve_gpus_from_volume "$gpusfrom" | paste -sd, -)"
+  fi
   if [[ -n "$dc" ]]; then
     rp::obj_set obj dataCenterIds "$(rp::json_array "$dc")"
     rp::info "endpoint scoped to NV datacenter: $dc"
-    [[ -n "$gpusfrom" ]] && gpu="$(_resolve_gpus_from_volume "$gpusfrom" | paste -sd, -)"
   fi
   if [[ -n "$gpu" ]]; then
     poolcsv="$(_serverless_gpu_poolcsv "$gpu")"
@@ -191,7 +248,10 @@ _serverless_create() {
 
   # scaling is required on create; default to a valid union arm when no scaler
   # flags are supplied, and honour the LOAD_BALANCER => REQUEST_COUNT rule.
-  _serverless_scaling_obj "$etype" "$(rp::args_get scaler-type)" "$(rp::args_get scaler-value)"
+  # --scale-by/--scale-threshold coerce into the same inputs first (#41).
+  local scaler_type scaler_val
+  _serverless_scaler_coerce scaler_type scaler_val
+  _serverless_scaling_obj "$etype" "$scaler_type" "$scaler_val"
   rp::obj_set obj scaling "$_RP_SCALING_JSON"
 
   # workers.idleTimeout is rejected for REQUEST_COUNT scaling; drop with a note.
@@ -215,14 +275,9 @@ _serverless_create() {
   [[ -n "$execto" ]] && rp::obj_set obj timeout "$((execto * RP_MS_PER_SECOND))"
 
   local -a nv_arr=()
-  [[ -n "$nvid" ]] && nv_arr+=("$nvid")
-  if [[ -n "$(rp::args_get network-volume-ids)" ]]; then
-    while IFS= read -r x; do [[ -n "$x" ]] && nv_arr+=("$x"); done < <(rp::split_csv "$(rp::args_get network-volume-ids)")
-  fi
+  _serverless_nv_id_list nv_arr
   if ((${#nv_arr[@]} > 0)); then
-    local nvjson
-    nvjson="$(rp::json_array "${nv_arr[@]}")"
-    rp::obj_set obj networkVolumes "$nvjson"
+    rp::obj_set obj networkVolumes "$(rp::json_array "${nv_arr[@]}")"
   fi
 
   # The template spread already carries the template's env map; --env overlays
@@ -301,7 +356,9 @@ _serverless_create_hub() {
   QUEUE | LOAD_BALANCER) ;;
   *) rp::usage "invalid --type '$htype' (expected QUEUE|LOAD_BALANCER)" ;;
   esac
-  _serverless_scaling_obj "$htype" "$(rp::args_get scaler-type)" "$(rp::args_get scaler-value)"
+  local hstype hsval
+  _serverless_scaler_coerce hstype hsval
+  _serverless_scaling_obj "$htype" "$hstype" "$hsval"
   hscaling="$_RP_SCALING_JSON"
   if [[ -n "$hidle" && "$_RP_SCALER_TYPE" == "REQUEST_COUNT" ]]; then
     rp::warn "note: --idle (workers.idleTimeout) is ignored with REQUEST_COUNT scaling"
@@ -317,9 +374,28 @@ _serverless_create_hub() {
     gpu "$(rp::json_gpu_endpoint "$poolcsv" "$gpucount" "$excl")" \
     scaling "$hscaling" \
     workers "$(rp::json_workers "$hwmin" "$hwmax" "$hidle")")"
-  if [[ -n "$nvid" ]]; then
-    body="$(_json_merge "$body" "$(rp::json_obj networkVolumes "$(rp::json_array "$nvid")" dataCenterIds "$(rp::json_array "$dc")")")"
+  # Volumes: same inputs as the plain path — the id resolved from
+  # --network-volume/--network-volume-id (with its datacenter) plus the plural
+  # --network-volume-ids CSV, which the hub path used to drop silently (#41).
+  local -a nv_arr=()
+  _serverless_nv_id_list nv_arr
+  if ((${#nv_arr[@]} > 0)); then
+    local nvobj
+    nvobj="$(rp::json_obj networkVolumes "$(rp::json_array "${nv_arr[@]}")")"
+    [[ -n "$dc" ]] &&
+      nvobj="$(_json_merge "$nvobj" "$(rp::json_obj dataCenterIds "$(rp::json_array "$dc")")")"
+    body="$(_json_merge "$body" "$nvobj")"
   fi
+
+  # Same v2 create schema as the plain path POSTs, so --flashboot and
+  # --execution-timeout thread through identically instead of being dropped.
+  rp::args_has flashboot &&
+    body="$(_json_merge "$body" "$(rp::json_obj flashboot "$(rp::json_str FLASHBOOT)")")"
+  local hexecto
+  hexecto="$(rp::args_get_uint execution-timeout)"
+  [[ -n "$hexecto" ]] &&
+    body="$(_json_merge "$body" "$(rp::json_obj timeout "$((hexecto * RP_MS_PER_SECOND))")")"
+
   local hreg
   hreg="$(rp::args_get registry)"
   if [[ -n "$hreg" ]]; then
@@ -352,10 +428,32 @@ _serverless_update() {
   rp::require_id id "$id" "endpoint id"
   _resource_meta serverless
   local obj='{}' gpu
+
+  # scaling resolves first: the --idle drop below needs this PATCH's own scaler
+  # type, and the runpodctl coercions (--scale-by / --scale-threshold) must be
+  # applied before the scaling object is built.
+  local scaling_seen=0 scaler_type scaler_val
+  _serverless_scaler_coerce scaler_type scaler_val
+  if [[ -n "$scaler_type" || -n "$scaler_val" ]]; then
+    [[ -n "$scaler_type" ]] || scaler_type=QUEUE_DELAY
+    _serverless_scaling_obj "" "$scaler_type" "$scaler_val"
+    rp::obj_set obj scaling "$_RP_SCALING_JSON"
+    scaling_seen=1
+  fi
+
   local wmin wmax idle
   wmin="$(rp::args_get_uint workers-min)"
   wmax="$(rp::args_get_uint workers-max)"
   idle="$(rp::args_get_uint idle)"
+  # workers.idleTimeout is rejected under REQUEST_COUNT scaling (create's
+  # rule): when this PATCH itself sets that scaling, drop --idle with the same
+  # note instead of letting the API reject the whole request. Scaling not
+  # touched by the PATCH leaves --idle alone (the endpoint's current scaler is
+  # unknown client-side).
+  if [[ -n "$idle" && "$scaling_seen" == 1 && "${_RP_SCALER_TYPE:-}" == "REQUEST_COUNT" ]]; then
+    rp::warn "note: --idle (workers.idleTimeout) is ignored with REQUEST_COUNT scaling"
+    idle=''
+  fi
   if [[ -n "$wmin" || -n "$wmax" || -n "$idle" ]]; then
     rp::obj_set obj workers "$(rp::json_workers "$wmin" "$wmax" "$idle")"
   fi
@@ -402,34 +500,6 @@ _serverless_update() {
     rp::obj_set obj name "$(rp::json_str "$name")"
   fi
 
-  # Coercion aliases for runpodctl's --scale-by / --scale-threshold. These feed
-  # rp's own --scaler-type / --scaler-value (same PATCH `scaling` object), but the
-  # value must be translated first, so they are handled in-command rather than in
-  # the generic RP_FLAG_ALIASES map. Per D1's collision policy, rp's native flag
-  # always wins: the alias only applies when the canonical flag is unset, so
-  # `--scaler-type X --scale-by delay` keeps X rather than silently flipping to
-  # QUEUE_DELAY.
-  local scale_by scale_thr scaler_type scaler_val
-  scale_by="$(rp::args_get scale-by)"
-  scale_thr="$(rp::args_get scale-threshold)"
-  scaler_type="$(rp::args_get scaler-type)"
-  scaler_val="$(rp::args_get scaler-value)"
-  if [[ -z "$scaler_type" && -n "$scale_by" ]]; then
-    case "$scale_by" in
-    delay) scaler_type=QUEUE_DELAY ;;
-    requests) scaler_type=REQUEST_COUNT ;;
-    *) rp::usage "invalid --scale-by '$scale_by' (expected delay|requests)" ;;
-    esac
-  fi
-  if [[ -z "$scaler_val" && -n "$scale_thr" ]]; then
-    scaler_val="$scale_thr"
-  fi
-  if [[ -n "$scaler_type" || -n "$scaler_val" ]]; then
-    [[ -n "$scaler_type" ]] || scaler_type=QUEUE_DELAY
-    _serverless_scaling_obj "" "$scaler_type" "$scaler_val"
-    rp::obj_set obj scaling "$_RP_SCALING_JSON"
-  fi
-
   [[ "$obj" != '{}' ]] || rp::usage "nothing to update"
   local res
   res="$(rp::http PATCH "$RP_RES_PATH/$id" "$obj")"
@@ -442,7 +512,7 @@ _serverless_update() {
 # affinity (best-effort — there is no literal "soft" token), while strict /
 # strict-resume prefix the id and are honoured by load-balanced endpoints only.
 # The header name lives here so callers can splice the output straight into
-# rp::http_api's extra-headers argument. Runs in the main shell (no command
+# rp::api_call's extra-headers argument. Runs in the main shell (no command
 # substitution) so rp::usage exits the caller; the charset guard on the id also
 # rules out header injection.
 _serverless_worker_affinity_header() {
@@ -520,8 +590,29 @@ _serverless_run() {
   rp::args_has async && route=run
   timeout="$(rp::args_get_uint timeout 300)"
   _serverless_worker_affinity_header worker_header
+  # The call is made soft (transport output to a temp file, no emit yet) so the
+  # transport's failure signals stay visible in this shell — rp::http_api would
+  # already have died with the generic message inside a command substitution,
+  # before any cause-specific triage could run.
+  local tmp
+  rp::require_api_key
+  rp::require_cmd curl
+  _mktemp tmp
+  rp::api_call api POST "/$id/$route" "$payload" "$timeout" "$worker_header" >"$tmp" || true
+  # Transport-failure triage, local to this file: on runsync a --max-time expiry
+  # (curl rc 28) leaves the job running server-side with no id to poll, which
+  # the shared emit's generic "curl transport error" hides. _RP_CURL_RC is
+  # consumed defensively (the transport only sets it on a failed fetch); any
+  # other outcome — 130 and other rc values included — defers to the shared
+  # emit's policy unchanged.
+  if [[ "${_RP_CURL_STATUS:-}" == "000" || "${_RP_CURL_STATUS:-}" == "130" ]] && [[ "${_RP_CURL_RC:-}" == "28" ]]; then
+    rm -f -- "$tmp"
+    rp::die "request timed out after ${timeout}s — the job may still complete server-side; use --async for long jobs"
+  fi
+  # The shared emit keeps one error-message grammar for everything else (4xx
+  # extraction, 130 quiet-exit, generic transport die) and prints the body.
   local body
-  body="$(rp::http_api POST "/$id/$route" "$payload" "$timeout" "$worker_header")"
+  body="$(_rp_http_emit "$tmp" POST "/$id/$route")"
   rp::emit_json_or "$body" _serverless_run_human "$id" "$body"
 }
 
@@ -950,6 +1041,9 @@ _serverless_logs() {
 #   --input and --input-file are mutually exclusive, as are --sync and --async.
 #   The body is wrapped as { "input": <json> } and POSTed to the endpoint's
 #   runsync (or run, with --async) route on the data plane.
+#   A --timeout expiry reports "request timed out after Ns — the job may still
+#   complete server-side; use --async for long jobs" instead of a generic
+#   transport error.
 #   --worker-id/--affinity apply to load-balanced endpoints and compose with
 #   --sync/--async alike. The header value is "[mode ]<id>": soft sends the
 #   bare id (best-effort — the job falls back to normal selection when the
@@ -1173,7 +1267,7 @@ _serverless_logs() {
 # Options:
 #   --wait           poll until the counts reconcile (completed + failed =
 #                    total) or the batch reaches a terminal state
-#   --interval <s>   seconds between polls (default 5)
+#   --interval <s>   seconds between polls (default 5, minimum 1)
 #   --timeout <s>    cap the wait (default: none — batches are multi-hour by
 #                    design; Ctrl-C or this flag ends the wait)
 #   --json           print the raw API response
@@ -1206,7 +1300,9 @@ _serverless_logs() {
 #                    --status completed is the results view
 #   --limit <n>      page size (server-side)
 #   --cursor <n>     server-side offset for the next page
-#   --json           print the raw paginated envelope (incl. total/hasMore)
+#   --json           print the paginated envelope (incl. total/hasMore); with
+#                    --status, .requests is filtered client-side (the envelope
+#                    counters are the server's and stay unfiltered)
 #
 # Notes:
 #   Pagination is server-side (offset/limit); each child carries a status and
@@ -1256,7 +1352,7 @@ _serverless_batch_list() {
 # API's {"requests":[…]} envelope; create POSTs it bare.
 _serverless_batch_inputs() {
   local -n inputs_out="$1"
-  local file input items line wrapped
+  local file input items line buf wrapped
   file="$(rp::args_get input-file)"
   input="$(rp::args_get input)"
   items="[]"
@@ -1275,12 +1371,20 @@ _serverless_batch_inputs() {
   local extra="[]"
   local -a elems=()
   if [[ -n "$input" ]]; then
+    # --input may be pretty-printed (`--input "$(jq . payload.json)"`), so lines
+    # buffer until they parse as one document; only a non-empty residual buffer
+    # is an error. Blank lines are skipped: they are pure whitespace to jq and
+    # would otherwise strand the buffer after the last document.
+    buf=''
     while IFS= read -r line; do
       [[ -n "$line" ]] || continue
-      wrapped="$(printf '%s' "$line" | jq -c '{input: .}' 2>/dev/null)" ||
-        rp::usage "--input is not valid JSON: $line"
-      elems+=("$wrapped")
+      buf+="$line"$'\n'
+      if wrapped="$(printf '%s' "$buf" | jq -c '{input: .}' 2>/dev/null)"; then
+        elems+=("$wrapped")
+        buf=''
+      fi
     done <<<"$input"
+    [[ -z "$buf" ]] || rp::usage "--input is not valid JSON: ${buf%$'\n'}"
     if ((${#elems[@]})); then
       extra="$(printf '%s\n' "${elems[@]}" | jq -sc .)"
     fi
@@ -1405,11 +1509,17 @@ _serverless_batch_poll() {
   local -n poll_body="$3"
   local interval timeout deadline last_done=-1 done_now
   interval="$(rp::args_get_uint interval 5)"
+  # --interval 0 would turn the loop into an unthrottled hammer; floor at 1.
+  ((interval >= 1)) || interval=1
   timeout="$(rp::args_get_uint timeout)"
   deadline=0
   ((timeout > 0)) && deadline=$((SECONDS + timeout))
   while :; do
-    poll_body="$(rp::http GET "/serverless/$ep/batch/$batch")"
+    # The fetch status must be captured explicitly: this function runs under
+    # `_serverless_batch_poll … || wrc=$?` (errexit suspended), so a failed
+    # substitution — a Ctrl-C during the GET (130) above all — has to return,
+    # or the loop would treat the interrupt as handled and keep polling.
+    poll_body="$(rp::http GET "/serverless/$ep/batch/$batch")" || return $?
     done_now="$(printf '%s' "$poll_body" | jq -r '((.requestCompleted // 0) + (.requestFailed // 0))')"
     [[ "$done_now" != "$last_done" ]] && {
       _serverless_batch_headline "$poll_body"
@@ -1421,7 +1531,7 @@ _serverless_batch_poll() {
     printf '%s' "$poll_body" | jq -e '((.requestCompleted // 0) + (.requestFailed // 0)) >= (.requestTotal // 0)' >/dev/null && return 0
     ((deadline > 0)) && ((SECONDS >= deadline)) &&
       rp::die "wait timed out after ${timeout}s — batch still processing (rerun the same command to resume)"
-    ((interval > 0)) && sleep "$interval"
+    sleep "$interval"
   done
 }
 
@@ -1451,15 +1561,22 @@ _serverless_batch_requests() {
   esac
   local body
   body="$(rp::http GET "/serverless/$ep/batch/$batch/requests$q")"
-  if ! rp::args_has json; then
-    local arr
-    arr="$(rp::unwrap requests "$body")"
-    [[ -n "$status" ]] &&
-      arr="$(printf '%s' "$arr" | jq -c --arg s "$status" 'map(select(.status == ($s | ascii_upcase | sub("-", "_"; "g"))))')"
-    rp::table "$arr" id status error
+  if rp::args_has json; then
+    # --status filters the JSON path too: the envelope shape (total/offset/
+    # limit/hasMore) is preserved and only .requests is filtered, with the same
+    # status mapping as the table path — otherwise --status completed --json
+    # would print the unfiltered page.
+    if [[ -n "$status" ]]; then
+      body="$(printf '%s' "$body" | jq -c --arg s "$status" 'if .requests then .requests |= map(select(.status == ($s | ascii_upcase | sub("-"; "_"; "g")))) else . end')"
+    fi
+    printf '%s\n' "$body"
     return
   fi
-  printf '%s\n' "$body"
+  local arr
+  arr="$(rp::unwrap requests "$body")"
+  [[ -n "$status" ]] &&
+    arr="$(printf '%s' "$arr" | jq -c --arg s "$status" 'map(select(.status == ($s | ascii_upcase | sub("-"; "_"; "g"))))')"
+  rp::table "$arr" id status error
 }
 
 # Update batch attributes — display name only today (the cluster-rename
