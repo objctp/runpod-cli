@@ -44,7 +44,14 @@ _cc_list() {
         resources: ([$s.assignments | to_entries[] | select(.value.center == $c.key)] | length)
       }]' <<<"$cc_state")"
   jqf="$(rp::args_get jq)"
-  [[ -z "$jqf" ]] || cc_rows="$(jq -c "$jqf" <<<"$cc_rows")" || rp::die "invalid --jq filter: $jqf"
+  if [[ -n "$jqf" ]]; then
+    cc_rows="$(jq -c "$jqf" <<<"$cc_rows")" || rp::die "invalid --jq filter: $jqf"
+    # A filter that selects nothing prints nothing, which --json would echo as
+    # a blank line; emit the empty array instead (plain mode stays silent).
+    if rp::args_has json && [[ -z "$cc_rows" ]]; then
+      cc_rows='[]'
+    fi
+  fi
   rp::emit_json_or "$cc_rows" rp::table "$cc_rows" name note resources
 }
 
@@ -144,29 +151,35 @@ _cc_spend() {
   rp::billing_window_query _CC_WINDOW "rp cost-center spend"
   [[ -z "$cc_name" ]] || rp::cc_require_center "$cc_name"
 
-  local cc_state cc_parts=() cc_part cc_unc='null' cc_agg
+  local cc_state cc_parts=() cc_part cc_unc='null' cc_agg cc_center
   cc_state="$(rp::cc_state)"
+  # The per-center roll-ups run in the main shell (not a process substitution)
+  # and their status is checked explicitly: a center whose billing call fails
+  # must abort the command, not vanish from the table with a wrong TOTAL and a
+  # success status. The explicit || die keeps the abort even where errexit is
+  # off (the underlying billing error has already printed inside $()).
   if [[ -n "$cc_name" ]]; then
     cc_part="$(_cc_center_json "$cc_name" < <(
       jq -r --arg n "$cc_name" '
         .assignments | to_entries[] | select(.value.center == $n)
         | "\(.key)\t\(.value.type // "")"' <<<"$cc_state"
-    ))"
+    ))" || rp::die "cost center '$cc_name' spend roll-up failed"
     cc_parts+=("$cc_part")
   else
-    while IFS= read -r cc_part; do
-      [[ -n "$cc_part" ]] || continue
-      cc_parts+=("$cc_part")
-    done < <(jq -r '.centers | keys_unsorted[]' <<<"$cc_state" | while IFS= read -r cc_center; do
-      _cc_center_json "$cc_center" < <(
+    while IFS= read -r cc_center; do
+      [[ -n "$cc_center" ]] || continue
+      cc_part="$(_cc_center_json "$cc_center" < <(
         jq -r --arg n "$cc_center" '
           .assignments | to_entries[] | select(.value.center == $n)
           | "\(.key)\t\(.value.type // "")"' <<<"$cc_state"
-      )
-    done)
+      ))" || rp::die "cost center '$cc_center' spend roll-up failed"
+      cc_parts+=("$cc_part")
+    done < <(jq -r '.centers | keys_unsorted[]' <<<"$cc_state")
     cc_unc="$(_cc_center_json "Uncategorized" < <(_cc_uncategorized))"
     # Keep the Uncategorized row only when the pool is non-empty.
-    jq -e '.resources | length > 0' <<<"$cc_unc" >/dev/null && cc_parts+=("$cc_unc")
+    if jq -e '.resources | length > 0' <<<"$cc_unc" >/dev/null; then
+      cc_parts+=("$cc_unc")
+    fi
   fi
 
   local cc_centers='[]'
