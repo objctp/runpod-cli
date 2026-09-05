@@ -8,6 +8,7 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/http.sh"
   source "$RP_ROOT/lib/args.sh"
   source "$RP_ROOT/lib/json.sh"
+  source "$RP_ROOT/lib/paginate.sh"
   source "$RP_ROOT/lib/resource.sh"
   source "$RP_ROOT/commands/registry.sh"
   eval "$_opts"
@@ -210,4 +211,38 @@ function test_delegations_help_mentions_usage() {
 function test_help_mentions_delegations() {
   rp::cmd_registry help >"$OUT" 2>/dev/null
   assert_contains "delegations" "$(<"$OUT")"
+}
+
+# --- #34: lifecycle verbs validate ids before interpolating them into paths ---
+
+function test_delegations_revoke_rejects_bad_id_without_request() {
+  local marker bad
+  marker="$(mktemp)"
+  rp::http() {
+    printf 'CALLED' >>"$marker"
+    printf '{}'
+  }
+  for bad in "deleg?x=1" "deleg/rev" "deleg id"; do
+    (rp::cmd_registry delegations revoke "$bad" >/dev/null 2>&1)
+    assert_exit_code 2
+  done
+  # No request may leave the process before the id is rejected.
+  assert_equals "" "$(cat "$marker")"
+  rm -f "$marker"
+}
+
+function test_delegations_revoke_names_the_noun_in_the_id_error() {
+  local err
+  err="$( (rp::cmd_registry delegations revoke "deleg?x=1" 2>&1 >/dev/null))"
+  assert_contains "invalid delegation id" "$err"
+}
+
+# --- #47: delegations create honours --json ---
+
+function test_delegations_create_json_prints_raw_response() {
+  rp::http() { printf '{"id":"deleg_9","name":"d1"}'; }
+  rp::args_parse --resource "arn:aws:ecr:us-east-2:1:repo/r" --json
+  local out
+  out="$(_registry_delegations_create 2>/dev/null)"
+  assert_equals '{"id":"deleg_9","name":"d1"}' "$out"
 }

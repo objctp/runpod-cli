@@ -137,3 +137,28 @@ function test_should_route_each_ssh_verb() {
   assert_contains "GET /pods/p1" "$(<"$cap")"
   rm -f "$cap"
 }
+
+# --- #34: info validates the pod id before interpolating it into the GET path ---
+
+function test_ssh_info_rejects_bad_id_without_request() {
+  local marker bad
+  marker="$(mktemp)"
+  rp::http() {
+    printf 'CALLED' >>"$marker"
+    printf '{}'
+  }
+  for bad in "pod?x=1" "pod/1" "pod 1"; do
+    (rp::cmd_ssh info "$bad" >/dev/null 2>&1)
+    assert_exit_code 2
+  done
+  # No request may leave the process before the id is rejected.
+  assert_equals "" "$(cat "$marker")"
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
+function test_ssh_info_names_the_noun_in_the_id_error() {
+  local err
+  err="$( (rp::cmd_ssh info "pod?x=1" 2>&1 >/dev/null))"
+  assert_contains "invalid pod id" "$err"
+}

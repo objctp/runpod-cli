@@ -8,6 +8,7 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/http.sh"
   source "$RP_ROOT/lib/args.sh"
   source "$RP_ROOT/lib/json.sh"
+  source "$RP_ROOT/lib/paginate.sh"
   source "$RP_ROOT/lib/validate.sh"
   source "$RP_ROOT/lib/resource.sh"
   source "$RP_ROOT/lib/costcenter.sh"
@@ -356,4 +357,30 @@ function test_volume_sync_models_invokes_huggingface_then_aws_per_model() {
   assert_contains "--endpoint-url https://s3api-eu-ro-1.runpod.io/" "${_aws_calls[0]}"
   rp::http() { :; }
   rm -rf "$cache"
+}
+
+# --- #34: update validates the id before interpolating it into the PATCH path ---
+
+function test_volume_update_rejects_bad_id_without_request() {
+  local marker bad
+  marker="$(mktemp)"
+  rp::http() {
+    printf 'CALLED' >>"$marker"
+    printf '{}'
+  }
+  for bad in "vol?x=1" "vol/1" "vol 1"; do
+    (rp::cmd_volume update "$bad" >/dev/null 2>&1)
+    assert_exit_code 2
+  done
+  # No request may leave the process before the id is rejected.
+  assert_equals "" "$(cat "$marker")"
+  rp::http() { :; }
+  rm -f "$marker"
+}
+
+function test_volume_update_names_the_noun_in_the_id_error() {
+  rp::args_parse "vol?x=1"
+  local err
+  err="$(_volume_update 2>&1 >/dev/null)"
+  assert_contains "invalid volume id" "$err"
 }

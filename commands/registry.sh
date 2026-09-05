@@ -31,6 +31,10 @@ _registry_delegations_create() {
   [[ -z "$name" ]] || rp::obj_set obj name "$(rp::json_str "$name")"
   local res newid
   res="$(rp::http POST /registries/delegations "$obj")"
+  if rp::args_has json; then
+    printf '%s\n' "$res"
+    return 0
+  fi
   rp::extract_id newid "$res" "ECR delegation"
   rp::ok "created ECR delegation${name:+ '$name'}: $newid"
   printf '%s\n' "$newid"
@@ -40,6 +44,7 @@ _registry_delegations_create() {
 _registry_delegations_revoke() {
   local id
   rp::require_pos id "usage: rp registry delegations revoke <id>"
+  rp::require_id id "$id" "delegation id"
   rp::http DELETE "/registries/delegations/$id" >/dev/null
   rp::ok "revoked ECR delegation $id"
 }
@@ -110,7 +115,8 @@ _registry_create() {
 #
 # Notes:
 #   On success the new delegation id is printed; the name is optional and, when
-#   absent, is not sent in the request body.
+#   absent, is not sent in the request body. --json prints the raw API response
+#   instead of the id line.
 #
 # API: POST /v2/registries/delegations
 

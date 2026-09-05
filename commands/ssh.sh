@@ -33,6 +33,7 @@ _ssh_info_human() {
 _ssh_info() {
   local id user
   rp::require_pos id "usage: rp ssh info <pod-id>"
+  rp::require_id id "$id" "pod id"
   user="$(rp::args_get user root)"
   local body
   body="$(rp::http GET "/pods/$id")"
