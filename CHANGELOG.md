@@ -11,6 +11,7 @@
 - Fail closed on env, ids, transport, and the name gate (#32, #34, #37, #47, #48)
 - Batch verbs, flag parity, id checks, runsync timeout (#34, #40, #41, #47, #49)
 - Expose curl exit code; harden header extraction (#46, #49)
+- Surface loader refusals; strip CR from key files (#36, #46)
 
 ## [1.5.0] - 2026-09-05
 

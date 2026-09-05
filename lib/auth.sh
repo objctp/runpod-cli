@@ -78,14 +78,17 @@ rp::auth_token() {
   local _rp_xtrace
   _rp_xtrace="$(rp::_xtrace_save)"
   set +x
-  # Honour a selected account (or the active pointer) before reading env.
-  rp::_load_account 2>/dev/null || true
+  # Honour a selected account (or the active pointer) before reading env. No
+  # stderr suppression: the loader's refusal of a group/world-writable account
+  # file must reach the user, not die silently behind a redirect.
+  rp::_load_account || true
   if [[ -n "${RUNPOD_API_KEY:-}" ]]; then
     printf '%s' "$RUNPOD_API_KEY"
   elif [[ -n "${RUNPOD_API_KEY_FILE:-}" ]]; then
     [[ -f "$RUNPOD_API_KEY_FILE" ]] || rp::die "RUNPOD_API_KEY_FILE points to a missing file: $RUNPOD_API_KEY_FILE"
-    # Trim a trailing newline so the Bearer value is exact (files end in \n).
-    printf '%s' "$(tr -d '\n' <"$RUNPOD_API_KEY_FILE")"
+    # Trim CR and trailing newline so the Bearer value is exact (files end in
+    # \n; a CRLF-written secret would otherwise embed \r in every request).
+    printf '%s' "$(tr -d '\r\n' <"$RUNPOD_API_KEY_FILE")"
   else
     _auth "RUNPOD_API_KEY unset — run 'rp auth login', or set RUNPOD_API_KEY / RUNPOD_API_KEY_FILE"
   fi
