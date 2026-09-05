@@ -19,7 +19,9 @@ rp serverless batch requests <endpoint> <batchId> [--status completed|failed|in-
                    --status completed is the results view
   --limit <n>      page size (server-side)
   --cursor <n>     server-side offset for the next page
-  --json           print the raw paginated envelope (incl. total/hasMore)
+  --json           print the paginated envelope (incl. total/hasMore); with
+                   --status, .requests is filtered client-side (the envelope
+                   counters are the server's and stay unfiltered)
 ```
 
 ## Notes

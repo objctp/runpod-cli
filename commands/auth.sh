@@ -65,7 +65,10 @@ _auth_accounts() {
 }
 
 _auth_active_name() {
-  [[ -f "$RP_ACTIVE_FILE" ]] && cat "$RP_ACTIVE_FILE"
+  # No active pointer is the normal fresh-install state; the [[ ]] && form
+  # would return 1 and kill the callers' $() under set -e.
+  [[ -f "$RP_ACTIVE_FILE" ]] || return 0
+  cat "$RP_ACTIVE_FILE"
 }
 
 # Write one account file, preserving any non-credential lines already there, with
@@ -129,13 +132,32 @@ _auth_runpodctl_key() {
   val="${val%\"}"
   val="${val#\'}"
   val="${val%\'}"
+  # Empty val must not become the function's return status: the $() call sites
+  # run under set -e, and a silent 1 would abort login before the friendly
+  # "no apiKey found" die below.
   [[ -n "$val" ]] && printf '%s' "$val"
+  return 0
+}
+
+# Offer to import runpodctl's stored key; print the key only when the user
+# confirms. Accepts the spelled-out "yes" in any case beside y/Y — matching a
+# single char made an answered "yes" silently skip the import. read's prompt
+# goes to stderr when stdin is not a terminal, so stdout stays clean for $(...).
+_auth_offer_import() {
+  local rpc_key="$1" rpc_path="$2" ans=""
+  read -r -p "Import API key from runpodctl config ($rpc_path)? [y/N] " ans || ans=""
+  if [[ "$ans" == [yY] || "$ans" == [yY][eE][sS] ]]; then
+    printf '%s' "$rpc_key"
+  fi
 }
 
 _auth_login() {
   local name api_key s3_ak s3_sk from_rpc
   name="$(rp::args_get name)"
   [[ -z "$name" ]] && name=default
+  # The name becomes a file name under credentials.d/ — reject anything that
+  # could traverse out of the store before any path is built from it.
+  [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || rp::usage "invalid account name '$name'"
   api_key="$(rp::args_get api-key)"
   s3_ak="$(rp::args_get s3-access-key)"
   s3_sk="$(rp::args_get s3-secret-key)"
@@ -154,9 +176,7 @@ _auth_login() {
       local rpc_key rpc_path="${RUNPODCTL_CONFIG:-$HOME/.runpod/config.toml}"
       rpc_key="$(_auth_runpodctl_key)"
       if [[ -n "$rpc_key" ]]; then
-        local ans=""
-        read -r -p "Import API key from runpodctl config ($rpc_path)? [y/N] " ans
-        [[ "$ans" == [yY] ]] && api_key="$rpc_key"
+        api_key="$(_auth_offer_import "$rpc_key" "$rpc_path")"
       fi
     fi
     if [[ -z "$api_key" ]]; then
@@ -187,6 +207,7 @@ _auth_logout() {
     rp::info "no active account to log out"
     return 0
   }
+  [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || rp::usage "invalid account name '$name'"
   local file="$RP_CREDS_DIR/$name"
   [[ -f "$file" ]] || {
     rp::info "no such account: '$name'"
@@ -212,6 +233,7 @@ _auth_logout() {
 _auth_switch() {
   local name="${1:-}"
   [[ -z "$name" ]] && rp::usage "usage: rp auth switch <name>   (see: rp auth list)"
+  [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || rp::usage "invalid account name '$name'"
   [[ -f "$RP_CREDS_DIR/$name" ]] || rp::die "no such account: '$name' (see: rp auth list)"
   _auth_set_active "$name"
   rp::ok "active account is now '$name'"
@@ -241,7 +263,9 @@ _auth_status() {
   local ak="${RUNPOD_API_KEY:-}" akf="${RUNPOD_API_KEY_FILE:-}"
   local sak="${RUNPOD_S3_ACCESS_KEY:-}" ssk="${RUNPOD_S3_SECRET_KEY:-}"
   local acct
-  acct="$(rp::_account_name 2>/dev/null)"
+  # rp::_account_name fails (1) when nothing resolves — the normal fresh-install
+  # state, not an error; an unguarded assignment would abort under set -e.
+  acct="$(rp::_account_name 2>/dev/null)" || true
   printf 'ACTIVE ACCOUNT  %s\n' "${acct:-<none>}"
   if [[ -n "$ak" ]]; then
     printf 'API KEY         configured   token %s\n' "$(_auth_mask "$ak")"
