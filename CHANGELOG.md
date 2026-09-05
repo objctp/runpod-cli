@@ -5,6 +5,7 @@
 ### Fixed
 
 - Fail closed when the name gate errors (#33)
+- Return 0 when the window query has no flags (#31)
 
 ## [1.5.0] - 2026-09-05
 

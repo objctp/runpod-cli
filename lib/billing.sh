@@ -53,4 +53,7 @@ rp::billing_window_query() {
   [[ -n "$bwq_end" ]] && bwq_out+=(endTime "$bwq_end")
   [[ -n "$bwq_bucket" ]] && bwq_out+=(bucketSize "$bwq_bucket")
   [[ -n "$bwq_lastn" ]] && bwq_out+=(lastN "$bwq_lastn")
+  # Never end on the [[ ]] && above: with a flag absent it would return 1 and
+  # kill the bare callers in _billing / rp cost-center spend under set -e.
+  return 0
 }
