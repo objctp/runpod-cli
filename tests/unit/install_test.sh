@@ -11,7 +11,7 @@ function set_up_before_script() {
 # Reset the test-only override hooks before each test so they never leak between
 # tests (bashunit may run --parallel).
 function set_up() {
-  unset RP_UNAME RP_BASH_MAJOR RP_CHECKSUM RP_LATEST_TAG || true
+  unset RP_UNAME RP_BASH_MAJOR RP_BASH_MINOR RP_CHECKSUM RP_LATEST_TAG || true
 }
 
 # --- rp_inst_os ---
@@ -34,10 +34,25 @@ function test_should_exit_one_when_os_unsupported() {
 
 # --- rp_inst_bash_ok ---
 
-function test_should_pass_when_bash_major_five() {
+function test_should_pass_when_bash_at_least_five_point_one() {
   RP_BASH_MAJOR=5
+  RP_BASH_MINOR=1
   rp_inst_bash_ok
   assert_successful_code "$?"
+}
+
+function test_should_pass_when_bash_major_six() {
+  RP_BASH_MAJOR=6
+  RP_BASH_MINOR=0
+  rp_inst_bash_ok
+  assert_successful_code "$?"
+}
+
+function test_should_exit_one_when_bash_is_five_point_zero() {
+  RP_BASH_MAJOR=5
+  RP_BASH_MINOR=0
+  (rp_inst_bash_ok >/dev/null 2>&1)
+  assert_exit_code 1
 }
 
 function test_should_exit_one_when_bash_major_three() {

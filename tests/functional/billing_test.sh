@@ -52,6 +52,7 @@ function test_should_dispatch_pods_verb_to_billing_endpoint() {
 function test_should_exit_zero_for_verb_with_no_window_flags() {
   (
     set -euo pipefail
+    shopt -s inherit_errexit
     rp::cmd_billing pods >"$OUT" 2>/dev/null
   )
   assert_exit_code 0

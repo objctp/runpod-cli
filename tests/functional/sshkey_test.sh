@@ -216,6 +216,7 @@ function test_add_from_runpodctl_handles_large_authorized_keys_file() {
   # import died with SIGPIPE (141) here instead of completing.
   (
     set -eo pipefail
+    shopt -s inherit_errexit
     RUNPODCTL_SSH_DIR="$rpc" rp::cmd_ssh-key add --from-runpodctl </dev/null >/dev/null 2>&1
   )
   assert_exit_code 0

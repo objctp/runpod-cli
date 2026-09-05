@@ -203,6 +203,7 @@ function test_fresh_install_list_exits_zero_with_friendly_message() {
   local out rc
   out="$(
     set -euo pipefail
+    shopt -s inherit_errexit
     rp::cmd_auth list 2>&1
   )"
   rc=$?
@@ -214,6 +215,7 @@ function test_fresh_install_status_exits_zero_reporting_none() {
   local out rc
   out="$(
     set -euo pipefail
+    shopt -s inherit_errexit
     rp::cmd_auth status 2>&1
   )"
   rc=$?
@@ -226,6 +228,7 @@ function test_fresh_install_logout_exits_zero_and_touches_nothing() {
   local out rc
   out="$(
     set -euo pipefail
+    shopt -s inherit_errexit
     rp::cmd_auth logout 2>&1
   )"
   rc=$?

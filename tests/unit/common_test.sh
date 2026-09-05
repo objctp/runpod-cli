@@ -10,6 +10,9 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/common.sh"
   # rp::emit_json_or reads the parsed flags via rp::args_has.
   source "$RP_ROOT/lib/args.sh"
+  # rp::require_api_key consults the account store (rp::_load_account lives
+  # here); without this, running the file in isolation fails on a 127.
+  source "$RP_ROOT/lib/auth.sh"
   eval "$_opts"
 }
 
@@ -422,4 +425,26 @@ function test_should_register_and_remove_temp_when_cleanup_runs() {
 function test_should_noop_when_cleanup_runs_with_no_temps() {
   _tmp_cleanup
   assert_successful_code "$?"
+}
+
+# --- runtime floor: Bash 5.1+ (inherit_errexit needs the minor) ---
+
+function test_check_runtime_passes_on_bash_five_point_one() {
+  RP_BASH_MAJOR=5 RP_BASH_MINOR=1 rp::check_runtime
+  assert_successful_code "$?"
+}
+
+function test_check_runtime_passes_on_bash_six() {
+  RP_BASH_MAJOR=6 RP_BASH_MINOR=0 rp::check_runtime
+  assert_successful_code "$?"
+}
+
+function test_check_runtime_dies_on_bash_five_point_zero() {
+  (RP_BASH_MAJOR=5 RP_BASH_MINOR=0 rp::check_runtime >/dev/null 2>&1)
+  assert_exit_code 1
+}
+
+function test_check_runtime_dies_on_bash_four() {
+  (RP_BASH_MAJOR=4 RP_BASH_MINOR=4 rp::check_runtime >/dev/null 2>&1)
+  assert_exit_code 1
 }
