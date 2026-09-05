@@ -19,6 +19,13 @@ function set_up_before_script() {
   # this file runs alone, clobbering the mock.
   rp::http() {
     printf '%s %s\n' "$1" "$2" >>"${RES_CAP:-/dev/null}"
+    # RES_FAIL=1 simulates the real rp::http dying on a transport error: the
+    # message lands on stderr and the non-zero status escapes the caller's
+    # command substitution just like the real helper's exit would.
+    if [[ -n "${RES_FAIL:-}" ]]; then
+      printf 'curl transport error: %s %s\n' "$1" "$2" >&2
+      return 1
+    fi
     printf '%s' "$RES_MOCK"
   }
   eval "$_opts"
@@ -27,6 +34,7 @@ function set_up_before_script() {
 function set_up() {
   RES_CAP="$(mktemp)"
   RES_MOCK='[]'
+  RES_FAIL=''
 }
 
 function tear_down() {
@@ -287,7 +295,10 @@ function test_should_warn_not_fail_when_tagging_fails_after_create() {
   rp::args_parse --cost-center web
   # Corrupt the state between the pre-POST gate and the post-create stamp:
   # the create must still succeed and print its id, with only a warning.
+  # Both write seams are stubbed so the double holds across the #38 rename
+  # (cc_save → _cc_save_locked) regardless of commit order.
   rp::cc_save() { return 1; }
+  rp::_cc_save_locked() { return 1; }
   rp::resource_create pod "" '{"image":"img"}' >"$tmp" 2>"$msg"
   assert_equals "p9" "$(<"$tmp")"
   assert_contains "could not record cost center" "$(<"$msg")"
@@ -338,6 +349,50 @@ function test_should_return_one_when_existing_name_absent_forced_or_empty() {
   rp::args_parse
   (rp::resource_existing volume "" >/dev/null 2>&1)
   assert_general_error "$?"
+}
+
+# Regression (#33): a failed name lookup must die, not read as "no match", or
+# the caller proceeds to POST a duplicate billable resource. pipefail is set
+# explicitly because bashunit runs test bodies without it, while bin/rp always
+# has it on — without it the mock's failure status would be masked by jq.
+function test_should_die_when_name_lookup_transport_fails() {
+  set -o pipefail
+  local msg
+  msg="$(mktemp)"
+  RES_FAIL=1
+  rp::args_parse
+  (rp::resource_existing pod flaky-pod >/dev/null 2>"$msg")
+  assert_general_error "$?"
+  assert_contains "curl transport error: GET /pods" "$(<"$msg")"
+  assert_contains "could not check for an existing pod named 'flaky-pod'" "$(<"$msg")"
+  rm -f "$msg"
+}
+
+function test_should_not_post_when_create_name_lookup_fails() {
+  set -o pipefail
+  local msg
+  msg="$(mktemp)"
+  RES_FAIL=1
+  rp::args_parse
+  (rp::resource_create pod flaky-pod '{"image":"img"}' >/dev/null 2>"$msg")
+  assert_general_error "$?"
+  assert_contains "could not check for an existing pod named 'flaky-pod'" "$(<"$msg")"
+  assert_contains "GET /pods" "$(<"$RES_CAP")"
+  assert_not_contains "POST" "$(<"$RES_CAP")"
+  rm -f "$msg"
+}
+
+# No false positive: a lookup that succeeds without a match still returns 1
+# quietly, so the create path proceeds.
+function test_should_return_one_without_die_message_when_lookup_finds_no_match() {
+  local msg
+  msg="$(mktemp)"
+  RES_MOCK='{"pods":[]}'
+  rp::args_parse
+  (rp::resource_existing pod zeta >/dev/null 2>"$msg")
+  assert_general_error "$?"
+  assert_not_contains "could not check" "$(<"$msg")"
+  rm -f "$msg"
 }
 
 # --- resource_delete ---

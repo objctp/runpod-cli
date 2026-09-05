@@ -106,13 +106,18 @@ rp::resource_delete() {
 #   0 - existing record found; id printed and in RP_RES_EXISTING_ID, caller
 #       must not POST
 #   1 - no name, --force given, or no match; caller proceeds
+# Dies when the lookup itself fails (transport/API error), so a failure never
+# reads as "no match" and the caller never creates a duplicate.
 rp::resource_existing() {
   local res_resource="$1" res_name="${2:-}"
   [[ -n "$res_name" ]] || return 1
   rp::args_has force && return 1
   _resource_meta "$res_resource"
   local res_existing
-  res_existing="$(rp::resource_id "$res_resource" "$res_name")"
+  # The lookup dies inside the substitution on a transport/API failure; catch
+  # the status or an empty result would read as "no match" below.
+  res_existing="$(rp::resource_id "$res_resource" "$res_name")" ||
+    rp::die "could not check for an existing $RP_RES_LABEL named '$res_name'"
   [[ -n "$res_existing" ]] || return 1
   RP_RES_EXISTING_ID="$res_existing"
   rp::ok "$RP_RES_LABEL '$res_name' exists: $res_existing"
@@ -137,7 +142,7 @@ rp::resource_existing() {
 #   0 - created (or existing id printed when idempotent by name)
 #   1 - create failed (dies)
 # With a non-empty $2 and no --force, rp::resource_existing prints the existing
-# record's id instead of POSTing; an empty $2 always POSTs (pod, registry).
+# record's id instead of POSTing; an empty $2 always POSTs (registry).
 rp::resource_create() {
   local res_resource="$1" res_name="$2" res_body="$3" res_detail="${4:-}" res_cc
   res_cc="$(rp::args_get cost-center)"

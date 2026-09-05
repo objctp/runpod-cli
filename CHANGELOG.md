@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Fail closed when the name gate errors (#33)
+
 ## [1.5.0] - 2026-09-05
 
 ### Added
