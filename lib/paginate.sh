@@ -34,10 +34,12 @@ rp::paginate() {
                | (if $take > 0 then .[0:$take] else . end))
      else . end')" || return 1
   if [[ -n "$limit" ]]; then
-    local total remaining next
+    local total next
     total="$(printf '%s' "$original" | jq -c 'if type == "array" then length else 1 end')"
-    remaining=$((total - skip - take))
-    if ((remaining > 0)); then
+    # Hint only when --limit actually truncated something: --limit 0 (no-op
+    # slice) and a page that consumed the remainder must stay silent, or they
+    # advertise a bogus "next cursor: 0" for an untruncated result.
+    if ((take > 0 && take < total - skip)); then
       next=$((skip + take))
       rp::info "more items available — next cursor: $next (total $total)"
     fi

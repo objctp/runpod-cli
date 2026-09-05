@@ -8,7 +8,7 @@ declare -gA RP_ARGS=()
 # the first). A handful of verbs (e.g. `rp serverless status <id> <jobId>`) take
 # more than one positional; read the rest via rp::args_pos_at / rp::require_pos_at.
 declare -ga RP_POSITIONALS=()
-RP_BOOL_FLAGS=(async json flashboot force help interruptible serverless sync ssh insecure public-ip from-runpodctl s3 global-network compact mig)
+RP_BOOL_FLAGS=(async json flashboot force help interruptible serverless sync ssh insecure public-ip from-runpodctl s3 global-network compact mig wait)
 # Value flags that may be repeated; occurrences accumulate newline-joined, so
 # `--env A=1 --env B=2` becomes "A=1\nB=2". Newline (not comma) is the separator
 # so a single value may itself contain commas (e.g. --env LIST=a,b). Add a flag
@@ -35,6 +35,17 @@ rp::args_parse() {
       # rp runs from inside a pod whose CA bundle can't validate the API.
       RP_ARGS[insecure]=1
       shift
+      ;;
+    --)
+      # End of options: everything that follows is positional, even flag-shaped
+      # tokens. Without this case a bare `--` fell into the `--*` branch as flag
+      # "" and swallowed the next positional as its value.
+      shift
+      while (($#)); do
+        RP_POSITIONALS+=("$1")
+        [[ -n "${RP_ARGS[pos]:-}" ]] || RP_ARGS[pos]="$1"
+        shift
+      done
       ;;
     --*=*)
       k="${1%%=*}"
@@ -144,10 +155,25 @@ rp::require_bool() {
   esac
 }
 
+# Split $1 on commas, printing one trimmed token per line. Whitespace around
+# each token is stripped ("A , B" -> A, B) — a space after the comma is natural
+# typing, and untrimmed tokens silently miss GPU-pool matches (lib/hub.sh) and
+# degrade error messages to leading-space fragments. Empty tokens ("A,,B",
+# "A,B,", ",,") are skipped, so an empty result prints nothing.
 rp::split_csv() {
-  local -a arr
-  IFS=, read -ra arr <<<"$1"
-  printf '%s\n' "${arr[@]}"
+  local -a raw=() out=()
+  local t
+  IFS=, read -ra raw <<<"$1"
+  for t in "${raw[@]}"; do
+    t="${t#"${t%%[![:space:]]*}"}" # strip leading whitespace
+    t="${t%"${t##*[![:space:]]}"}" # strip trailing whitespace
+    if [[ -n "$t" ]]; then
+      out+=("$t")
+    fi
+  done
+  if ((${#out[@]})); then
+    printf '%s\n' "${out[@]}"
+  fi
 }
 
 # Post-parse flag aliases: runpodctl spelling -> rp canonical (key-copy only).

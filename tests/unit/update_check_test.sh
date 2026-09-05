@@ -34,6 +34,29 @@ function test_should_report_behind_on_patch_bump() {
   assert_exit_code 0
 }
 
+# Leading-zero components must compare in base 10, not trip bash's octal
+# arithmetic (which silently evaluated to false).
+function test_should_report_behind_with_leading_zero_component() {
+  RP_VERSION=1.08.0
+  rp::version() { printf '%s' "$RP_VERSION"; }
+  rp::_version_is_behind 1.10.0
+  assert_exit_code 0
+}
+
+function test_should_report_behind_with_leading_zero_over_nine_patch() {
+  RP_VERSION=1.08.0
+  rp::version() { printf '%s' "$RP_VERSION"; }
+  rp::_version_is_behind 1.9.0
+  assert_exit_code 0
+}
+
+function test_should_treat_leading_zero_as_equal_when_versions_match() {
+  RP_VERSION=1.08.0
+  rp::version() { printf '%s' "$RP_VERSION"; }
+  rp::_version_is_behind 1.8.0
+  assert_exit_code 1
+}
+
 function test_should_not_report_behind_for_dev_build() {
   RP_VERSION=0.0.0-dev
   rp::version() { printf '%s' "$RP_VERSION"; }

@@ -124,6 +124,41 @@ function test_should_split_lines_when_csv_given() {
   assert_equals "$(printf 'a\nb\nc')" "$(rp::split_csv "a,b,c")"
 }
 
+function test_should_trim_whitespace_around_csv_tokens() {
+  assert_equals "$(printf 'A\nB')" "$(rp::split_csv "A , B")"
+  assert_equals "$(printf 'NVIDIA L4\nRTX 4090')" "$(rp::split_csv "NVIDIA L4, RTX 4090")"
+}
+
+function test_should_skip_empty_csv_tokens() {
+  assert_equals "$(printf 'A\nB')" "$(rp::split_csv "A,,B")"
+  assert_equals "$(printf 'A\nB')" "$(rp::split_csv "A,B,")"
+  assert_equals "$(printf 'A\nB')" "$(rp::split_csv ",A, ,B,")"
+}
+
+function test_should_print_nothing_for_all_empty_csv() {
+  local tmp
+  tmp="$(mktemp)"
+  rp::split_csv ",,," >"$tmp"
+  assert_empty "$(<"$tmp")"
+  rm -f "$tmp"
+}
+
+function test_should_treat_double_dash_as_end_of_options() {
+  rp::args_parse --json -- --limit 5 foo
+  assert_equals "1" "$(rp::args_get json)"
+  assert_equals "--limit" "$(rp::args_pos)"
+  assert_equals "5" "$(rp::args_pos_at 1)"
+  assert_equals "foo" "$(rp::args_pos_at 2)"
+  assert_equals "" "$(rp::args_get limit)"
+}
+
+function test_should_collect_flag_shaped_token_after_double_dash_as_positional() {
+  rp::args_parse -- --json tail
+  assert_equals "--json" "$(rp::args_pos)"
+  assert_equals "tail" "$(rp::args_pos_at 1)"
+  assert_equals "" "$(rp::args_get json)"
+}
+
 function test_should_accumulate_when_repeatable_flag_repeated() {
   rp::args_parse --env A=1 --env B=2
   assert_equals "$(printf 'A=1\nB=2')" "$(rp::args_get env)"
@@ -187,4 +222,15 @@ function test_should_split_csv_main_shell() {
   rp::split_csv "a,b,c" >"$tmp"
   assert_equals "$(printf 'a\nb\nc')" "$(<"$tmp")"
   rm -f "$tmp"
+}
+
+function test_should_parse_wait_as_a_boolean_flag() {
+  rp::args_parse e1 b1 --wait
+  assert_equals "1" "$(rp::args_get wait)"
+}
+
+function test_should_not_swallow_the_next_flag_after_wait() {
+  rp::args_parse e1 b1 --wait --interval 30
+  assert_equals "1" "$(rp::args_get wait)"
+  assert_equals "30" "$(rp::args_get interval)"
 }

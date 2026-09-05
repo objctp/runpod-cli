@@ -101,8 +101,11 @@ rp::_version_is_behind() {
   ((m > max)) && max=$m
   for ((i = 0; i < max; i++)); do
     local cv="${c[i]:-0}" lv="${l[i]:-0}"
-    ((cv < lv)) && return 0
-    ((cv > lv)) && return 1
+    # 10# base-10 coercion: a leading-zero component (1.08.0) would otherwise
+    # trip bash's octal arithmetic ("value too great for base" on 08/09), which
+    # the (( )) comparison silently treats as false.
+    ((10#$cv < 10#$lv)) && return 0
+    ((10#$cv > 10#$lv)) && return 1
   done
   return 1
 }
