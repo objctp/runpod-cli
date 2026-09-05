@@ -37,16 +37,19 @@ _sshkey_locked() {
   (
     _sshkey_unlock() {
       # shellcheck disable=SC2317
-      rm -f "$lock_dir/pid" 2>/dev/null
+      rm -f "$lock_dir/pid" 2>/dev/null || true
       # shellcheck disable=SC2317
-      rmdir "$lock_dir" 2>/dev/null
+      rmdir "$lock_dir" 2>/dev/null || true
     }
     trap _sshkey_unlock EXIT
     "$fn" "$@"
   )
   local rc=$?
-  rm -f "$lock_dir/pid" 2>/dev/null
-  rmdir "$lock_dir" 2>/dev/null
+  # The inner EXIT trap has normally removed the lock already, so this cleanup
+  # is a no-op whose failure must not abort (set -e) or clobber the callback's
+  # status.
+  rm -f "$lock_dir/pid" 2>/dev/null || true
+  rmdir "$lock_dir" 2>/dev/null || true
   return "$rc"
 }
 
@@ -150,8 +153,14 @@ _sshkey_copy_private() {
   [[ -e "$rpc_priv" ]] || return 0
   [[ -e "$rp_priv" ]] && return 0
   mkdir -p "$rp_dir" 2>/dev/null && chmod 700 "$rp_dir" 2>/dev/null
-  cp "$rpc_priv" "$rp_priv" 2>/dev/null && chmod 600 "$rp_priv" 2>/dev/null &&
+  # Best-effort: an unreadable source (e.g. after a backup restore) must not
+  # abort the import — the public half is what got registered; warn instead.
+  if cp "$rpc_priv" "$rp_priv" 2>/dev/null; then
+    chmod 600 "$rp_priv" 2>/dev/null || true
     rp::info "copied private key to $rp_priv"
+  else
+    rp::warn "could not copy private key $rpc_priv to $rp_priv"
+  fi
 }
 
 # Import runpodctl's locally-stored SSH keys (under ~/.runpod/ssh) and register
@@ -184,7 +193,10 @@ _sshkey_import_unlocked() {
     server+=("$line")
   done < <(printf '%s' "$keys_json" | jq -r '.[]')
   for p in "${pubs[@]}"; do
-    keyline="$(awk 'NF' "$p" | head -n1)"
+    # `awk 'NF {print; exit}'` rather than `awk 'NF' | head -n1`: under
+    # pipefail, head exiting early SIGPIPEs awk (exit 141) on >64 KiB input,
+    # which the docs bless for authorized_keys files.
+    keyline="$(awk 'NF {print; exit}' "$p")"
     [[ -n "$keyline" ]] || {
       rp::warn "skipping unreadable key: $p"
       continue
@@ -231,7 +243,7 @@ _sshkey_add() {
   else
     newkey="$(_sshkey_generate "$name" "$keytype")" || return $?
   fi
-  newkey="$(printf '%s' "$newkey" | awk 'NF' | head -n1)"
+  newkey="$(printf '%s' "$newkey" | awk 'NF {print; exit}')"
   [[ -n "$newkey" ]] || rp::usage "usage: rp ssh-key add <file|-> [--key-file <path>] [--key <pub>]: no key found in input"
   _sshkey_locked _sshkey_add_unlocked "$newkey"
 }

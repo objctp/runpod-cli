@@ -16,6 +16,7 @@
 - See stored accounts, emit sunset in-call, guard bodies (#36, #39, #46)
 - Report failed centers; lock state writes (#38, #46, #47)
 - Require well-formed ids on lifecycle verbs (#34)
+- Best-effort private-key copy; large-key safety (#43, #47)
 
 ## [1.5.0] - 2026-09-05
 
