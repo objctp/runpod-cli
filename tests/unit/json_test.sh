@@ -54,15 +54,26 @@ function test_should_keep_comma_in_env_value() {
   assert_equals '{"A":"1,B=2"}' "$(rp::env_to_json "A=1,B=2")"
 }
 
-function test_should_error_on_env_with_empty_key() {
+function test_should_return_1_on_env_with_empty_key() {
+  # The error is a return, not an exit: callers wrap this in command
+  # substitution, so an exit-2 would be swallowed (issue #32).
   (rp::env_to_json "=value" >/dev/null 2>&1)
-  assert_exit_code 2
+  assert_exit_code 1
 }
 
-function test_should_error_on_env_with_only_equals() {
-  # shellcheck disable=SC2205 # subshell needed: rp::usage exits the subshell
+function test_should_return_1_on_env_with_only_equals() {
+  # shellcheck disable=SC2205 # subshell isolates the expected failure return
   (rp::env_to_json "=" >/dev/null 2>&1)
-  assert_exit_code 2
+  assert_exit_code 1
+}
+
+function test_should_print_missing_key_message_to_stderr_on_env_error() {
+  local err
+  err="$(mktemp)"
+  (rp::env_to_json "=value" >/dev/null 2>"$err")
+  assert_exit_code 1
+  assert_equals "usage: invalid --env pair (missing key): '=value'" "$(cat "$err")"
+  rm -f "$err"
 }
 
 function test_should_parse_multiple_envs_when_newline_delimited() {
@@ -89,6 +100,13 @@ function test_should_add_env_map_when_object_has_none() {
 function test_should_leave_object_untouched_when_env_empty() {
   local obj='{"env":{"A":"1"}}'
   rp::obj_merge_env obj ""
+  assert_equals '{"env":{"A":"1"}}' "$obj"
+}
+
+function test_should_propagate_failure_when_obj_merge_env_gets_bad_pair() {
+  local obj='{"env":{"A":"1"}}'
+  (rp::obj_merge_env obj "=bad" >/dev/null 2>&1)
+  assert_exit_code 1
   assert_equals '{"env":{"A":"1"}}' "$obj"
 }
 

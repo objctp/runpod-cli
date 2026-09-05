@@ -67,6 +67,12 @@ rp::obj_set_secret() {
 # Parse newline-delimited K=V pairs (one per --env) into a JSON object. Each
 # pair splits on the FIRST '=' only, so a value may itself contain '=' or ','
 # (e.g. --env LIST=a,b -> {"LIST":"a,b"}). Blank lines are skipped.
+# Returns:
+#   0 - prints the assembled object to stdout
+#   1 - a pair has an empty key; the message goes to stderr and nothing is
+#       printed. Never rp::usage: every caller wraps this in a command
+#       substitution, which would swallow its exit, so callers must check the
+#       status and exit (assign-then-check, the ADR 0001 blessed pattern).
 rp::env_to_json() {
   local obj='{}' pair k v
   while IFS= read -r pair; do
@@ -75,7 +81,10 @@ rp::env_to_json() {
     v="${pair#*=}"
     # A `--env =value` pair yields an empty key; reject it rather than emitting
     # a `{"": "value"}` object that the API would reject cryptically.
-    [[ -n "$k" ]] || rp::usage "usage: invalid --env pair (missing key): '$pair'"
+    [[ -n "$k" ]] || {
+      printf "usage: invalid --env pair (missing key): '%s'\n" "$pair" >&2
+      return 1
+    }
     obj="$(_json_merge "$obj" "$(rp::json_obj "$k" "$(rp::json_str "$v")")")"
   done <<<"$1"
   printf '%s' "$obj"
@@ -87,13 +96,14 @@ rp::env_to_json() {
 #   $2 - pairs: newline-delimited K=V (rp::env_to_json shape); empty is a no-op
 # Returns:
 #   0 - dest gains the merged env; keys in $2 win, untouched keys survive
+#   1 - invalid --env pair (rp::env_to_json printed the message)
 # Shallow overlay, not replacement: a template's env stays intact except for the
 # keys the user set (rp::obj_set would clobber the whole map).
 rp::obj_merge_env() {
   local -n dest="$1"
   [[ -n "$2" ]] || return 0
   local envuser
-  envuser="$(rp::env_to_json "$2")"
+  envuser="$(rp::env_to_json "$2")" || return 1
   dest="$(printf '%s' "$dest" | jq -c --argjson u "$envuser" '.env = ((.env // {}) * $u)')"
 }
 
