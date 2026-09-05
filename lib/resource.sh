@@ -94,6 +94,8 @@ rp::resource_delete() {
 # Idempotency-by-name gate for create paths: when $2 names an existing record
 # (and --force was not given), confirm on stderr, print the id on stdout, and
 # return 0; otherwise return 1 so the caller proceeds to build and POST a body.
+# The matched id is also left in RP_RES_EXISTING_ID for callers that need the
+# value after the fact (the --cost-center stamp in rp::resource_create).
 # rp::resource_create gates on this, and create verbs that die on missing
 # required flags before reaching it (serverless) call it first so the gate
 # stays reachable.
@@ -101,7 +103,8 @@ rp::resource_delete() {
 #   $1 - resource: resource name (pod, volume, serverless, ...)
 #   $2 - name: optional; empty always returns 1
 # Returns:
-#   0 - existing record found; id printed, caller must not POST
+#   0 - existing record found; id printed and in RP_RES_EXISTING_ID, caller
+#       must not POST
 #   1 - no name, --force given, or no match; caller proceeds
 rp::resource_existing() {
   local res_resource="$1" res_name="${2:-}"
@@ -111,6 +114,7 @@ rp::resource_existing() {
   local res_existing
   res_existing="$(rp::resource_id "$res_resource" "$res_name")"
   [[ -n "$res_existing" ]] || return 1
+  RP_RES_EXISTING_ID="$res_existing"
   rp::ok "$RP_RES_LABEL '$res_name' exists: $res_existing"
   printf '%s\n' "$res_existing"
 }
@@ -122,20 +126,36 @@ rp::resource_existing() {
 #   $2 - name: optional; non-empty makes the create idempotent by name
 #   $3 - body: JSON request body
 #   $4 - detail: optional text appended to the success message
+# Flags:
+#   --cost-center <name> - when set, the created (or name-matched existing)
+#     record is tagged into that local cost center — pods, serverless
+#     endpoints, network volumes and clusters only (any other resource dies).
+#     The center must exist, checked before the POST so a typo costs nothing;
+#     a tag-write failure after a successful create is downgraded to a
+#     warning, since the resource exists either way.
 # Returns:
 #   0 - created (or existing id printed when idempotent by name)
 #   1 - create failed (dies)
 # With a non-empty $2 and no --force, rp::resource_existing prints the existing
 # record's id instead of POSTing; an empty $2 always POSTs (pod, registry).
 rp::resource_create() {
-  local res_resource="$1" res_name="$2" res_body="$3" res_detail="${4:-}"
+  local res_resource="$1" res_name="$2" res_body="$3" res_detail="${4:-}" res_cc
+  res_cc="$(rp::args_get cost-center)"
   _resource_meta "$res_resource"
+  if [[ -n "$res_cc" ]]; then
+    case "$res_resource" in
+    pod | serverless | volume | cluster) rp::cc_require_center "$res_cc" ;;
+    *) rp::die "cost centers apply to pods, serverless endpoints, network volumes and clusters only" ;;
+    esac
+  fi
   if rp::resource_existing "$res_resource" "$res_name"; then
+    rp::cc_tag_quietly "$res_cc" "$res_resource" "${RP_RES_EXISTING_ID:-}"
     return 0
   fi
   local res_res res_newid
   res_res="$(rp::http POST "$RP_RES_PATH" "$res_body")"
   rp::extract_id res_newid "$res_res" "$RP_RES_LABEL"
+  rp::cc_tag_quietly "$res_cc" "$res_resource" "$res_newid"
   rp::ok "created $RP_RES_LABEL${res_name:+ '$res_name'}: $res_newid${res_detail:+ ($res_detail)}"
   printf '%s\n' "$res_newid"
 }

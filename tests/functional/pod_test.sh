@@ -10,6 +10,7 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/json.sh"
   source "$RP_ROOT/lib/validate.sh"
   source "$RP_ROOT/lib/resource.sh"
+  source "$RP_ROOT/lib/costcenter.sh"
   source "$RP_ROOT/lib/graphql.sh"
   source "$RP_ROOT/commands/pod.sh"
   _s3_dcs_live() { :; }
@@ -100,6 +101,60 @@ function test_should_omit_registry_when_create_flag_absent() {
   assert_equals "false" "$(jq -r 'has("registry")' "$body")"
   rp::http() { :; }
   rm -f "$body"
+}
+
+function test_should_tag_cost_center_when_create_given_one() {
+  RP_COST_CENTERS_FILE="$(mktemp -u)"
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::cc_create web >/dev/null 2>&1
+  rp::args_parse pod1 --image img --name foo --gpu "RTX 4090" --cost-center web
+  _pod_create >/dev/null 2>&1
+  assert_contains '"pod1":{"type":"pod","center":"web"}' "$(rp::cc_state)"
+  rp::http() { :; }
+  rm -f "$body" "$RP_COST_CENTERS_FILE"
+}
+
+function test_should_tag_spot_bridge_creates_with_cost_center() {
+  RP_COST_CENTERS_FILE="$(mktemp -u)"
+  rp::resource_existing() { return 1; }
+  rp::http_soft() {
+    _RP_CURL_STATUS=422
+    printf '{"detail":[{"loc":["body","interruptible"],"msg":"extra forbidden"}]}' >"$1"
+  }
+  rp::graphql() {
+    printf '{"podRentInterruptable":{"id":"podG"}}'
+  }
+  rp::cc_create web >/dev/null 2>&1
+  rp::args_parse --image img --name foo --gpu "RTX 4090" --bid-per-gpu 0.20 --cost-center web
+  local out
+  out="$(_pod_create 2>/dev/null)"
+  assert_equals "podG" "$out"
+  assert_contains '"podG":{"type":"pod","center":"web"}' "$(rp::cc_state)"
+  rp::resource_existing() { return 1; }
+  rp::http_soft() { :; }
+  rp::graphql() { :; }
+  rm -f "$RP_COST_CENTERS_FILE"
+}
+
+function test_should_exit_notfound_before_posting_when_cost_center_missing() {
+  RP_COST_CENTERS_FILE="$(mktemp -u)"
+  local body
+  body="$(mktemp)"
+  rp::http() {
+    printf '%s' "${3:-}" >"$body"
+    printf '{"id":"pod1"}'
+  }
+  rp::args_parse pod1 --image img --name foo --gpu "RTX 4090" --cost-center ghost
+  (_pod_create >/dev/null 2>&1)
+  assert_exit_code 4
+  assert_equals "" "$(cat "$body")"
+  rp::http() { :; }
+  rm -f "$body" "$RP_COST_CENTERS_FILE"
 }
 
 function test_should_set_interruptible_and_bid_when_bid_per_gpu_given() {
@@ -730,7 +785,10 @@ function test_should_set_support_public_ip_when_public_ip_flag_given() {
   local body
   body="$(mktemp)"
   rp::http() {
-    if [[ "$1" == "GET" ]]; then printf '{"pods":[]}'; return; fi
+    if [[ "$1" == "GET" ]]; then
+      printf '{"pods":[]}'
+      return
+    fi
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
@@ -745,7 +803,10 @@ function test_should_omit_support_public_ip_when_flag_absent() {
   local body
   body="$(mktemp)"
   rp::http() {
-    if [[ "$1" == "GET" ]]; then printf '{"pods":[]}'; return; fi
+    if [[ "$1" == "GET" ]]; then
+      printf '{"pods":[]}'
+      return
+    fi
     printf '%s' "${3:-}" >"$body"
     printf '{"id":"pod1"}'
   }
@@ -765,7 +826,10 @@ function test_should_filter_pods_by_public_ip_when_list_flag_given() {
     ]}'
   }
   local out
-  out="$(rp::args_parse --public-ip; _pod_list 2>/dev/null)"
+  out="$(
+    rp::args_parse --public-ip
+    _pod_list 2>/dev/null
+  )"
   assert_contains "pub1" "$out"
   [[ "$out" == *"priv1"* ]] && fail "private-IP pod should be filtered out"
   [[ "$out" == *"init1"* ]] && fail "pod without publicIp should be filtered out"
@@ -780,7 +844,10 @@ function test_should_list_all_pods_when_public_ip_flag_absent() {
     ]}'
   }
   local out
-  out="$(rp::args_parse; _pod_list 2>/dev/null)"
+  out="$(
+    rp::args_parse
+    _pod_list 2>/dev/null
+  )"
   assert_contains "pub1" "$out"
   assert_contains "priv1" "$out"
   rp::http() { :; }

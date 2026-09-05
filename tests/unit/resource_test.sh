@@ -12,6 +12,7 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/json.sh"
   source "$RP_ROOT/lib/paginate.sh"
   source "$RP_ROOT/lib/resource.sh"
+  source "$RP_ROOT/lib/costcenter.sh"
   # Define the rp::http double AFTER the real libs are sourced so it always
   # wins — lib/http.sh's _RP_HTTP guard would otherwise skip re-sourcing in the
   # full suite (when http_test.sh pre-sourced it) but re-define rp::http when
@@ -236,6 +237,72 @@ function test_should_append_detail_and_name_to_create_message() {
   rp::resource_create volume models '{}' "EU-RO-1, 20GB" >/dev/null 2>"$msg"
   assert_contains "created volume 'models': v3 (EU-RO-1, 20GB)" "$(<"$msg")"
   rm -f "$msg"
+}
+
+# --- resource_create --cost-center (assign-at-create) ---
+
+function test_should_stamp_cost_center_when_create_given_one() {
+  local tmp
+  tmp="$(mktemp)"
+  RES_MOCK='{"id":"p9"}'
+  RP_COST_CENTERS_FILE="$(mktemp -u)"
+  rp::cc_create web >/dev/null 2>&1
+  rp::args_parse --cost-center web
+  rp::resource_create pod "" '{"image":"img"}' >"$tmp" 2>/dev/null
+  assert_equals "p9" "$(<"$tmp")"
+  assert_contains '"p9":{"type":"pod","center":"web"}' "$(rp::cc_state)"
+  rm -f "$tmp" "$RP_COST_CENTERS_FILE"
+}
+
+function test_should_stamp_existing_record_when_name_taken_and_center_given() {
+  local tmp
+  tmp="$(mktemp)"
+  RES_MOCK='{"networkVolumes":[{"id":"v1","name":"models"}]}'
+  RP_COST_CENTERS_FILE="$(mktemp -u)"
+  rp::cc_create web >/dev/null 2>&1
+  rp::args_parse --cost-center web
+  rp::resource_create volume models '{"name":"models"}' >"$tmp" 2>/dev/null
+  assert_equals "v1" "$(<"$tmp")"
+  assert_contains '"v1":{"type":"volume","center":"web"}' "$(rp::cc_state)"
+  rm -f "$tmp" "$RP_COST_CENTERS_FILE"
+}
+
+function test_should_exit_notfound_before_posting_when_center_missing() {
+  RP_COST_CENTERS_FILE="$(mktemp -u)"
+  RES_MOCK='{"id":"p9"}'
+  rp::args_parse --cost-center ghost
+  (rp::resource_create pod "" '{"image":"img"}' >/dev/null 2>&1)
+  assert_exit_code 4
+  assert_not_contains "POST" "$(<"$RES_CAP")"
+  rm -f "$RP_COST_CENTERS_FILE"
+}
+
+function test_should_warn_not_fail_when_tagging_fails_after_create() {
+  local tmp msg
+  tmp="$(mktemp)"
+  msg="$(mktemp)"
+  RES_MOCK='{"id":"p9"}'
+  RP_COST_CENTERS_FILE="$(mktemp -u)"
+  rp::cc_create web >/dev/null 2>&1
+  rp::args_parse --cost-center web
+  # Corrupt the state between the pre-POST gate and the post-create stamp:
+  # the create must still succeed and print its id, with only a warning.
+  rp::cc_save() { return 1; }
+  rp::resource_create pod "" '{"image":"img"}' >"$tmp" 2>"$msg"
+  assert_equals "p9" "$(<"$tmp")"
+  assert_contains "could not record cost center" "$(<"$msg")"
+  rm -f "$tmp" "$msg" "$RP_COST_CENTERS_FILE"
+}
+
+function test_should_die_when_cost_center_given_to_unsupported_resource() {
+  RP_COST_CENTERS_FILE="$(mktemp -u)"
+  rp::cc_create web >/dev/null 2>&1
+  RES_MOCK='{"id":"t1"}'
+  rp::args_parse --cost-center web
+  (rp::resource_create template t1 '{}' >/dev/null 2>&1)
+  assert_exit_code 1
+  assert_not_contains "POST" "$(<"$RES_CAP")"
+  rm -f "$RP_COST_CENTERS_FILE"
 }
 
 function test_should_die_when_create_response_has_no_id() {

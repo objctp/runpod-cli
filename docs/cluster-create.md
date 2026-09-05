@@ -26,6 +26,9 @@ rp cluster create --name <n> --type <kind> --gpu <type>
   --template-id <id>                seed container config from a template id
   --start-ssh true|false            provision SSH with your account key
   --start-jupyter true|false       start Jupyter on every member pod
+  --cost-center <name>              tag the cluster into a local cost center
+                                    at create (see: rp cost-center); the
+                                    center must already exist
   --force                           create even when the name is taken
 ```
 
@@ -41,6 +44,10 @@ rp cluster create --name <n> --type <kind> --gpu <type>
   Clusters do not yet support private registries (no --registry): the v2
   create request has no registry field. Use a public image or a network volume
   for your build.
+  --cost-center tags the new cluster into a local cost center for
+  per-project spend (`rp cost-center spend`); the center must exist, and the
+  check runs before the cluster is created. The tagging is local — Runpod's
+  own Cost Centers are console-only.
   --template-id seeds the container config as defaults; any explicit flag value
   still wins, and the template's id is recorded on the cluster.
 

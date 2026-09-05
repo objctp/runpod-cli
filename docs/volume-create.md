@@ -4,6 +4,7 @@ Create a network volume in a datacentre.
 ```
 rp volume create --name <n> --size <gb> --dc <id>
                         [--type STANDARD|HIGH_PERFORMANCE] [--force]
+                        [--cost-center <name>]
 ```
 
 ## Options
@@ -14,6 +15,9 @@ rp volume create --name <n> --size <gb> --dc <id>
   --dc <id>                         datacentre id (required) — see
                                     `rp stock dc` (alias: --data-center-ids)
   --type STANDARD|HIGH_PERFORMANCE  storage tier (default: STANDARD)
+  --cost-center <name>              tag the volume into a local cost center
+                                    at create (see: rp cost-center); the
+                                    center must already exist
   --force                           create even when the name is taken
 ```
 
@@ -39,6 +43,10 @@ rp volume create --name <n> --size <gb> --dc <id>
   its own error outside that range.
   The new id is printed on stdout and the confirmation on stderr, so
   `id=$(rp volume create …)` captures just the id.
+  --cost-center tags the new volume into a local cost center for per-project
+  spend (`rp cost-center spend`); the center must exist, and the check runs
+  before the volume is created. The tagging is local — Runpod's own Cost
+  Centers are console-only.
 
 ## Examples
 

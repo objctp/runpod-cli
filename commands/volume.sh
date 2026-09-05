@@ -175,6 +175,7 @@ _volume_gpus() {
 #
 # Usage: rp volume create --name <n> --size <gb> --dc <id>
 #                         [--type STANDARD|HIGH_PERFORMANCE] [--force]
+#                         [--cost-center <name>]
 #
 # Options:
 #   --name <n>                        volume name (required)
@@ -182,6 +183,9 @@ _volume_gpus() {
 #   --dc <id>                         datacentre id (required) — see
 #                                     `rp stock dc` (alias: --data-center-ids)
 #   --type STANDARD|HIGH_PERFORMANCE  storage tier (default: STANDARD)
+#   --cost-center <name>              tag the volume into a local cost center
+#                                     at create (see: rp cost-center); the
+#                                     center must already exist
 #   --force                           create even when the name is taken
 #
 # Notes:
@@ -206,6 +210,10 @@ _volume_gpus() {
 #   its own error outside that range.
 #   The new id is printed on stdout and the confirmation on stderr, so
 #   `id=$(rp volume create …)` captures just the id.
+#   --cost-center tags the new volume into a local cost center for per-project
+#   spend (`rp cost-center spend`); the center must exist, and the check runs
+#   before the volume is created. The tagging is local — Runpod's own Cost
+#   Centers are console-only.
 #
 # Examples:
 # # Create a 500 GB volume in the EU-RO-1 datacentre
@@ -388,7 +396,7 @@ rp::cmd_volume() {
   -h | --help | help)
     cat <<'EOF'
 Usage: rp volume <verb> [flags]
-  create --name <n> --size <gb> --dc <id> (alias: --data-center-ids) [--type STANDARD|HIGH_PERFORMANCE]   (idempotent by name; warns if DC is not S3-capable or lacks HIGH_PERFORMANCE; tier is immutable)
+  create --name <n> --size <gb> --dc <id> (alias: --data-center-ids) [--type STANDARD|HIGH_PERFORMANCE] [--cost-center <name>]   (idempotent by name; warns if DC is not S3-capable or lacks HIGH_PERFORMANCE; tier is immutable)
   list | get <id> | update <id> [--name <n>] [--size <gb>] | delete <id>
   sync <name> --source <dir> | --models <owner/repo>,...  [--prefix models]
   ls <name> [--path <remote-path>]

@@ -14,40 +14,18 @@
 
 # All six billing GETs are optional-param-only (no request body). $1 is the REST
 # path; $2 the optional per-resource id-param name (podId/clusterId/…); when set
-# the positional is read as that id. The four time-window flags apply to every
-# verb. Prints v2's time-bucketed { records, metadata } envelope as JSON or
-# pretty.
+# the positional is read as that id; $3 the verb name, used only in usage
+# errors (rp <resource> <verb> … per the repo convention). The four time-window
+# flags are validated and rendered by rp::billing_window_query (lib/billing.sh),
+# shared with rp cost-center spend. Prints v2's time-bucketed { records,
+# metadata } envelope as JSON or pretty.
 _billing() {
-  local path="$1" idkey="${2:-}" id
+  local path="$1" idkey="${2:-}" verb="${3:-}" id
   id="$(rp::args_pos)"
-  local -a q=()
+  local -a q=() window=()
   [[ -n "$idkey" && -n "$id" ]] && q+=("$idkey" "$id")
-
-  local start end bucket lastn
-  start="$(rp::args_get start)"
-  end="$(rp::args_get end)"
-  bucket="$(rp::args_get bucket-size)"
-  lastn="$(rp::args_get_uint last-n)"
-
-  # lastN is mutually exclusive with startTime/endTime (per spec).
-  if [[ -n "$lastn" && (-n "$start" || -n "$end") ]]; then
-    rp::usage "usage: rp billing all --last-n is mutually exclusive with --start/--end"
-  fi
-  # lastN minimum is 1 (per spec); rp::require_uint only blocks non-numbers, so
-  # 0 must be rejected here rather than in the shared helper (workers-min/max
-  # legitimately default to 0 elsewhere).
-  if [[ -n "$lastn" && "$lastn" -lt "$RP_LAST_N_MIN" ]]; then
-    rp::usage "usage: rp billing all --last-n must be at least $RP_LAST_N_MIN"
-  fi
-  case "$bucket" in
-  '' | hour | day | week | month | year) ;;
-  *) rp::usage "usage: rp billing all --bucket-size must be hour|day|week|month|year (got: '$bucket')" ;;
-  esac
-
-  [[ -n "$start" ]] && q+=(startTime "$start")
-  [[ -n "$end" ]] && q+=(endTime "$end")
-  [[ -n "$bucket" ]] && q+=(bucketSize "$bucket")
-  [[ -n "$lastn" ]] && q+=(lastN "$lastn")
+  rp::billing_window_query window "rp billing${verb:+ $verb}"
+  q+=("${window[@]}")
 
   local body
   body="$(rp::http GET "$path$(rp::query_params "${q[@]}")")"
@@ -259,12 +237,12 @@ rp::cmd_billing() {
   rp::args_parse "$@"
   rp::args_has help && verb=help
   case "$verb" in
-  pods) _billing /billing/pods podId ;;
-  serverless) _billing /billing/serverless serverlessId ;;
-  public-endpoints) _billing /billing/endpoints ;;
-  clusters) _billing /billing/clusters clusterId ;;
-  volumes) _billing /billing/network-volumes networkVolumeId ;;
-  all) _billing /billing ;;
+  pods) _billing /billing/pods podId pods ;;
+  serverless) _billing /billing/serverless serverlessId serverless ;;
+  public-endpoints) _billing /billing/endpoints "" public-endpoints ;;
+  clusters) _billing /billing/clusters clusterId clusters ;;
+  volumes) _billing /billing/network-volumes networkVolumeId volumes ;;
+  all) _billing /billing "" all ;;
   -h | --help | help)
     echo "Usage: rp billing <pods [id] | serverless [id] | public-endpoints | clusters [id] | volumes [id] | all>"
     echo "                  [--start <rfc3339>] [--end <rfc3339>] [--bucket-size hour|day|week|month|year] [--last-n N]"

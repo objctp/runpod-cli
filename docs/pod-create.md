@@ -48,6 +48,9 @@ rp pod create --image <ref> --name <n>
                                  access enabled (requires registered SSH keys)
   --min-cuda-version <x.y>       require a GPU driver with at least this CUDA
                                  version (e.g. 12.1); GPU pods only
+  --cost-center <name>           tag the pod into a local cost center at
+                                 create (see: rp cost-center); the center must
+                                 already exist
   --interruptible                 create a spot (interruptible) pod; the server
                                  bids the on-demand price unless --bid-per-gpu
                                  is also set (GPU pods only)
@@ -95,6 +98,10 @@ rp pod create --image <ref> --name <n>
   --force is accepted and ignored. Unlike `rp volume create` and
   `rp template create`, pod creation is not idempotent by name, so re-running
   this command creates a second pod.
+  --cost-center tags the new pod into a local cost center for per-project
+  spend (`rp cost-center spend`); the center must exist, and the check runs
+  before the pod is created. The tagging is local — Runpod's own Cost Centers
+  are console-only.
 
 ## Examples
 

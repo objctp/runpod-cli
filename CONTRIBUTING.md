@@ -9,8 +9,8 @@ S3-compatible API.
 
 ```
 bin/rp            entry point — loads .env, sources lib/, dispatches to commands/
-lib/              shared helpers (common, doc, constants, transport, auth, http, graphql, s3, args, json, validate, resource, paginate, hub, _version) — `transport` is the single curl impl and delegates credential resolution to `auth` (never read `RUNPOD_API_KEY` directly)
-commands/         one file per command or resource (volume, serverless, pod, template, registry, billing, stock, account, hub, ssh, ssh-key, catalog, cluster, api, doc, upgrade)
+lib/              shared helpers (common, doc, constants, transport, auth, http, graphql, s3, args, json, validate, resource, paginate, hub, billing, costcenter, _version) — `transport` is the single curl impl and delegates credential resolution to `auth` (never read `RUNPOD_API_KEY` directly)
+commands/         one file per command or resource (volume, serverless, pod, template, registry, billing, stock, account, hub, ssh, ssh-key, catalog, cluster, cost-center, api, doc, upgrade)
 tests/unit/       bashunit unit tests for lib helpers
 tests/functional/ bashunit functional tests for commands
 Makefile          fmt / lint / test / check + listing shortcuts
@@ -107,7 +107,9 @@ in `commands/`.
 
 1. Create `commands/<resource>.sh` with a guard-free top (it is sourced, not
    executed) and an entry function named exactly `rp::cmd_<resource>` — that is
-   what `bin/rp` dispatches to.
+   what `bin/rp` dispatches to. A hyphenated resource name maps to underscores
+   (`cost-center` → `rp::cmd_cost_center`), since POSIX identifiers cannot
+   carry a hyphen.
 2. Handle `--help` / `-h` / `help` first and print usage. Keep usage strings
    identical to the argument-parsing errors so they stay in sync.
 3. One phrasing convention for user-facing messages:

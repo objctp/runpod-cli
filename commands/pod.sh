@@ -76,6 +76,13 @@ _pod_create() {
   name_val="$(rp::args_get name)"
   [[ -n "$name_val" ]] || rp::usage "usage: rp pod create --name <n> (see: rp pod --help)"
 
+  # --cost-center must exist before anything is provisioned: the v2 path is
+  # gated inside rp::resource_create, but the spot bridge below returns early,
+  # so the gate runs here to cover both.
+  local pod_cc
+  pod_cc="$(rp::args_get cost-center)"
+  [[ -z "$pod_cc" ]] || rp::cc_require_center "$pod_cc"
+
   # --compute-type is a runpodctl coercion alias (not a data field), handled
   # here after the alias layer: it never mints new fields, only requires the
   # matching rp flags be present so the existing gpu/cpu path is selected.
@@ -239,6 +246,7 @@ _pod_create() {
     # code to be removed. Honour the same idempotency-by-name gate as
     # rp::resource_create so re-running with an existing name is a no-op.
     if rp::resource_existing pod "$name_val"; then
+      rp::cc_tag_quietly "$pod_cc" pod "${RP_RES_EXISTING_ID:-}"
       return 0
     fi
     local _bodyfile _status _newid
@@ -247,6 +255,7 @@ _pod_create() {
     _status="$_RP_CURL_STATUS"
     if ((_status < 400)); then
       rp::extract_id _newid "$(<"$_bodyfile")" "pod"
+      rp::cc_tag_quietly "$pod_cc" pod "$_newid"
       rp::ok "created pod${name_val:+ '$name_val'}: $_newid"
       printf '%s\n' "$_newid"
       rm -f -- "$_bodyfile"
@@ -254,7 +263,7 @@ _pod_create() {
     fi
     if _rp_spot_rejected "$(<"$_bodyfile")"; then
       rp::warn "v2 rejected the spot fields (interruptible/bidPerGpu not yet advertised); using the deprecated GraphQL podRentInterruptable bridge — it will be removed once v2 supports spot pods"
-      _pod_create_graphql_spot "$obj" "${bid_per_gpu:-}"
+      _pod_create_graphql_spot "$obj" "${bid_per_gpu:-}" "$pod_cc"
       rm -f -- "$_bodyfile"
       return 0
     fi
@@ -283,6 +292,8 @@ _rp_spot_rejected() {
 # it dies with the GraphQL error if the bridge itself fails.
 _pod_create_graphql_spot() {
   local obj="$1" input q data id
+  # $2 is the bid, $3 the cost center to tag the bridged pod into (the bridge
+  # bypasses rp::resource_create, so assign-at-create is stamped here).
   [[ "$(printf '%s' "$obj" | jq -r 'has("gpu")')" == "true" ]] ||
     rp::die "spot pods require a GPU (--gpu); CPU spot pods are not supported"
   input="$(printf '%s' "$obj" | jq -c '{
@@ -309,6 +320,7 @@ _pod_create_graphql_spot() {
   }'
   data="$(rp::graphql "$q" "$(rp::json_obj input "$input")")" || return $?
   id="$(printf '%s' "$data" | jq -r '.podRentInterruptable.id')"
+  rp::cc_tag_quietly "${3:-}" pod "$id"
   rp::ok "created pod (GraphQL bridge)${name_val:+ '$name_val'}: $id"
   printf '%s\n' "$id"
 }
@@ -376,6 +388,9 @@ _pod_logs() {
 #                                  access enabled (requires registered SSH keys)
 #   --min-cuda-version <x.y>       require a GPU driver with at least this CUDA
 #                                  version (e.g. 12.1); GPU pods only
+#   --cost-center <name>           tag the pod into a local cost center at
+#                                  create (see: rp cost-center); the center must
+#                                  already exist
 #   --interruptible                 create a spot (interruptible) pod; the server
 #                                  bids the on-demand price unless --bid-per-gpu
 #                                  is also set (GPU pods only)
@@ -422,6 +437,10 @@ _pod_logs() {
 #   --force is accepted and ignored. Unlike `rp volume create` and
 #   `rp template create`, pod creation is not idempotent by name, so re-running
 #   this command creates a second pod.
+#   --cost-center tags the new pod into a local cost center for per-project
+#   spend (`rp cost-center spend`); the center must exist, and the check runs
+#   before the pod is created. The tagging is local — Runpod's own Cost Centers
+#   are console-only.
 #
 # Examples:
 # # Create a GPU pod from the PyTorch image
@@ -687,6 +706,7 @@ Usage: rp pod <verb> [flags]
               [--start-cmd <a,b,...> (alias: --docker-args)] [--template <id>] [--template-id <id>]
               [--registry <id> (alias: --registry-auth-id)] [--ssh] [--min-cuda-version <x.y>]
               [--interruptible] [--bid-per-gpu <n>]  (spot pod; --bid-per-gpu implies --interruptible)
+              [--cost-center <name>]  (tag into a local cost center at create; see rp cost-center)
    update <id> [--container-disk-gb N (alias: --container-disk-in-gb)]
            [--volume-gb N (alias: --volume-in-gb)] [--volume-path <p> (alias: --volume-mount-path)]
            [--name <n>] [--image <img>] [--global-networking true|false] [--locked true|false]

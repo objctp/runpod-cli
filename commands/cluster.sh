@@ -152,6 +152,9 @@ _cluster_update() {
 #   --template-id <id>                seed container config from a template id
 #   --start-ssh true|false            provision SSH with your account key
 #   --start-jupyter true|false       start Jupyter on every member pod
+#   --cost-center <name>              tag the cluster into a local cost center
+#                                     at create (see: rp cost-center); the
+#                                     center must already exist
 #   --force                           create even when the name is taken
 #
 # Notes:
@@ -166,6 +169,10 @@ _cluster_update() {
 #   Clusters do not yet support private registries (no --registry): the v2
 #   create request has no registry field. Use a public image or a network volume
 #   for your build.
+#   --cost-center tags the new cluster into a local cost center for
+#   per-project spend (`rp cost-center spend`); the center must exist, and the
+#   check runs before the cluster is created. The tagging is local — Runpod's
+#   own Cost Centers are console-only.
 #   --template-id seeds the container config as defaults; any explicit flag value
 #   still wins, and the template's id is recorded on the cluster.
 #
@@ -272,7 +279,7 @@ Usage: rp cluster <verb> [flags]
          [--dc <id,..>] [--image <ref>] [--container-disk-gb N] [--ports a/b]
          [--env K=V] [--start-cmd a,b] [--network-volume-id <id>] [--volume-path <p>]
          [--template-id <id>] [--start-ssh true|false] [--start-jupyter true|false]
-         [--force]   (idempotent by --name; only --name is mutable afterwards)
+         [--cost-center <name>] [--force]   (idempotent by --name; only --name is mutable afterwards)
   list | get <id> | update <id> --name <n> | delete <id> | pods <id> | pods add <id> --pod-count N
 EOF
     ;;

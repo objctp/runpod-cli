@@ -1,8 +1,8 @@
 # Runpod CLI (rp)
 
 A small Bash CLI for managing [Runpod](https://runpod.io?ref=a0lqk36q) infrastructure: network volumes, serverless
-endpoints, pods, templates, registries, billing, account balance, Hub listings,
-SSH keys, and live GPU stock. It speaks three Runpod APIs directly — REST API v2
+endpoints, pods, templates, registries, billing, cost centers, account balance,
+Hub listings, SSH keys, and live GPU stock. It speaks three Runpod APIs directly — REST API v2
 for CRUD, GraphQL for account/hub/ssh/S3-datacentre stock, and the S3-compatible
 API for filling volumes.
 
@@ -167,6 +167,12 @@ behind a release:
 - **Scriptable exit codes** — `0` success · `1` transport/API/general · `2`
   usage · `3` auth (no key/creds) · `4` not-found. Branch on `$?` rather than
   grepping stderr.
+- **Cost centers are local** — `rp cost-center` tags resources into named
+  buckets and rolls up per-project spend from the billing endpoints. Runpod's
+  own Cost Centers are console-only (no API), so the tagging lives in a
+  per-user state file; `--cost-center` on the pod / serverless / volume /
+  cluster create verbs assigns at create. Works for a solo account running
+  several projects side by side.
 
 ## Development
 

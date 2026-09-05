@@ -664,6 +664,9 @@ _serverless_logs() {
 #   --execution-timeout <s>       per-job timeout, sent as milliseconds
 #   --registry <id>               registry credential for a private image
 #                                 (alias: --registry-auth-id)
+#   --cost-center <name>          tag the endpoint into a local cost center at
+#                                 create (see: rp cost-center); the center must
+#                                 already exist
 #   --force                       skip the name idempotency check
 #   --min-cuda-version <ver>      accepted but ignored: v2 keeps it only as a
 #                                 /catalog/gpus filter
@@ -681,6 +684,10 @@ _serverless_logs() {
 #   ignored with a warning when set.
 #   --min-cuda-version is accepted and dropped with a warning: v2 has no
 #   create-side CUDA-version field, only the /catalog/gpus filter.
+#   --cost-center tags the new endpoint into a local cost center for
+#   per-project spend (`rp cost-center spend`); the center must exist, and the
+#   check runs before the endpoint is created. The tagging is local — Runpod's
+#   own Cost Centers are console-only.
 #
 # Examples:
 # # Deploy a serverless endpoint from a template
@@ -1439,6 +1446,7 @@ Usage: rp serverless <verb> [flags]
            [--type QUEUE|LOAD_BALANCER] [--workers-min N] [--workers-max N] [--idle S] [--gpu-count N] [--flashboot]
            [--env K=V]…  (--env is repeatable K=V; NOT aliased to runpodctl's JSON --env)
            [--scaler-type QUEUE_DELAY|REQUEST_COUNT] [--scaler-value V] [--execution-timeout <s>] [--hub-id <listing-id>] [--force] [--registry <id> (alias: --registry-auth-id)]
+           [--cost-center <name>]  (tag into a local cost center at create; see rp cost-center)
            (idempotent by --name; --hub-id deploys from a Hub listing; --type defaults to QUEUE;
             --scaler-type defaults to QUEUE_DELAY with queueDelay 4; --idle sets workers.idleTimeout;
             --env overlays the template's env, user value winning per key)

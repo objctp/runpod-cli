@@ -66,6 +66,15 @@ function test_should_dispatch_to_command_when_resource_known() {
   assert_contains "Usage: rp stock" "$(<"$OUT")"
 }
 
+# Hyphenated resource files map to underscored entry functions
+# (cost-center -> rp::cmd_cost_center).
+function test_should_dispatch_hyphenated_resource() {
+  RP_COST_CENTERS_FILE="$(mktemp -u)"
+  rp::main cost-center --help >"$OUT" 2>/dev/null
+  assert_contains "Usage: rp cost-center" "$(<"$OUT")"
+  rm -f "$RP_COST_CENTERS_FILE"
+}
+
 function test_should_print_version_when_version_called() {
   rp::main version >"$OUT" 2>/dev/null
   assert_not_empty "$(<"$OUT")"

@@ -99,7 +99,11 @@ rp::query_params() {
     enc="${enc//%3A/:}"
     q+="${q:+&}${k}=${enc}"
   done
+  # Always succeed: callers capture the output in $(), and a 1 on the
+  # empty-query path would kill them under set -e for a perfectly valid
+  # "no params" case.
   [[ -n "$q" ]] && printf '?%s' "$q"
+  return 0
 }
 
 # Soft REST call: like rp::http but never dies, and the HTTP status lands in the

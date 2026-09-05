@@ -10,6 +10,7 @@ function set_up_before_script() {
   source "$RP_ROOT/lib/json.sh"
   source "$RP_ROOT/lib/validate.sh"
   source "$RP_ROOT/lib/resource.sh"
+  source "$RP_ROOT/lib/costcenter.sh"
   source "$RP_ROOT/lib/s3.sh"
   source "$RP_ROOT/commands/volume.sh"
   # _volume_create calls rp::warn_unless_s3_dc -> live S3-DC query; stub it so
@@ -77,6 +78,25 @@ function test_should_post_when_volume_name_is_new() {
   assert_equals "POSTED" "$(cat "$marker")"
   rp::http() { :; }
   rm -f "$marker"
+}
+
+function test_should_tag_cost_center_when_volume_create_given_one() {
+  RP_COST_CENTERS_FILE="$(mktemp -u)"
+  rp::cc_create projects >/dev/null 2>&1
+  rp::http() {
+    if [[ "$1" == "GET" ]]; then
+      printf '[]'
+    else
+      printf '{"id":"vol1"}'
+    fi
+  }
+  rp::args_parse --name fresh --size 10 --dc EU-RO-1 --cost-center projects
+  local out
+  out="$(_volume_create 2>/dev/null)"
+  assert_equals "vol1" "$out"
+  assert_contains '"vol1":{"type":"volume","center":"projects"}' "$(rp::cc_state)"
+  rp::http() { :; }
+  rm -f "$RP_COST_CENTERS_FILE"
 }
 
 # Capture the POST body ($3) so the create-time `--type` tier is asserted.

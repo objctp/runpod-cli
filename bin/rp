@@ -125,6 +125,7 @@ Resources:
   template   pod/serverless templates (search by name)
   registry   container-registry auths
   cluster    multi-node clusters (create, rename, CRUD; member pods)
+  cost-center  local per-project spend buckets (create, assign, spend; Runpod's own Cost Centers are console-only)
   catalog    public catalog templates (list)
   ssh-key    registered SSH keys over the v2 REST plane (alongside rp ssh)
   billing    pod / serverless / public-endpoint / cluster / network-volume billing
@@ -208,8 +209,12 @@ rp::main() {
   local cmd="$RP_ROOT/commands/$resource.sh"
   [[ -f "$cmd" ]] || rp::usage "unknown resource: '$resource' (try: rp --help)"
   . "$cmd"
-  declare -F "rp::cmd_$resource" >/dev/null || rp::die "command module '$resource' missing rp::cmd_$resource"
-  "rp::cmd_$resource" "$@"
+  # Hyphenated resource files (cost-center) get underscored entry functions:
+  # rp::cmd_cost-center works in bash, but the underscore form stays a valid
+  # POSIX identifier everywhere (sh, namerefs, docs).
+  local fn="rp::cmd_${resource//-/_}"
+  declare -F "$fn" >/dev/null || rp::die "command module '$resource' missing $fn"
+  "$fn" "$@"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
