@@ -48,6 +48,7 @@ _volume_create() {
 _volume_update() {
   local id
   rp::require_pos id "usage: rp volume update <id> [--name <n>] [--size <gb>]"
+  rp::require_id id "$id" "volume id"
   local obj='{}'
   local name size
   name="$(rp::args_get name)"
