@@ -1,6 +1,6 @@
 RP ?= ./bin/rp
 
-.PHONY: install fmt lint test check docs hooks package stock volumes serverless pods destroy
+.PHONY: install fmt lint test check docs completions hooks package stock volumes serverless pods destroy
 
 install:
 	@ln -sf "$(CURDIR)/bin/rp" /usr/local/bin/rp 2>/dev/null || echo "Add $(CURDIR)/bin to your PATH instead"
@@ -21,6 +21,13 @@ check: lint test
 # comment so the manual stays in sync with the CLI.
 docs:
 	@./scripts/gen-manual.sh
+
+# Regenerate the shell completion artefacts (completions/rp.bash,
+# completions/_rp) from the grammar spec (`rp _complete-spec`). Run after
+# editing any `# doc:` block or lib/completion.sh; the pre-commit hook does
+# the same automatically.
+completions:
+	@./scripts/gen-completion.sh
 
 # Point git at the committed hooks in .githooks (the pre-commit hook
 # regenerates docs/ and stages it, so the manual never drifts). Run once per

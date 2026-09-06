@@ -31,6 +31,10 @@ rp::update_check() {
   [[ -t 2 ]] || return 0
   case "${1:-}" in
   version | -v | --version | -h | --help | help | upgrade | doc) return 0 ;;
+  # Hidden verbs (the `_` prefix: _ping, _complete*) are plumbing — they are
+  # scripted or completion-internal, never interactive, so never surface the
+  # notice (nor kick off the background refresh).
+  _*) return 0 ;;
   esac
   local cache="$RP_CONFIG_HOME/.update-check"
   # EPOCHREALTIME (bash 5.0+, and rp's runtime floor is 5.1) replaces the

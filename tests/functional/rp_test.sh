@@ -84,3 +84,26 @@ function test_should_print_version_when_dash_v_given() {
   rp::main -v >"$OUT" 2>/dev/null
   assert_not_empty "$(<"$OUT")"
 }
+
+# The hidden grammar-spec verb (consumed by the completion generator) emits
+# TSV through rp::main like any other dispatch, and returns 0.
+function test_should_emit_completion_spec_when_complete_spec_called() {
+  rp::main _complete-spec >"$OUT" 2>"$ERR"
+  assert_equals "0" "$?"
+  local spec
+  spec="$(<"$OUT")"
+  assert_contains $'v\tpod\tcreate' "$spec"
+  assert_contains $'f\tpod\tcreate\tgpu\tvalue\t' "$spec"
+}
+
+# The hidden dynamic-completion verb: arity is enforced (usage exit 2 in a
+# subshell), unknown targets stay silent with exit 0 — completion must never
+# surface errors at TAB time.
+function test_should_enforce_complete_arity_and_stay_silent() {
+  (rp::main _complete >/dev/null 2>&1)
+  assert_exit_code 2
+  (rp::main _complete pod >/dev/null 2>&1)
+  assert_exit_code 2
+  out="$(rp::main _complete hub search - 2>/dev/null)"
+  assert_equals "" "$out"
+}

@@ -37,3 +37,22 @@ if ./scripts/gen-manual.sh "${cmds[@]}" >/dev/null 2>&1; then
 else
   echo "warning: docs generation failed; skipping docs sync" >&2
 fi
+
+# The completion artefacts embed the grammar (`rp _complete-spec`), whose
+# sources are the command doc blocks plus lib/completion.sh and lib/doc.sh.
+# Regenerate and stage whenever any of those is staged — same contract as the
+# docs sync above: artefacts can never drift from the grammar.
+grammar_changed=0
+while IFS= read -r f; do
+  case "$f" in
+    commands/*.sh | lib/completion.sh | lib/doc.sh) grammar_changed=1 ;;
+  esac
+done < <(git diff --cached --name-only)
+
+if [ "$grammar_changed" -eq 1 ]; then
+  if ./scripts/gen-completion.sh >/dev/null 2>&1; then
+    git add completions 2>/dev/null || true
+  else
+    echo "warning: completion generation failed; skipping completions sync" >&2
+  fi
+fi

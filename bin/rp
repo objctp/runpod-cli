@@ -212,6 +212,21 @@ rp::main() {
     rp::ok "ok: REST auth works ($RP_REST_BASE)"
     return 0
     ;;
+  _complete-spec)
+    # Hidden: emit the command grammar as TSV for the completion generator
+    # (a later phase — nothing sources it yet). Reads doc blocks only; never
+    # any network.
+    rp::completion_spec
+    return 0
+    ;;
+  _complete)
+    # Hidden: value candidates for shell completion (completions/rp.bash).
+    # Local state answers directly; API-backed values come from a TTL cache.
+    shift
+    (($# >= 3)) || rp::usage "usage: rp _complete <resource> <verb> <flag|->"
+    rp::complete "$1" "$2" "$3"
+    return 0
+    ;;
   esac
   shift
   # Reject anything that isn't a plain command-module name before we build a path

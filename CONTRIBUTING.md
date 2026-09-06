@@ -9,7 +9,7 @@ S3-compatible API.
 
 ```
 bin/rp            entry point — loads .env, sources lib/, dispatches to commands/
-lib/              shared helpers (common, doc, constants, transport, auth, http, graphql, s3, args, json, validate, resource, paginate, hub, billing, costcenter, _version)
+lib/              shared helpers (common, doc, constants, transport, auth, http, graphql, s3, args, json, validate, resource, paginate, hub, billing, costcenter, completion, _version)
 commands/         one file per command or resource (volume, serverless, pod, template, registry, billing, stock, account, hub, ssh, ssh-key, catalog, cluster, cost-center, api, doc, upgrade)
 tests/unit/       bashunit unit tests for lib helpers
 tests/functional/ bashunit functional tests for commands
