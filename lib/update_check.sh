@@ -33,13 +33,23 @@ rp::update_check() {
   version | -v | --version | -h | --help | help | upgrade | doc) return 0 ;;
   esac
   local cache="$RP_CONFIG_HOME/.update-check"
-  local now_ts
-  now_ts="$(date +%s)"
+  # EPOCHREALTIME (bash 5.0+, and rp's runtime floor is 5.1) replaces the
+  # `date +%s` fork on this hot path — integer seconds are all we need.
+  local now_ts="${EPOCHREALTIME%.*}"
   # Fast path: fresh cached result -> print now, no network.
   if [[ -f "$cache" ]]; then
-    local cached_ts cached_latest
-    cached_ts="$(jq -r '.checked // 0' "$cache" 2>/dev/null || echo 0)"
-    cached_latest="$(jq -r '.latest // empty' "$cache" 2>/dev/null || true)"
+    # The cache is our own flat `{"checked":N,"latest":"x"}` (written by
+    # rp::_update_check_refresh), so a regex read beats two jq forks. A body
+    # that doesn't match (corrupt/foreign file) degrades to the stale path —
+    # same failure direction as the old `jq … || echo 0` guards.
+    local cached_ts=0 cached_latest="" raw
+    raw="$(<"$cache")"
+    if [[ "$raw" =~ \"checked\":[[:space:]]*([0-9]+) ]]; then
+      cached_ts="${BASH_REMATCH[1]}"
+    fi
+    if [[ "$raw" =~ \"latest\":[[:space:]]*\"([^\"]*)\" ]]; then
+      cached_latest="${BASH_REMATCH[1]}"
+    fi
     if ((now_ts - cached_ts < 86400)) && [[ -n "$cached_latest" ]]; then
       if rp::_version_is_behind "$cached_latest"; then
         rp::_print_update_notice "$cached_latest"

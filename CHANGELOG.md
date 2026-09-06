@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- Enable inherit_errexit; require Bash 5.1+
+
+### Changed
+
+- Lock the flip semantics and flip-faithful suites
+- Parse command files once; dump manual pages in one rp run
+
 ### Fixed
 
 - Fail closed when the name gate errors
@@ -20,6 +29,7 @@
 - Die on malformed --jq; name missing body file
 - Minor cleanups sweep
 - Use the bsd-stat probe in the env loader
+- Degrade on malformed release body
 
 ## [1.5.0] - 2026-09-05
 

@@ -130,11 +130,13 @@ _rp_temps_drop() {
 # return here would abort rp whenever .env is correctly locked down (mode 600).
 _warn_if_world_readable() {
   local f="$1" perm
-  # Probe for the BSD (macOS) stat dialect first. GNU stat accepts -f but uses it
-  # for filesystem output and still emits to stdout on a bad directive, so a
-  # `stat -f … || stat -c …` chain would concatenate that junk with the fallback
-  # and leave $perm non-numeric — which would silently skip the check on Linux.
-  if stat -f '%Lp' /dev/null >/dev/null 2>&1; then
+  # Dialect by $OSTYPE (bash derives it from its build platform: darwin* on
+  # macOS, linux-* on Linux) rather than a `stat -f '%Lp' /dev/null` probe —
+  # same result, one fewer fork on every credential-file check. GNU stat
+  # accepts -f for filesystem output, so a `stat -f … || stat -c …` chain would
+  # concatenate that junk with the fallback and leave $perm non-numeric — which
+  # would silently skip the check on Linux; the OSTYPE gate cannot mix them up.
+  if [[ "${OSTYPE:-}" == darwin* ]]; then
     perm="$(stat -f '%Lp' "$f")"
   else
     perm="$(stat -c '%a' "$f")"

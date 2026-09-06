@@ -58,10 +58,12 @@ _rp_env_load() {
   set +x
   # Refuse group/world-writable .env (mode has any of the group/other write
   # bits set). A writable .env is a clear compromise risk. (Fix #4)
-  # BSD-dialect probe: format AND file, so GNU stat fails it ('%Lp' is not a
-  # file) and Linux falls through to stat -c. A bare `stat -f /dev/null`
-  # succeeds on both dialects and silently skipped the check on Linux.
-  if stat -f '%Lp' /dev/null >/dev/null 2>&1; then
+  # Dialect by $OSTYPE (bash sets it from its build platform) rather than a
+  # `stat -f '%Lp' /dev/null` probe fork: on macOS every bash — Apple's 3.2 or
+  # Homebrew's 5.x — reports darwin*, and /usr/bin/stat is the BSD one; Linux
+  # reports linux-* with GNU stat. Format AND file, so a GNU stat on the
+  # darwin arm fails it ('%Lp' is not a file) rather than emitting junk.
+  if [[ "${OSTYPE:-}" == darwin* ]]; then
     perm="$(stat -f '%Lp' "$f")"
   else
     perm="$(stat -c '%a' "$f")"
@@ -176,10 +178,12 @@ EOF
 # fall back to `git describe` for a meaningful dev version. Returns the version
 # on stdout.
 rp::version() {
-  if { [[ -z "${RP_VERSION:-}" || "${RP_VERSION}" == "0.0.0-dev" ]]; } &&
-    git -C "${RP_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    git -C "${RP_ROOT}" describe --tags --always 2>/dev/null || printf '%s\n' "${RP_VERSION:-dev}"
-    return
+  # `git describe` fails outside a work tree / repo, which is exactly the guard
+  # the old `git rev-parse --is-inside-work-tree` pre-check provided — so the
+  # pre-check was a second fork paying for information the describe already
+  # carries in its exit status. One fork, same outcome.
+  if [[ -z "${RP_VERSION:-}" || "${RP_VERSION}" == "0.0.0-dev" ]]; then
+    git -C "${RP_ROOT}" describe --tags --always 2>/dev/null && return
   fi
   printf '%s\n' "${RP_VERSION:-dev}"
 }

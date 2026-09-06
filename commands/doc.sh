@@ -37,14 +37,15 @@ EOF
 # match. Prints the path, or nothing; an ambiguous prefix is a usage error that
 # names the candidates (never a silent pick of the alphabetically-first match).
 _doc_resolve() {
-  local arg="$1" f
+  local arg="$1" f name
   if [[ -f "$RP_ROOT/commands/$arg.sh" ]]; then
     printf '%s' "$RP_ROOT/commands/$arg.sh"
     return 0
   fi
   local -a matches=()
   for f in "$RP_ROOT"/commands/*.sh; do
-    [[ "$(basename "$f" .sh)" == "$arg"* ]] && matches+=("$f")
+    name="${f##*/}"
+    [[ "${name%.sh}" == "$arg"* ]] && matches+=("$f")
   done
   if ((${#matches[@]} == 1)); then
     printf '%s' "${matches[0]}"
@@ -70,9 +71,14 @@ _doc_body() {
 }
 
 # First line of a verb's block — the mandatory one-line summary, used by the
-# verb index the way the intro's first line is used by the catalogue.
+# verb index the way the intro's first line is used by the catalogue. Pure bash
+# (the old `| awk 'NF {print; exit}'` forked once per verb page).
 _doc_summary() {
-  _doc_body "$1" "$2" "$3" | awk 'NF {print; exit}'
+  local s
+  s="$(_doc_body "$1" "$2" "$3")"
+  [[ -n "$s" ]] || return 0
+  while [[ "$s" == $'\n'* ]]; do s="${s#$'\n'}"; done
+  printf '%s\n' "${s%%$'\n'*}"
 }
 
 # Print "  <verb>  <summary>" rows, descriptions aligned to the longest verb.
@@ -96,9 +102,9 @@ _doc_index() {
 _doc_catalogue() {
   local f name summary
   for f in "$RP_ROOT"/commands/*.sh; do
-    name="$(basename "$f" .sh)"
+    name="${f##*/}"
     summary="$(rp::doc_intro_summary "$f")"
-    printf '%-16s %s\n' "rp $name" "$summary"
+    printf '%-16s %s\n' "rp ${name%.sh}" "$summary"
   done
 }
 
@@ -156,6 +162,44 @@ _doc_is_subverb() {
 }
 
 ###
+### :::: batch dump (scripts/gen-manual.sh) :::: ###############################
+###
+
+# Emit every page gen-manual.sh needs for one command — the command page plus
+# one page per verb and sub-verb — in a single rp process. Pages are framed by
+# ASCII record-separator (0x1e) lines carrying the page key ("pod",
+# "pod run", "registry delegations create"), so the generator splits them
+# locally instead of paying one full rp startup per page (~180 spawns for the
+# whole manual collapsed to one per command).
+_doc_dump() {
+  local cmdfile name v s
+  cmdfile="$(_doc_resolve "${1:-}")" || return $?
+  if [[ -z "$cmdfile" ]]; then
+    rp::usage "no documentation matches '${1:-}'"
+  fi
+  name="${cmdfile##*/}"
+  name="${name%.sh}"
+  # Warm the index here too — same subshell-rebuild economics as rp::cmd_doc.
+  _doc_build_index "$cmdfile"
+  printf '\x1e%s\n' "$name"
+  _doc_command "$cmdfile" "$name"
+  while IFS= read -r v; do
+    [[ -n "$v" ]] || continue
+    printf '\x1e%s %s\n' "$name" "$v"
+    if [[ -n "$(rp::doc_subverbs "$cmdfile" "$v")" ]]; then
+      _doc_group "$cmdfile" "$name" "$v"
+      while IFS= read -r s; do
+        [[ -n "$s" ]] || continue
+        printf '\x1e%s %s %s\n' "$name" "$v" "$s"
+        _doc_verb "$cmdfile" "$name" "$v $s"
+      done < <(rp::doc_subverbs "$cmdfile" "$v")
+    else
+      _doc_verb "$cmdfile" "$name" "$v"
+    fi
+  done < <(rp::doc_verbs "$cmdfile")
+}
+
+###
 ### :::: documentation (rp doc doc) :::: ########################################
 ###
 
@@ -165,6 +209,11 @@ rp::cmd_doc() {
     _doc_help
     return 0
   }
+  # Tooling mode: one process, every page for a command (see _doc_dump).
+  if [[ "$a" == "--dump" ]]; then
+    _doc_dump "${b:-}"
+    return 0
+  fi
   if [[ -z "$a" ]]; then
     _doc_catalogue
     return 0
@@ -175,7 +224,13 @@ rp::cmd_doc() {
     rp::usage "no documentation matches '$a'"
   fi
   local name
-  name="$(basename "$cmdfile" .sh)"
+  name="${cmdfile##*/}"
+  name="${name%.sh}"
+  # Warm the one-pass file index in THIS shell before any query: every doc
+  # query below runs in a $(), a pipe, or a process substitution, and a
+  # subshell whose parent never built the index rebuilds it on entry
+  # (~150 ms for a large command file — paid once per subshell otherwise).
+  _doc_build_index "$cmdfile"
   if [[ -z "$b" ]]; then
     _doc_command "$cmdfile" "$name"
     return 0

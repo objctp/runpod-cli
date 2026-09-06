@@ -121,21 +121,38 @@ is_group() { grep -q '^Verbs:' <<<"$1"; }
 # per sub-verb docs/<name>-<verb>-<subverb>.md.
 gen_command() {
   local name="$1" text verbs
-  text="$(rpdoc "$name")"
+  # One rp process yields the command page plus every verb/sub-verb page,
+  # framed by 0x1e key lines (`rp doc --dump`). Each page used to cost a full
+  # rp startup — ~180 invocations (31 s) for the whole manual, now one per
+  # command. The trailing newline is stripped per page so feeding via <<<$
+  # matches the old $(rpdoc) capture exactly.
+  local -A page=()
+  local key="" buf="" line
+  while IFS= read -r line; do
+    if [[ "$line" == $'\x1e'* ]]; then
+      [[ -n "$key" ]] && page["$key"]="${buf%$'\n'}"
+      key="${line:1}"
+      buf=""
+    else
+      buf+="$line"$'\n'
+    fi
+  done < <(rpdoc --dump "$name")
+  [[ -n "$key" ]] && page["$key"]="${buf%$'\n'}"
+  text="${page[$name]}"
   verbs="$(verbs_of "$text")"
   # Category page: overview + linked list of commands.
   { transform 1 <<<"$text"; } | normalize >"$OUT/$name.md"
   printf 'docs/%s.md\n' "$name"
   for v in $verbs; do
     local vt
-    vt="$(rpdoc "$name" "$v")"
+    vt="${page["$name $v"]}"
     if is_group "$vt"; then
       { transform 1 <<<"$vt"; } | normalize >"$OUT/$name-$v.md"
       printf 'docs/%s.md\n' "$name-$v"
       local subs
       subs="$(verbs_of "$vt")"
       for s in $subs; do
-        { transform 1 <<<"$(rpdoc "$name" "$v" "$s")"; } | normalize >"$OUT/$name-$v-$s.md"
+        { transform 1 <<<"${page["$name $v $s"]}"; } | normalize >"$OUT/$name-$v-$s.md"
         printf 'docs/%s.md\n' "$name-$v-$s"
       done
     else
