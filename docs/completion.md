@@ -12,5 +12,5 @@ rp completion <bash|zsh>
 
 ## Commands
 
-- [`rp completion bash`](completion-bash.md) — Print the bash completion artefact to stdout.
+- [`rp completion bash`](completion-bash.md) — Print the bash completion bootstrap to stdout.
 - [`rp completion zsh`](completion-zsh.md) — Print the zsh completion artefact to stdout.

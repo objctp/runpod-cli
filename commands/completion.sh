@@ -12,18 +12,22 @@
 #
 
 # doc: bash
-# Print the bash completion artefact to stdout.
+# Print the bash completion bootstrap to stdout.
 #
 # Usage: rp completion bash
 #
 # Notes:
-#   Wire it into the current shell with: source <(rp completion bash)
-#   To keep it, add that source line (or the installer's equivalent) to
-#   ~/.bashrc. The artefact is bash 3.2+ — it runs in the INTERACTIVE shell,
-#   which may be older than the Bash 5.1 rp itself requires.
+#   The output is a tiny lazy bootstrap: it registers a stub and sources the
+#   full generated grammar only on the first `rp` TAB, so it never slows an
+#   idle shell. Write it to a file and source that — a process substitution
+#   would not resolve the grammar path:
+#     rp completion bash > ~/.rp/completions/rp.lazy.bash
+#     echo '[[ $- == *i* ]] && source ~/.rp/completions/rp.lazy.bash' >> ~/.bashrc
+#   The installer does this for you. The artefact is bash 3.2+ — it runs in
+#   the INTERACTIVE shell, which may be older than the Bash 5.1 rp requires.
 #
 # Examples:
-# $ rp completion bash >> ~/.bashrc
+# $ rp completion bash > ~/.rp/completions/rp.lazy.bash
 
 # doc: zsh
 # Print the zsh completion artefact to stdout.
@@ -46,16 +50,35 @@ rp::cmd_completion() {
   rp::args_has help && verb=help
   local f
   case "$verb" in
-  bash) _completion_artefact rp.bash ;;
+  bash)
+    # Emit the lazy bootstrap: a tiny stub that sources the full generated
+    # grammar (rp.bash) only on the first `rp` TAB. The fallback path points
+    # at this install's rp.bash so it also works via `source <(rp completion bash)`.
+    cat <<EOF
+# rp shell completion — lazy bootstrap (bash), emitted by \`rp completion bash\`.
+# Sources the full generated grammar (rp.bash) only on the first \`rp\` TAB,
+# so the grammar is never parsed in an idle shell.
+_rp_bash_lazy() {
+  unset -f _rp_bash_lazy
+  local f
+  f="\$(dirname "\${BASH_SOURCE[0]}")/rp.bash"
+  [[ -f "\$f" ]] || f="$RP_ROOT/completions/rp.bash"
+  source "\$f"
+  type -t _rp >/dev/null 2>&1 && _rp "\$@"
+}
+complete -F _rp_bash_lazy rp
+EOF
+    ;;
   zsh) _completion_artefact _rp ;;
   -h | --help | help)
     cat <<'EOF'
 Usage: rp completion <bash|zsh>
 
-Print the generated shell completion artefact for a shell to stdout.
+Print the shell completion bootstrap/artefact for a shell to stdout.
 install.sh wires completion automatically; manual setup:
 
-  bash: source <(rp completion bash)
+  bash: rp completion bash > ~/.rp/completions/rp.lazy.bash
+        echo '[[ $- == *i* ]] && source ~/.rp/completions/rp.lazy.bash' >> ~/.bashrc
   zsh:  rp completion zsh > "${HOME}/.rp/completions/_rp"
         then source that file from ~/.zshrc after compinit
 EOF

@@ -210,7 +210,7 @@ rp_inst_setup_completion() {
     else
       rc="$HOME/.bashrc"
     fi
-    line="source \"$dir/rp.bash\" # rp completion"
+    line="[[ \$- == *i* ]] && source \"$dir/rp.lazy.bash\" # rp completion"
     ;;
   *)
     rp_inst_info "no automatic completion for '$shell'; source $dir/rp.bash in your shell rc"

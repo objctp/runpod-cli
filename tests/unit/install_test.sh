@@ -155,6 +155,7 @@ function _completion_fake() {
   fake="$(mktemp -d)"
   mkdir -p "$fake/completions"
   printf '# GENERATED artefact\ncomplete -F _rp rp\n' >"$fake/completions/rp.bash"
+  printf '# GENERATED lazy bootstrap\ncomplete -F _rp_bash_lazy rp\n' >"$fake/completions/rp.lazy.bash"
   printf '#compdef rp\n' >"$fake/completions/_rp"
   printf '%s\n' "$fake"
 }
@@ -175,7 +176,7 @@ function test_should_wire_bash_completion_into_bashrc_on_linux() {
   home="$(mktemp -d)"
   fake="$(_completion_fake)"
   _completion_wire /bin/bash Linux "$home" "$fake/completions"
-  assert_contains "source \"$fake/completions/rp.bash\" # rp completion" "$(<"$home/.bashrc")"
+  assert_contains "source \"$fake/completions/rp.lazy.bash\" # rp completion" "$(<"$home/.bashrc")"
   assert_contains '# added by rp installer' "$(<"$home/.bashrc")"
   rm -rf "$home" "$fake"
 }
@@ -211,7 +212,7 @@ function test_should_prefer_bash_profile_on_darwin_when_it_exists() {
   : >"$home/.bash_profile"
   _completion_wire /usr/local/bin/bash Darwin "$home" "$fake/completions"
   assert_file_exists "$home/.bash_profile"
-  assert_contains 'completions/rp.bash' "$(<"$home/.bash_profile")"
+  assert_contains 'completions/rp.lazy.bash' "$(<"$home/.bash_profile")"
   assert_file_not_exists "$home/.bashrc"
   rm -rf "$home" "$fake"
 }
@@ -222,7 +223,7 @@ function test_should_fall_back_to_bashrc_on_darwin_without_profile() {
   home="$(mktemp -d)"
   fake="$(_completion_fake)"
   _completion_wire /bin/bash Darwin "$home" "$fake/completions"
-  assert_contains 'completions/rp.bash' "$(<"$home/.bashrc")"
+  assert_contains 'completions/rp.lazy.bash' "$(<"$home/.bashrc")"
   rm -rf "$home" "$fake"
 }
 

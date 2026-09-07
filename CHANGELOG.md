@@ -12,6 +12,7 @@
 
 - Lock the flip semantics and flip-faithful suites
 - Parse command files once; dump manual pages in one rp run
+- Lazy-load grammar on first TAB
 
 ### Fixed
 

@@ -48,10 +48,14 @@ one is available (it names the right command for your install method). Set
 ### Shell completion
 
 Tab completion (resources, verbs, flags, live ids and names) is wired by the
-installer for bash and zsh. To wire by hand:
+installer for bash and zsh. Both paths use a tiny lazy bootstrap (`rp.lazy.bash`)
+that registers a stub and loads the full grammar only on the first `rp` TAB,
+guarded to interactive shells — so idle sessions pay nothing. To wire by hand
+the same way:
 
 ```bash
-bash:  echo 'source <(rp completion bash)' >> ~/.bashrc
+bash:  rp completion bash > "${HOME}/.rp/completions/rp.lazy.bash"
+       echo '[[ $- == *i* ]] && source "${HOME}/.rp/completions/rp.lazy.bash"' >> ~/.bashrc
 zsh:   rp completion zsh > "${HOME}/.rp/completions/_rp"
        # then source that file from ~/.zshrc, after compinit runs
 ```
