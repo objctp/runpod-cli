@@ -145,3 +145,127 @@ function test_should_skip_path_entry_when_dir_has_whitespace() {
   [[ ! -f "$home_dir/.bashrc" ]]
   rm -rf "$home_dir"
 }
+
+# shellcheck disable=SC2030,SC2031 # the subshell export IS the isolation
+# --- rp_inst_setup_completion ---
+
+# Echo a fake install tree whose completions/ holds both artefacts.
+function _completion_fake() {
+  local fake
+  fake="$(mktemp -d)"
+  mkdir -p "$fake/completions"
+  printf '# GENERATED artefact\ncomplete -F _rp rp\n' >"$fake/completions/rp.bash"
+  printf '#compdef rp\n' >"$fake/completions/_rp"
+  printf '%s\n' "$fake"
+}
+
+# Run the wiring under shell/home/uname overrides, against an explicit dir.
+function _completion_wire() { # $1 shell, $2 uname, $3 fake-home, $4 completions dir
+  local shell="$1" uname="$2" home="$3" dir="$4"
+  (
+    # shellcheck disable=SC2030,SC2031 # the subshell export IS the isolation
+    export HOME="$home" SHELL="$shell" RP_UNAME="$uname"
+    rp_inst_setup_completion "$dir" >/dev/null 2>&1
+  )
+}
+
+function test_should_wire_bash_completion_into_bashrc_on_linux() {
+  local home
+  local home fake
+  home="$(mktemp -d)"
+  fake="$(_completion_fake)"
+  _completion_wire /bin/bash Linux "$home" "$fake/completions"
+  assert_contains "source \"$fake/completions/rp.bash\" # rp completion" "$(<"$home/.bashrc")"
+  assert_contains '# added by rp installer' "$(<"$home/.bashrc")"
+  rm -rf "$home" "$fake"
+}
+
+function test_should_wire_completion_idempotently() {
+  local home fake before after
+  home="$(mktemp -d)"
+  fake="$(_completion_fake)"
+  _completion_wire /bin/bash Linux "$home" "$fake/completions"
+  before="$(grep -c 'rp completion' "$home/.bashrc")"
+  _completion_wire /bin/bash Linux "$home" "$fake/completions"
+  after="$(grep -c 'rp completion' "$home/.bashrc")"
+  assert_equals "$before" "$after"
+  rm -rf "$home" "$fake"
+}
+
+function test_should_wire_zsh_completion_into_zshrc() {
+  local home
+  local home fake
+  home="$(mktemp -d)"
+  fake="$(_completion_fake)"
+  _completion_wire /bin/zsh Linux "$home" "$fake/completions"
+  assert_contains 'completions/_rp' "$(<"$home/.zshrc")"
+  assert_contains 'needs compinit' "$(<"$home/.zshrc")"
+  rm -rf "$home" "$fake"
+}
+
+function test_should_prefer_bash_profile_on_darwin_when_it_exists() {
+  local home
+  local home fake
+  home="$(mktemp -d)"
+  fake="$(_completion_fake)"
+  : >"$home/.bash_profile"
+  _completion_wire /usr/local/bin/bash Darwin "$home" "$fake/completions"
+  assert_file_exists "$home/.bash_profile"
+  assert_contains 'completions/rp.bash' "$(<"$home/.bash_profile")"
+  assert_file_not_exists "$home/.bashrc"
+  rm -rf "$home" "$fake"
+}
+
+function test_should_fall_back_to_bashrc_on_darwin_without_profile() {
+  local home
+  local home fake
+  home="$(mktemp -d)"
+  fake="$(_completion_fake)"
+  _completion_wire /bin/bash Darwin "$home" "$fake/completions"
+  assert_contains 'completions/rp.bash' "$(<"$home/.bashrc")"
+  rm -rf "$home" "$fake"
+}
+
+function test_should_skip_unknown_shells_quietly() {
+  local home
+  home="$(mktemp -d)"
+  _completion_wire /usr/bin/fish Linux "$home"
+  local count
+  count="$(find "$home" -type f | grep -c . || true)"
+  assert_equals "0" "$count"
+  rm -rf "$home"
+}
+
+function test_should_noop_when_artefacts_missing() {
+  local home fake
+  home="$(mktemp -d)"
+  fake="$(mktemp -d)"
+  (
+    # shellcheck disable=SC2030,SC2031 # the subshell export IS the isolation
+    export HOME="$home" SHELL=/bin/bash RP_UNAME=Linux
+    rp_inst_setup_completion "$fake/completions" >/dev/null 2>&1
+  )
+  assert_file_not_exists "$home/.bashrc"
+  rm -rf "$home" "$fake"
+}
+
+function test_should_warn_not_fail_when_rc_unwritable() {
+  local home msg
+  home="$(mktemp -d)"
+  msg="$(mktemp)"
+  local fake
+  fake="$(mktemp -d)"
+  mkdir -p "$fake/completions"
+  printf 'x\n' >"$fake/completions/rp.bash"
+  printf 'x\n' >"$home/.bashrc"
+  chmod 400 "$home/.bashrc"
+  (
+    # shellcheck disable=SC2030,SC2031 # the subshell export IS the isolation
+    export HOME="$home" SHELL=/bin/bash RP_UNAME=Linux
+    rp_inst_setup_completion "$fake/completions" 2>"$msg"
+  )
+  assert_equals "0" "$?"
+  assert_contains "could not wire completion" "$(<"$msg")"
+  chmod 600 "$home/.bashrc"
+  rm -rf "$home" "$fake" "$msg"
+}

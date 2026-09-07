@@ -23,6 +23,7 @@
     "bin",
     "lib",
     "commands",
+    "completions",
     "LICENSE"
   ],
   "keywords": [

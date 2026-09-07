@@ -74,7 +74,13 @@ function test_should_serve_stale_cache_and_refresh() {
   CC_MOCK='{"pods":[{"id":"old","name":"stale"}]}'
   rp::complete pod list - >/dev/null
   # Backdate the fetch epoch past the TTL — the test cannot wait 5 minutes.
-  sed -i '' -E '1s/^[0-9]+/1/' "$RP_CONFIG_HOME/completion/pod"
+  local cache="$RP_CONFIG_HOME/completion/pod" tmp
+  _mktemp tmp
+  {
+    printf '1\tpod\n'
+    tail -n +2 "$cache"
+  } >"$tmp"
+  mv "$tmp" "$cache"
   CC_MOCK='{"pods":[{"id":"new","name":"fresh"}]}'
   : >"$CC_CAP"
   # RP_COMPLETION_SYNC_REFRESH=1 (set_up) makes the stale path refetch

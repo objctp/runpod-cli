@@ -112,6 +112,10 @@ f	cluster	update	json	bool		print the raw API response
 u	cluster	update	rp cluster update <id> --name <n>
 v	cluster	delete
 u	cluster	delete	rp cluster delete <id>
+v	completion	bash
+u	completion	bash	rp completion bash
+v	completion	zsh
+u	completion	zsh	rp completion zsh
 v	cost-center	create
 f	cost-center	create	note	value	<text>	free-text note shown by `rp cost-center list`
 u	cost-center	create	rp cost-center create <name> [--note <text>]

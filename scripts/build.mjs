@@ -26,7 +26,7 @@ const PKG = resolve(ROOT, "package.json");
 
 // Files the published package must contain (kept in lockstep with the
 // `files` array in package.json). These are the repo-root dirs/bin, not a dist.
-const FILES = ["bin/rp", "lib", "commands", "LICENSE"];
+const FILES = ["bin/rp", "lib", "commands", "completions", "LICENSE"];
 
 function die(msg) {
 	process.stderr.write(`build: error: ${msg}\n`);

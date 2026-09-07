@@ -6,6 +6,7 @@
 
 - Enable inherit_errexit; require Bash 5.1+
 - Bash + zsh tab completion from the doc-block grammar
+- Installer wiring, rp completion verb, tarball artefacts
 
 ### Changed
 

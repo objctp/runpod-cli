@@ -31,7 +31,7 @@ jobs:
 
       - name: Install shellcheck (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck zsh
 
       - name: Install bashunit
         uses: TypedDevs/bashunit@0.44.0

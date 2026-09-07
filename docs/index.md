@@ -8,6 +8,7 @@ Reference for the Runpod CLI (`rp`). Each command has its own page:
 - [billing](billing.md) — Spend reports for pods, serverless, clusters and volumes.
 - [catalog](catalog.md) — Catalog templates: browse the public template library.
 - [cluster](cluster.md) — Clusters: multi-node homogeneous pod fleets (REST v2).
+- [completion](completion.md) — Shell completion — print a completion artefact for wiring.
 - [cost-center](cost-center.md) — Client-side cost centers: named buckets for per-project spend.
 - [doc](doc.md) — Read the manual embedded in rp's own source comments.
 - [hub](hub.md) — Search the Hub marketplace and read a listing.

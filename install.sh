@@ -187,6 +187,51 @@ rp_inst_ensure_path() {
   printf '%s\n' "$rc"
 }
 
+# Wire shell completion: append a `source` line for the artefact matching the
+# user's shell into their rc, idempotently and best-effort — a failure here
+# must never fail the install. Bash on macOS gets .bash_profile when it
+# already exists (login shells read it, not .bashrc); zsh needs compinit to
+# have run before the artefact's compdef registration, so the note says so.
+# Other shells are skipped with a hint. Env overrides for tests: SHELL, HOME,
+# RP_UNAME (via rp_inst_os).
+# shellcheck disable=SC2120
+rp_inst_setup_completion() {
+  local dir="${1:-$RP_INSTALL_DIR/completions}" shell rc line
+  [[ -f "$dir/rp.bash" ]] || return 0
+  shell="$(basename "${SHELL:-bash}")"
+  case "$shell" in
+  zsh)
+    rc="$HOME/.zshrc"
+    line="source \"$dir/_rp\" # rp completion (needs compinit)"
+    ;;
+  bash)
+    if [[ "$(rp_inst_os)" == "darwin" && -f "$HOME/.bash_profile" ]]; then
+      rc="$HOME/.bash_profile"
+    else
+      rc="$HOME/.bashrc"
+    fi
+    line="source \"$dir/rp.bash\" # rp completion"
+    ;;
+  *)
+    rp_inst_info "no automatic completion for '$shell'; source $dir/rp.bash in your shell rc"
+    return 0
+    ;;
+  esac
+  if grep -qF "$line" "$rc" 2>/dev/null; then
+    return 0
+  fi
+  {
+    echo ""
+    echo "# added by rp installer"
+    echo "$line"
+  } >>"$rc" 2>/dev/null || {
+    rp_inst_warn "could not wire completion into $rc (not writable); add it manually:"
+    rp_inst_warn "  $line"
+    return 0
+  }
+  rp_inst_ok "shell completion wired in $rc — restart your shell to use it"
+}
+
 ###
 ### :::: install flow :::: #############
 ###
@@ -330,6 +375,10 @@ rp_inst_run() {
   if [[ -n "$rc" ]]; then
     rp_inst_warn "added $RP_BINDIR to PATH via $rc — open a new shell or run: source $rc"
   fi
+
+  # Best-effort completion wiring (bash/zsh; never fails the install).
+  # shellcheck disable=SC2119
+  rp_inst_setup_completion
 
   rp_inst_ok "Installed rp $version -> $RP_BINDIR/rp"
   rp_inst_info "  source:  $RP_INSTALL_DIR"

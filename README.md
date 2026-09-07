@@ -10,9 +10,13 @@ output, script-friendly exit codes.
 `rp` is a personal, Bash-based wrapper around Runpod's APIs — not a replacement
 for the official [`runpodctl`](https://github.com/runpod/runpodctl). I built it
 because a shell CLI is easy to extend and to wrap other tooling around — and
-because a few workflows (notably `volume sync`, plus `catalog` and `cluster`)
-and its single-key auth model aren't covered by `runpodctl`. Where commands overlap with `runpodctl`, the shared
-flag spellings are accepted as a convenience only.
+because several workflows aren't covered by `runpodctl`: `volume sync`,
+`catalog`, `cluster`, `serverless batch`, worker pinning (`run --worker-id`),
+cost-center tagging, registry ECR delegations, wider billing views, deeper
+stock queries (MiG slices, CPUs, datacentre filters), and multi-account auth —
+`runpodctl` stores a single key. A raw `rp api <METHOD> <path>` escape hatch
+covers anything else. Where commands overlap with `runpodctl`, the shared flag
+spellings are accepted as a convenience only.
 
 ## Requirements
 
@@ -32,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/objctp/runpod-cli/main/install.sh |
 
 The installer verifies a SHA-256 checksum before extracting. Update later with
 `rp upgrade` (or re-run the one-liner); pin a version with
-`curl ... | bash -s -- --version 1.4.0`.
+`curl ... | bash -s -- --version 1.5.0`.
 
 `rp` also checks for a newer release once a day and prints a one-line notice when
 one is available (it names the right command for your install method). Set
@@ -40,6 +44,17 @@ one is available (it names the right command for your install method). Set
 
 > macOS ships Bash 3.2, but `rp` needs Bash 5.1+. The installer detects this and
 > refuses with the fix (`brew install bash`, then restart your shell).
+
+### Shell completion
+
+Tab completion (resources, verbs, flags, live ids and names) is wired by the
+installer for bash and zsh. To wire by hand:
+
+```bash
+bash:  echo 'source <(rp completion bash)' >> ~/.bashrc
+zsh:   rp completion zsh > "${HOME}/.rp/completions/_rp"
+       # then source that file from ~/.zshrc, after compinit runs
+```
 
 For development (clone + symlink, no download required):
 

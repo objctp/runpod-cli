@@ -46,9 +46,9 @@ package:
 	[ -n "$$VERSION" ] || VERSION=0.0.0-dev; \
 	STAGE=$$(mktemp -d); \
 	trap "rm -rf $$STAGE" EXIT; \
-	cp -R bin lib commands LICENSE "$$STAGE"/; \
+	cp -R bin lib commands completions LICENSE "$$STAGE"/; \
 	printf 'RP_VERSION="%s"\n' "$$VERSION" > "$$STAGE/lib/_version.sh"; \
-	tar czf "rp-$$VERSION.tar.gz" -C "$$STAGE" bin lib commands LICENSE; \
+	tar czf "rp-$$VERSION.tar.gz" -C "$$STAGE" bin lib commands completions LICENSE; \
 	sha256sum "rp-$$VERSION.tar.gz" > SHA256SUMS; \
 	echo "built rp-$$VERSION.tar.gz + SHA256SUMS"
 

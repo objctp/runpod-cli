@@ -32,7 +32,7 @@ jobs:
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME}"
           printf 'RP_VERSION="%s"\n' "$VERSION" > lib/_version.sh
-          tar czf "rp-$VERSION.tar.gz" bin lib commands LICENSE
+          tar czf "rp-$VERSION.tar.gz" bin lib commands completions LICENSE
           sha256sum "rp-$VERSION.tar.gz" > SHA256SUMS
           echo "Built rp-$VERSION.tar.gz"
           cat SHA256SUMS
