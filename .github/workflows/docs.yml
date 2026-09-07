@@ -3,6 +3,11 @@ name: docs
 # Build the MkDocs Material manual and publish it to GitHub Pages.
 # The site is served under /manual/ (see site_url in docs/mkdocs.yml).
 #
+# Two gates prevent needless redeploys:
+#   1. `paths` only starts the workflow when docs or this file change.
+#   2. the build hashes the rendered site and skips the upload+deploy when it is
+#      byte-identical to the previous successful build (cached), so a docs edit
+#      that does not alter the rendered output costs nothing.
 on:
   push:
     branches: [main]
@@ -23,6 +28,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.hash.outputs.skip }}
     steps:
       - uses: actions/checkout@v6
 
@@ -57,13 +64,50 @@ jobs:
           </html>
           EOF
 
+      # Restore the previously built site (if any) so we can compare hashes.
+      - name: Restore previous site
+        uses: actions/cache/restore@v4
+        with:
+          path: site-prev
+          key: docs-site-${{ github.run_id }}
+          restore-keys: |
+            docs-site-
+
+      - name: Compare with previous build
+        id: hash
+        run: |
+          hash_site() {
+            cd "$1" && find . -type f -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1
+          }
+          NEW="$(hash_site site)"
+          if [ -d site-prev ] && [ "$(hash_site site-prev)" = "$NEW" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Rendered site unchanged since last deploy — skipping upload/deploy."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Stage the current site as the comparison baseline for the next run.
+      - name: Stage site for caching
+        if: steps.hash.outputs.skip != 'true'
+        run: rm -rf site-prev && cp -r site site-prev
+
+      - name: Save site cache
+        uses: actions/cache/save@v4
+        if: steps.hash.outputs.skip != 'true'
+        with:
+          path: site-prev
+          key: docs-site-${{ github.run_id }}
+
       - name: Upload artifact
+        if: steps.hash.outputs.skip != 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
   deploy:
     needs: build
+    if: needs.build.outputs.skip != 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
